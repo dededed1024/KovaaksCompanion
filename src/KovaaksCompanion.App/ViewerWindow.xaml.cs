@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Session;
 using KovaaksCompanion.Core.Trajectory;
 
@@ -19,7 +20,6 @@ public sealed record KillRow(int Index, string Ttk, string Flick, string Path);
 
 public partial class ViewerWindow : Window
 {
-    static readonly double[] Speeds = [0.25, 0.5, 1, 1.5, 2];
     const double FrameSec = 1.0 / 60;
 
     readonly AppHost _host;
@@ -27,11 +27,14 @@ public partial class ViewerWindow : Window
     LoadedSession? _s;
     double _duration, _runLength;
     double[] _killTimes = [];
+    IReadOnlyDictionary<float, ShotOutcome> _outcomes = new Dictionary<float, ShotOutcome>();
+    double _speed = 1;
     bool _playing, _dragging;
 
     public ViewerWindow(AppHost host)
     {
         InitializeComponent();
+        Backdrop.Apply(this);
         _host = host;
         List.ItemsSource = _items;
         foreach (var (folder, info) in SessionStore.List(host.SessionsFolder)) _items.Add(new SessionItem(folder, info));
@@ -67,8 +70,10 @@ public partial class ViewerWindow : Window
         _killTimes = _s.Stats is { } st
             ? st.KillEvents.Select(k => (k.Time - st.Start).TotalSeconds).ToArray()
             : (_s.Trajectory?.Events.Where(x => x.Type == TrajectoryEventType.Kill).Select(x => (double)x.TSec).ToArray() ?? []);
+        _outcomes = ClassifyShots();
         ShowStats();
-        NudgeText.Text = NudgeLabel();
+        Chart.Set([], 0);
+        AccText.Text = "";
 
         if (_s.VideoPath is { } path)
         {
@@ -89,7 +94,8 @@ public partial class ViewerWindow : Window
         var i = _s!.Info;
         StatsText.Text = $"{i.Scenario}\n{i.Start:yyyy-MM-dd HH:mm:ss}\nScore: {i.Score:0.##}\nAccuracy: {i.Accuracy:P1} ({i.HitCount}/{i.HitCount + i.MissCount})\nKills: {i.Kills}"
             + (i.Partial ? "\nPartial: mouse or video does not cover the whole run" : "")
-            + (i.DegreesAvailable ? "" : "\nUnknown sens scale: no trail");
+            + (i.DegreesAvailable ? "" : "\nUnknown sens scale: no trail")
+            + ShotSummary();
         var flicks = _s.Trajectory is { } t ? KillFlicks.Compute(t.Samples, _killTimes) : null;
         var ttks = _s.Stats?.KillEvents;
         Kills.ItemsSource = _killTimes.Select((_, k) => new KillRow(k + 1,
@@ -98,14 +104,30 @@ public partial class ViewerWindow : Window
             flicks is null ? "" : $"{flicks[k].PathDeg:0.0}°")).ToList();
     }
 
+    IReadOnlyDictionary<float, ShotOutcome> ClassifyShots()
+    {
+        if (_s?.Trajectory is not { } traj || _s.Stats is not { } st) return new Dictionary<float, ShotOutcome>();
+        var kills = st.KillEvents.Select((k, i) => new KillShots(_killTimes[i], k.Shots, k.Hits)).ToList();
+        return ShotClassifier.Classify(traj.Events, kills, _s.Perf);
+    }
+
+    string ShotSummary()
+    {
+        if (_outcomes.Count == 0) return "";
+        int hit = 0, miss = 0;
+        foreach (var o in _outcomes.Values) { if (o == ShotOutcome.Hit) hit++; else if (o == ShotOutcome.Miss) miss++; }
+        return $"\nShots: {hit} hit (green), {miss} miss (red), {_outcomes.Count - hit - miss} unknown (grey)";
+    }
+
     void OnMediaOpened(object sender, RoutedEventArgs e)
     {
         if (_s is null || !Media.NaturalDuration.HasTimeSpan) return;
         _duration = Media.NaturalDuration.TimeSpan.TotalSeconds;
         Seek.Maximum = _duration;
-        Media.SpeedRatio = Speeds[Speed.SelectedIndex];
+        Media.SpeedRatio = _speed;
         Media.Pause();
         Media.Position = TimeSpan.FromSeconds(Math.Clamp(_s.Info.VideoTime(0), 0, _duration));
+        BuildChart();
         DrawMarkers();
     }
 
@@ -130,8 +152,8 @@ public partial class ViewerWindow : Window
         foreach (var k in _killTimes)
         {
             var x = Math.Clamp(_s.Info.VideoTime(k) / _duration, 0, 1) * Markers.ActualWidth;
-            var r = new Rectangle { Width = 2, Height = 10, Fill = Brushes.OrangeRed };
-            Canvas.SetLeft(r, x - 1); Canvas.SetTop(r, 0);
+            var r = new Rectangle { Width = 2, Height = 6, RadiusX = 1, RadiusY = 1, Fill = (Brush)FindResource("Red") };
+            Canvas.SetLeft(r, x - 1); Canvas.SetBottom(r, 0);
             Markers.Children.Add(r);
         }
     }
@@ -143,6 +165,10 @@ public partial class ViewerWindow : Window
         if (!_dragging) Seek.Value = Math.Clamp(pos, 0, _duration);
         var t = _s.Info.MouseTime(pos);
         TimeText.Text = $"{Math.Max(0, t):0.00} / {_runLength:0.00} s";
+        Chart.SetPlayhead(pos);
+        if (Chart.At(pos) is { } cur)
+            AccText.Text = double.IsNaN(cur.Score) ? $"{cur.Accuracy:P0}" : $"{cur.Accuracy:P0}  ·  10s {cur.RecentAccuracy:P0}  ·  {cur.Score:0} pts";
+        else AccText.Text = "–";
 
         if (_s.Trajectory is not { Samples.Count: > 0 } traj || Media.NaturalVideoHeight == 0 || t < 0 || t > _runLength + 0.5)
         {
@@ -152,7 +178,7 @@ public partial class ViewerWindow : Window
         double aspect = (double)Media.NaturalVideoWidth / Media.NaturalVideoHeight;
         var st = _s.Info.Settings;
         var hfov = ViewProjection.HorizontalFovDeg(st.Fov, st.FovScale, aspect);
-        Overlay.Set(CameraPath.BuildTrail(traj.Samples, traj.Events, t), CameraPath.At(traj.Samples, t), hfov, aspect);
+        Overlay.Set(CameraPath.BuildTrail(traj.Samples, traj.Events, t, outcomes: _outcomes), CameraPath.At(traj.Samples, t), hfov, aspect);
     }
 
     void OnSeekDown(object sender, MouseButtonEventArgs e) => _dragging = true;
@@ -188,23 +214,31 @@ public partial class ViewerWindow : Window
     void OnStepBack(object sender, RoutedEventArgs e) => Step(-FrameSec);
     void OnStepForward(object sender, RoutedEventArgs e) => Step(FrameSec);
 
-    void OnSpeedChanged(object sender, SelectionChangedEventArgs e)
+    void OnSpeedChecked(object sender, RoutedEventArgs e)
     {
-        if (Media != null && Speed.SelectedIndex >= 0) Media.SpeedRatio = Speeds[Speed.SelectedIndex];
+        if (Media is null || sender is not RadioButton { Tag: string tag }) return;
+        _speed = double.Parse(tag, System.Globalization.CultureInfo.InvariantCulture);
+        Media.SpeedRatio = _speed;
     }
 
-    string NudgeLabel() => _s is null ? "" : $"{_s.Info.SyncNudgeMs:+0;-0;0} ms";
-
-    void Nudge(double ms)
+    /// <summary>Running accuracy per second from the .perf, else per kill.</summary>
+    void BuildChart()
     {
-        if (_s is null) return;
-        var info = _s.Info with { SyncNudgeMs = _s.Info.SyncNudgeMs + ms };
-        try { SessionStore.WriteInfo(_s.Folder, info); }
-        catch (Exception ex) { Notice.Text = "Could not save sync: " + ex.Message; Notice.Visibility = Visibility.Visible; return; }
-        _s = _s with { Info = info };
-        NudgeText.Text = NudgeLabel();
-        DrawMarkers();
+        if (_s?.Perf is { Buckets.Count: > 0 } perf && _duration > 0)
+        {
+            Chart.Set(PerfSeries.Build(perf).Select(p => new ChartPoint(_s.Info.VideoTime(p.TSec), p.Accuracy, p.RecentAccuracy, p.Score)).ToList(), _duration);
+            return;
+        }
+        if (_s?.Stats is not { KillEvents.Count: > 0 } st || _duration <= 0) { Chart.Set([], 0); return; }
+        int shots = 0, hits = 0;
+        var pts = new List<ChartPoint>();
+        for (var k = 0; k < st.KillEvents.Count; k++)
+        {
+            var ev = st.KillEvents[k];
+            shots += ev.Shots; hits += ev.Hits;
+            pts.Add(new ChartPoint(_s.Info.VideoTime(_killTimes[k]),
+                shots == 0 ? 0 : (double)hits / shots));
+        }
+        Chart.Set(pts, _duration);
     }
-    void OnNudgeMinus(object sender, RoutedEventArgs e) => Nudge(-10);
-    void OnNudgePlus(object sender, RoutedEventArgs e) => Nudge(10);
 }
