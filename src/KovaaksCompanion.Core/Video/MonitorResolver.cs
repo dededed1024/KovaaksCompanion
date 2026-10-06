@@ -4,8 +4,10 @@ namespace KovaaksCompanion.Core.Video;
 
 /// <summary>One DXGI output (monitor). <see cref="OutputIndex"/> is the per-adapter index ddagrab's output_idx expects.</summary>
 public sealed record DxgiOutput(int AdapterIndex, string AdapterName, int OutputIndex, string DeviceName,
-    int Left, int Top, int Right, int Bottom, bool AttachedToDesktop)
+    int Left, int Top, int Right, int Bottom, bool AttachedToDesktop, int Rotation = 1)
 {
+    /// <summary>DXGI_MODE_ROTATION: 1 = identity. Rotated outputs are captured unrotated by ddagrab, so crop math does not apply.</summary>
+    public bool IsRotated => Rotation != 1;
     public int Width => Right - Left;
     public int Height => Bottom - Top;
     /// <summary>The primary monitor always contains the virtual-desktop origin.</summary>
@@ -50,7 +52,7 @@ public static unsafe class MonitorResolver
                             var dev = new string((char*)d).TrimEnd('\0');
                             var r = (int*)(d + 64);
                             bool attached = *(int*)(d + 80) != 0;
-                            result.Add(new DxgiOutput((int)a, name, (int)o, dev, r[0], r[1], r[2], r[3], attached));
+                            result.Add(new DxgiOutput((int)a, name, (int)o, dev, r[0], r[1], r[2], r[3], attached, *(int*)(d + 84)));
                         }
                         finally { Release(output); }
                     }

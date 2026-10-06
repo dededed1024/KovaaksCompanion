@@ -7,6 +7,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
     private readonly GameProcessWatcher _watcher;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private VideoRecorder? _rec;
+    private CancellationTokenSource? _startCts;
 
     public VideoCaptureService(VideoOptions? options = null)
     {
@@ -24,11 +25,18 @@ public sealed class VideoCaptureService : IAsyncDisposable
 
     private async Task StartRecordingAsync()
     {
+        var cts = new CancellationTokenSource();
+        _startCts = cts;
         await _gate.WaitAsync();
         try
         {
             var rec = new VideoRecorder(_o);
-            if (await rec.StartAsync()) _rec = rec; else Error?.Invoke(rec.LastError);
+            if (await rec.StartAsync(cts.Token))
+            {
+                _rec = rec;
+                if (rec.AudioError.Length > 0) Error?.Invoke("audio off: " + rec.AudioError);
+            }
+            else if (!cts.IsCancellationRequested) Error?.Invoke(rec.LastError);
         }
         catch (Exception e) { Error?.Invoke(e.Message); }
         finally { _gate.Release(); }
@@ -36,6 +44,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
 
     private async Task StopRecordingAsync()
     {
+        _startCts?.Cancel();   // abort a pending wait for the game window
         await _gate.WaitAsync();
         try { if (_rec != null) await _rec.StopAsync(); }
         finally { _gate.Release(); }
