@@ -1,0 +1,45 @@
+using KovaaksCompanion.Core.Stats;
+using KovaaksCompanion.Core.Trajectory;
+
+namespace KovaaksCompanion.Core.Session;
+
+public sealed record LoadedSession(string Folder, SessionInfo Info, TrajectoryData? Trajectory, RunStats? Stats)
+{
+    public string? VideoPath => Info.HasVideo && File.Exists(Path.Combine(Folder, SessionFolder.VideoFile))
+        ? Path.Combine(Folder, SessionFolder.VideoFile) : null;
+}
+
+public static class SessionStore
+{
+    public static void WriteInfo(string folder, SessionInfo info)
+    {
+        var path = Path.Combine(folder, SessionFolder.InfoFile);
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, info.ToJson());
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    /// <summary>Complete session folders (those with session.json), newest first; unreadable ones are skipped.</summary>
+    public static List<(string Folder, SessionInfo Info)> List(string root)
+    {
+        var list = new List<(string, SessionInfo)>();
+        if (!Directory.Exists(root)) return list;
+        foreach (var dir in Directory.GetDirectories(root))
+        {
+            try { list.Add((dir, SessionInfo.FromJson(File.ReadAllText(Path.Combine(dir, SessionFolder.InfoFile))))); }
+            catch (Exception e) when (e is IOException or SessionFormatException or System.Text.Json.JsonException) { }
+        }
+        return list.OrderByDescending(s => s.Item2.Start).ToList();
+    }
+
+    /// <summary>Throws <see cref="SessionFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>
+    public static LoadedSession Load(string folder)
+    {
+        var info = SessionInfo.FromJson(File.ReadAllText(Path.Combine(folder, SessionFolder.InfoFile)));
+        var trajPath = Path.Combine(folder, SessionFolder.TrajectoryFile);
+        var traj = File.Exists(trajPath) ? TrajectorySerializer.Deserialize(File.ReadAllBytes(trajPath)) : null;
+        var csv = Directory.GetFiles(folder, "*Stats.csv").FirstOrDefault();
+        var stats = csv is null ? null : StatsCsvParser.Parse(csv, File.ReadAllText(csv));
+        return new LoadedSession(folder, info, traj, stats);
+    }
+}

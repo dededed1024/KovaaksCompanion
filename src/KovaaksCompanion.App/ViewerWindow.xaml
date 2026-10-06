@@ -1,0 +1,80 @@
+<Window x:Class="KovaaksCompanion.App.ViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:KovaaksCompanion.App"
+        Title="KovaaK's Companion" Width="1280" Height="760" Background="{StaticResource Bg}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="270"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="290"/>
+        </Grid.ColumnDefinitions>
+
+        <ListBox x:Name="List" Background="{StaticResource Panel}" BorderThickness="0"
+                 SelectionChanged="OnSessionSelected" HorizontalContentAlignment="Stretch">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="4,3">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource Dim}" FontSize="11"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <Grid Grid.Column="1" Margin="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid Background="Black">
+                <MediaElement x:Name="Media" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True"
+                              Stretch="Uniform" MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded" MediaFailed="OnMediaFailed"/>
+                <app:TrailOverlay x:Name="Overlay" IsHitTestVisible="False"/>
+                <TextBlock x:Name="Notice" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Dim}"
+                           Text="Select a session"/>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="0,6,0,0" Height="34">
+                <Slider x:Name="Seek" Minimum="0" Maximum="1" IsMoveToPointEnabled="True" VerticalAlignment="Center"
+                        PreviewMouseLeftButtonDown="OnSeekDown" PreviewMouseLeftButtonUp="OnSeekUp" ValueChanged="OnSeekChanged"/>
+                <Canvas x:Name="Markers" IsHitTestVisible="False" Margin="0,0,0,0" SizeChanged="OnMarkersResized"/>
+            </Grid>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal">
+                <Button x:Name="PlayBtn" Content="Play" Width="60" Click="OnPlayPause"/>
+                <Button Content="|&lt; 1f" Click="OnStepBack" ToolTip="Step back 1/60 s"/>
+                <Button Content="1f &gt;|" Click="OnStepForward" ToolTip="Step forward 1/60 s"/>
+                <TextBlock Text="Speed" VerticalAlignment="Center" Margin="10,0,4,0"/>
+                <ComboBox x:Name="Speed" Width="70" SelectedIndex="2" SelectionChanged="OnSpeedChanged">
+                    <ComboBoxItem Content="0.25x"/><ComboBoxItem Content="0.5x"/><ComboBoxItem Content="1x"/>
+                    <ComboBoxItem Content="1.5x"/><ComboBoxItem Content="2x"/>
+                </ComboBox>
+                <TextBlock Text="Sync" VerticalAlignment="Center" Margin="14,0,4,0"/>
+                <Button Content="-10 ms" Click="OnNudgeMinus"/>
+                <TextBlock x:Name="NudgeText" VerticalAlignment="Center" MinWidth="64" TextAlignment="Center"/>
+                <Button Content="+10 ms" Click="OnNudgePlus"/>
+                <TextBlock x:Name="TimeText" VerticalAlignment="Center" Margin="14,0,0,0" Foreground="{StaticResource Dim}"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Column="2" Background="{StaticResource Panel}" Margin="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="StatsText" Margin="12" TextWrapping="Wrap" LineHeight="20"/>
+            <ListView x:Name="Kills" Grid.Row="1" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Fg}">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="#" DisplayMemberBinding="{Binding Index}" Width="30"/>
+                        <GridViewColumn Header="TTK" DisplayMemberBinding="{Binding Ttk}" Width="55"/>
+                        <GridViewColumn Header="Flick" DisplayMemberBinding="{Binding Flick}" Width="55"/>
+                        <GridViewColumn Header="Path" DisplayMemberBinding="{Binding Path}" Width="60"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Grid>
+    </Grid>
+</Window>

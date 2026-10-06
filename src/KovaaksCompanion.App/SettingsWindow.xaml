@@ -1,0 +1,24 @@
+<Window x:Class="KovaaksCompanion.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Width="520" SizeToContent="Height" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg}">
+    <StackPanel Margin="16">
+        <TextBlock Text="KovaaK's folder (contains FPSAimTrainer\stats)"/>
+        <TextBox x:Name="Kovaaks" Margin="0,2,0,8"/>
+        <TextBlock Text="ffmpeg.exe"/>
+        <TextBox x:Name="Ffmpeg" Margin="0,2,0,8"/>
+        <TextBlock Text="Data folder"/>
+        <TextBox x:Name="Data" Margin="0,2,0,8"/>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="FPS" VerticalAlignment="Center"/>
+            <TextBox x:Name="Fps" Width="50" Margin="6,0,20,0"/>
+            <TextBlock Text="Buffer minutes" VerticalAlignment="Center"/>
+            <TextBox x:Name="Buffer" Width="50" Margin="6,0,0,0"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="OK" IsDefault="True" Click="Ok"/>
+            <Button Content="Cancel" IsCancel="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
