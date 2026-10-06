@@ -9,7 +9,10 @@ public sealed record AppSettings
     public string KovaaksPath { get; init; } = @"F:\Steam\steamapps\common\FPSAimTrainer";
     public string FfmpegPath { get; init; } = @"C:\ffmpeg\bin\ffmpeg.exe";
     public string DataFolder { get; init; } = DefaultDataFolder;
-    public int Fps { get; init; } = 60;
+    /// <summary>SteamID64 used for server scores. Empty = detect from Steam's loginusers.vdf.</summary>
+    public string SteamId { get; init; } = "";
+    /// <summary>0 = match the game monitor's refresh rate.</summary>
+    public int Fps { get; init; } = 0;
     public int BufferMinutes { get; init; } = 10;
 
     public static string DefaultDataFolder => Path.Combine(
@@ -18,6 +21,7 @@ public sealed record AppSettings
     public static string DefaultFile => Path.Combine(DefaultDataFolder, "settings.json");
 
     [JsonIgnore] public string StatsFolder => Path.Combine(KovaaksPath, "FPSAimTrainer", "stats");
+    [JsonIgnore] public string EffectiveSteamId => SteamId.Trim().Length > 0 ? SteamId.Trim() : Benchmarks.SteamAccount.Detect(KovaaksPath) ?? "";
     [JsonIgnore] public string SessionsFolder => Path.Combine(DataFolder, "sessions");
     [JsonIgnore] public string BufferFolder => Path.Combine(DataFolder, "buffer");
 
@@ -29,7 +33,7 @@ public sealed record AppSettings
         try
         {
             var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path ?? DefaultFile), Options) ?? new();
-            return s with { Fps = Math.Clamp(s.Fps, 10, 240), BufferMinutes = Math.Clamp(s.BufferMinutes, 2, 120) };
+            return s with { Fps = s.Fps <= 0 ? 0 : Math.Clamp(s.Fps, 10, 240), BufferMinutes = Math.Clamp(s.BufferMinutes, 2, 120) };
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return new(); }
     }
