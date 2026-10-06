@@ -4,7 +4,7 @@ using KovaaksCompanion.Core.Trajectory;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>Draws the VIEW-003 trail over the letterboxed video rect; redrawn every frame from the viewer.</summary>
+/// <summary>Draws the VIEW-003 trail over the letterboxed video rect; redrawn every frame from the viewer. Fire marks are coloured by shot outcome.</summary>
 public sealed class TrailOverlay : FrameworkElement
 {
     Trail? _trail;
@@ -49,12 +49,21 @@ public sealed class TrailOverlay : FrameworkElement
             var proj = ViewProjection.Project(m.Dir, _current, _hfov, _aspect);
             if (!proj.Visible) continue;
             var (x, y) = proj.ToPixels(w, h);
-            var brush = new SolidColorBrush(Color.FromArgb((byte)(255 * Math.Clamp(m.Opacity, 0, 1)), 255, 70, 70));
-            dc.DrawEllipse(brush, new Pen(Brushes.White, 1) { Brush = new SolidColorBrush(Color.FromArgb((byte)(255 * Math.Clamp(m.Opacity, 0, 1)), 255, 255, 255)) },
+            var a = (byte)(255 * Math.Clamp(m.Opacity, 0, 1));
+            var c = MarkColor(m.Outcome);
+            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B)), new Pen(new SolidColorBrush(Color.FromArgb(a, 255, 255, 255)), 1),
                 new Point(ox + x, oy + y), 5, 5);
         }
         dc.Pop();
     }
+
+    /// <summary>Hit green, miss red, not provable grey.</summary>
+    public static Color MarkColor(ShotOutcome o) => o switch
+    {
+        ShotOutcome.Hit => Color.FromRgb(70, 220, 110),
+        ShotOutcome.Miss => Color.FromRgb(255, 70, 70),
+        _ => Color.FromRgb(170, 170, 170),
+    };
 
     static Pen Pen(Color c, double opacity, double thickness) =>
         new(new SolidColorBrush(Color.FromArgb((byte)(255 * Math.Clamp(opacity, 0, 1)), c.R, c.G, c.B)), thickness)

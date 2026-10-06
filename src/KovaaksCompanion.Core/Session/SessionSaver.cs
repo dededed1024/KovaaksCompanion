@@ -1,4 +1,5 @@
 using KovaaksCompanion.Core.Input;
+using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
 using KovaaksCompanion.Core.Video;
@@ -30,6 +31,26 @@ public sealed class SessionSaver
         catch (Exception e) { Error?.Invoke($"Saving '{run.Scenario}' failed: {e.Message}"); }
     });
 
+    /// <summary>The .perf is written a moment after the CSV; for a fresh CSV wait briefly, and skip it when it never shows up.</summary>
+    static async Task CopyPerfAsync(string csvPath, string folder)
+    {
+        var perf = PerfParser.PathFor(csvPath);
+        var attempts = DateTime.Now - File.GetLastWriteTime(csvPath) < TimeSpan.FromSeconds(10) ? 20 : 1;
+        for (var i = 0; i < attempts; i++)
+        {
+            try
+            {
+                if (File.Exists(perf))
+                {
+                    File.Copy(perf, Path.Combine(folder, Path.GetFileName(perf)), overwrite: true);
+                    return;
+                }
+            }
+            catch (IOException) { } // still being written
+            if (i < attempts - 1) await Task.Delay(250);
+        }
+    }
+
     public async Task<string> SaveAsync(RunStats run, string csvPath)
     {
         var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario));
@@ -47,6 +68,7 @@ public sealed class SessionSaver
         if (built.Trajectory != null)
             await File.WriteAllBytesAsync(Path.Combine(folder, SessionFolder.TrajectoryFile), TrajectorySerializer.Serialize(built.Trajectory));
         File.Copy(csvPath, Path.Combine(folder, Path.GetFileName(csvPath)), overwrite: true);
+        await CopyPerfAsync(csvPath, folder);
 
         var info = new SessionInfo
         {

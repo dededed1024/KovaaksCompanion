@@ -2,7 +2,7 @@ namespace KovaaksCompanion.Core.Trajectory;
 
 public readonly record struct ViewDirection(double YawDeg, double PitchDeg);
 
-public readonly record struct TrailPoint(double TSec, ViewDirection Dir, double Opacity);
+public readonly record struct TrailPoint(double TSec, ViewDirection Dir, double Opacity, ShotOutcome Outcome = ShotOutcome.Unknown);
 
 public readonly record struct Trail(IReadOnlyList<TrailPoint> Points, IReadOnlyList<TrailPoint> FireMarks);
 
@@ -42,9 +42,11 @@ public static class CameraPath
 
     /// <summary>
     /// Crosshair path over the last <paramref name="window"/> seconds ending at t (nothing from the future).
-    /// Opacity is 1 at t and falls linearly to 0 at t - window. Fire marks are the Fire events inside the window.
+    /// Opacity is 1 at t and falls linearly to 0 at t - window. Fire marks are the Fire events inside the window,
+    /// labelled from <paramref name="outcomes"/> (keyed by event time) when given.
     /// </summary>
-    public static Trail BuildTrail(IReadOnlyList<CameraSample> samples, IReadOnlyList<TrajectoryEvent> events, double t, double window = TrailWindowSec)
+    public static Trail BuildTrail(IReadOnlyList<CameraSample> samples, IReadOnlyList<TrajectoryEvent> events, double t, double window = TrailWindowSec,
+        IReadOnlyDictionary<float, ShotOutcome>? outcomes = null)
     {
         var from = t - window;
         double Opacity(double ts) => Math.Clamp(1 - (t - ts) / window, 0, 1);
@@ -58,7 +60,7 @@ public static class CameraPath
         if (t > points[0].TSec) points.Add(P(t));
 
         var marks = events.Where(e => e.Type == TrajectoryEventType.Fire && e.TSec >= from && e.TSec <= t)
-            .Select(e => P(e.TSec)).ToList();
+            .Select(e => P(e.TSec) with { Outcome = outcomes is not null && outcomes.TryGetValue(e.TSec, out var o) ? o : ShotOutcome.Unknown }).ToList();
         return new Trail(points, marks);
     }
 }

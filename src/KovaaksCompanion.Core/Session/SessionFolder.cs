@@ -2,7 +2,7 @@ namespace KovaaksCompanion.Core.Session;
 
 public static class SessionFolder
 {
-    public const string TrajectoryFile = "trajectory.bin", InfoFile = "session.json", VideoFile = "video.mp4";
+    public const string TrajectoryFile = "trajectory.bin", InfoFile = "session.json", VideoFile = "video.mp4", PerfPattern = "*Performance.perf";
 
     /// <summary>"yyyyMMdd-HHmmss Scenario" with characters illegal in file names replaced by '_'.</summary>
     public static string Name(DateTime start, string scenario)

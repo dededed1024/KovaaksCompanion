@@ -1,9 +1,10 @@
+using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
 
 namespace KovaaksCompanion.Core.Session;
 
-public sealed record LoadedSession(string Folder, SessionInfo Info, TrajectoryData? Trajectory, RunStats? Stats)
+public sealed record LoadedSession(string Folder, SessionInfo Info, TrajectoryData? Trajectory, RunStats? Stats, PerfData? Perf = null)
 {
     public string? VideoPath => Info.HasVideo && File.Exists(Path.Combine(Folder, SessionFolder.VideoFile))
         ? Path.Combine(Folder, SessionFolder.VideoFile) : null;
@@ -40,6 +41,12 @@ public static class SessionStore
         var traj = File.Exists(trajPath) ? TrajectorySerializer.Deserialize(File.ReadAllBytes(trajPath)) : null;
         var csv = Directory.GetFiles(folder, "*Stats.csv").FirstOrDefault();
         var stats = csv is null ? null : StatsCsvParser.Parse(csv, File.ReadAllText(csv));
-        return new LoadedSession(folder, info, traj, stats);
+        PerfData? perf = null;
+        if (Directory.GetFiles(folder, SessionFolder.PerfPattern).FirstOrDefault() is { } perfPath)
+        {
+            try { perf = PerfParser.Parse(File.ReadAllBytes(perfPath)); }
+            catch (PerfFormatException) { } // optional data: the session still opens without it
+        }
+        return new LoadedSession(folder, info, traj, stats, perf);
     }
 }
