@@ -158,7 +158,7 @@ public sealed class ActivityCalendar : FrameworkElement
                     g.Freeze();
                     fill = g;
                 }
-                Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : day == today ? new Pen(Alpha(fg, 0.5), 1) : null;
+                Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : _selected == day ? new Pen(fg, 1.5) : day == today ?new Pen(Alpha(fg, 0.5), 1) : null;
                 dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
             }
 
@@ -207,6 +207,26 @@ public sealed class ActivityCalendar : FrameworkElement
         if (hit == _hover) return;
         _hover = hit;
         InvalidateVisual();
+    }
+
+    /// <summary>Raised when a day with plays is clicked.</summary>
+    public event Action<DateTime>? DayClicked;
+
+    DateTime? _selected;
+
+    /// <summary>The day outlined as selected, or null.</summary>
+    public DateTime? SelectedDay
+    {
+        get => _selected;
+        set { _selected = value?.Date; InvalidateVisual(); }
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_hover is not { } h) return;
+        var day = FirstDay.AddDays(h.Week * 7 + h.Row);
+        if (CountOf(day) > 0) DayClicked?.Invoke(day);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)

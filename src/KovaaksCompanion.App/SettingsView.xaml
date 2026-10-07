@@ -24,7 +24,7 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" Width="820" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
+        <Border x:Name="Card" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
                 BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -40,8 +40,6 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Style="{StaticResource Title}" FontSize="22" Text="Settings" VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" Style="{StaticResource SheetClose}" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
-                                Width="36" Height="36" Margin="12,0,-8,0" ToolTip="Close" Click="OnCloseClick"/>
                     </Grid>
                     <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
@@ -74,28 +72,26 @@
                             </StackPanel>
 
                             <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Recording quality"/>
-                            <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
-                                <StackPanel x:Name="QualityBar" Orientation="Horizontal">
+                            <Border Style="{StaticResource SegmentTrack}">
+                                <UniformGrid x:Name="QualityBar" Rows="1">
                                     <RadioButton Style="{StaticResource Segment}" Content="Low" Tag="Low" Checked="OnQuality"/>
                                     <RadioButton Style="{StaticResource Segment}" Content="Medium" Tag="Medium" Checked="OnQuality"/>
                                     <RadioButton Style="{StaticResource Segment}" Content="High" Tag="High" Checked="OnQuality"/>
                                     <RadioButton Style="{StaticResource Segment}" Content="Ultra" Tag="Ultra" Checked="OnQuality"/>
-                                </StackPanel>
+                                </UniformGrid>
                             </Border>
 
-                            <CheckBox x:Name="AutoStart" Content="Start with Windows" Margin="0,18,0,0" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
-
-                            <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" Margin="0,18,0,0"/>
-                            <Grid>
+                            <Grid Margin="0,18,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="UpdateStatus" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="{StaticResource Fg}"/>
-                                <Button Grid.Column="1" x:Name="CheckBtn" Content="Check for updates" Margin="8,0,0,0" Click="OnCheckUpdate"/>
-                                <Button Grid.Column="2" Content="Latest release" Margin="8,0,0,0" Click="OnOpenRelease"/>
+                                <TextBlock Text="Start with Windows" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnAutoStartLabel"/>
+                                <CheckBox Grid.Column="1" x:Name="AutoStart" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
                             </Grid>
+
+                            <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" Margin="0,18,0,0"/>
+                            <Button x:Name="CheckBtn" Content="Check for updates" HorizontalAlignment="Left" Click="OnCheckUpdate"/>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

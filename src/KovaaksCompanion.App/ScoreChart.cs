@@ -238,7 +238,7 @@ public sealed class ScoreChart : FrameworkElement
         }
         else dc.DrawLine(new Pen(WithAlpha(fg, 0.25), 1), new Point(x, Top), new Point(x, h - Bottom));
 
-        var date = p.When.ToString(_kind == ChartKind.Line ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var date = _kind == ChartKind.Line ? ClockFormat.DateClock(p.When) : p.When.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var t1 = Text(date, 10, Res("Dim"));
         var t2 = Text(p.Value.ToString(_format, CultureInfo.InvariantCulture), 13, fg, true);
         double bw = Math.Max(t1.Width, t2.Width) + 16, bh = t1.Height + t2.Height + 12;

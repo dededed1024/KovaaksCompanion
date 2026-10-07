@@ -106,7 +106,7 @@ public sealed class RankBlocksChart : FrameworkElement
     void DrawTip(DrawingContext dc, double w, double h, double x, Brush fg, Brush dim)
     {
         var (name, rank, frac) = _items[_hover];
-        var tier = rank >= 1 && rank <= _names.Count ? _names[rank - 1] : "Unranked";
+        var tier = rank >= 1 && rank <= _names.Count ? _names[rank - 1] : "UNRANKED";
         var tb = rank >= 1 && rank <= _brushes.Count ? _brushes[rank - 1] : dim;
         var t1 = Text(name, 13, fg, true);
         var t2 = Text(tier, 11, ChartPaths.TextTone(tb), true);

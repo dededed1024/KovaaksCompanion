@@ -53,7 +53,7 @@
         <!-- Playlist popup: scrim + card below the title bar -->
         <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
             <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1480" Margin="16,56,16,16" CornerRadius="18" Background="#F2232326"
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="#F2232326"
                     BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -77,6 +77,8 @@
                                 <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
                                         MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Favorite" Click="OnStarClick" Visibility="Collapsed"/>
+                                <Button x:Name="Pin" Content="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Show tier on Home" Click="OnPinClick" Visibility="Collapsed"/>
                                 <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 <Border x:Name="CodeChip" Background="#14FFFFFF" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
                                         ToolTip="Copy sharecode" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
@@ -86,8 +88,6 @@
                                         ToolTip="Start in KovaaK's" Click="OnPlayListClick" Visibility="Collapsed"/>
                             </StackPanel>
                         </DockPanel>
-                        <Button Grid.Column="1" Style="{StaticResource PopupClose}" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
-                                Width="36" Height="36" Margin="12,0,0,0" VerticalAlignment="Top" ToolTip="Close (Esc)" Click="OnCloseClick"/>
                     </Grid>
                     <TextBlock x:Name="Summary" Grid.Row="1" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{StaticResource Dim}"/>
                     <ScrollViewer x:Name="PlaylistScroll" Focusable="False" Grid.Row="2" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto"
@@ -95,6 +95,21 @@
                         <Grid x:Name="PageHost" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                     </ScrollViewer>
                 </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Search popup: scrim + command-palette card near the top -->
+        <Grid x:Name="SearchPopup" Visibility="Collapsed" PreviewKeyDown="OnSearchKey">
+            <Border x:Name="SearchScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnSearchScrim"/>
+            <Border x:Name="SearchCard" Width="640" MaxWidth="1200" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="48,72,48,48" CornerRadius="18" Background="#F2232326"
+                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><ScaleTransform x:Name="SearchScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+                <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                <StackPanel>
+                    <TextBox x:Name="SearchBox" Tag="Search playlists and scenarios" Margin="16" TextChanged="OnSearchChanged"/>
+                    <ScrollViewer x:Name="SearchScroll" Focusable="False" MaxHeight="440" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  CanContentScroll="False" Visibility="Collapsed" Margin="0,0,0,10"/>
+                </StackPanel>
             </Border>
         </Grid>
     </Grid>

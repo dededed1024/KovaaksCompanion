@@ -5,6 +5,7 @@ using KovaaksCompanion.Core;
 using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Input;
 using KovaaksCompanion.Core.Session;
+using KovaaksCompanion.Core.Update;
 using KovaaksCompanion.Core.Video;
 using WinForms = System.Windows.Forms;
 
@@ -26,6 +27,8 @@ public sealed class AppHost : IDisposable
     static System.Drawing.Icon LoadTrayIcon() { using var s = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")).Stream; return new System.Drawing.Icon(s, WinForms.SystemInformation.SmallIconSize); }
     MainWindow? _main;
     string _lastError = "";
+    ReleaseInfo? _pendingUpdate;
+    static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
     readonly string _uiFile;
@@ -94,6 +97,30 @@ public sealed class AppHost : IDisposable
         BuildTray();
         Autostart.Refresh(_settings.StartWithWindows);
         if (showMain) ShowMain("Stats");
+        _ = CheckForUpdate();
+    }
+
+    /// <summary>One background release check per run; a newer release is offered in the main window, now or when it next opens.</summary>
+    async Task CheckForUpdate()
+    {
+        try
+        {
+            var latest = await UpdateCheck.Fetch(Http);
+            if (!UpdateCheck.IsNewer(latest, App.CurrentVersion)) return;
+            _pendingUpdate = latest;
+            _app.Dispatcher.Invoke(OfferUpdate);
+        }
+        catch (Exception e) { AppLog.Write("update", "check failed: " + e.Message); }
+    }
+
+    /// <summary>Opens the update popup for a release found by a manual check.</summary>
+    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) => _app.Dispatcher.Invoke(() => _main?.ShowUpdate(release));
+
+    void OfferUpdate()
+    {
+        if (_main == null || _pendingUpdate == null) return;
+        var r = _pendingUpdate; _pendingUpdate = null;
+        _main.ShowUpdate(r);
     }
 
 
@@ -139,6 +166,7 @@ public sealed class AppHost : IDisposable
         }
         else { if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal; _main.Activate(); }
         if (page != null) _main.ShowPage(page);
+        OfferUpdate();
     });
 
     /// <summary>Opens the replay popup (scenario overview) over the main window; <paramref name="origin"/> is the clicked point in window coordinates.</summary>

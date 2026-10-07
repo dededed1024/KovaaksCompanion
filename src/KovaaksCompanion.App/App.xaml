@@ -307,7 +307,7 @@
 
         <!-- Slim scrollbar -->
         <Style TargetType="ScrollBar">
-            <Setter Property="Width" Value="10"/>
+            <Setter Property="Width" Value="5"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
@@ -315,10 +315,10 @@
                             <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" IsTabStop="False"/></Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" IsTabStop="False"/></Track.IncreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb>
+                                <Thumb MinHeight="24">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border x:Name="Th" Background="#66FFFFFF" CornerRadius="3" Margin="3,0"/>
+                                            <Border x:Name="Th" Background="#66FFFFFF" CornerRadius="1" Margin="1.5,0"/>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Th" Property="Background" Value="#99FFFFFF"/></Trigger>
                                                 <Trigger Property="IsDragging" Value="True"><Setter TargetName="Th" Property="Background" Value="#99FFFFFF"/></Trigger>
@@ -334,7 +334,7 @@
             <Style.Triggers>
                 <Trigger Property="Orientation" Value="Horizontal">
                     <Setter Property="Width" Value="Auto"/>
-                    <Setter Property="Height" Value="10"/>
+                    <Setter Property="Height" Value="5"/>
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="ScrollBar">
@@ -342,10 +342,10 @@
                                     <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0" IsTabStop="False"/></Track.DecreaseRepeatButton>
                                     <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" IsTabStop="False"/></Track.IncreaseRepeatButton>
                                     <Track.Thumb>
-                                        <Thumb>
+                                        <Thumb MinWidth="24">
                                             <Thumb.Template>
                                                 <ControlTemplate TargetType="Thumb">
-                                                    <Border x:Name="Th" Background="#66FFFFFF" CornerRadius="3" Margin="0,3"/>
+                                                    <Border x:Name="Th" Background="#66FFFFFF" CornerRadius="1" Margin="0,1.5"/>
                                                     <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Th" Property="Background" Value="#99FFFFFF"/></Trigger>
                                                         <Trigger Property="IsDragging" Value="True"><Setter TargetName="Th" Property="Background" Value="#99FFFFFF"/></Trigger>
@@ -371,6 +371,26 @@
                         <Grid>
                             <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}" CanContentScroll="{TemplateBinding CanContentScroll}"/>
                             <ScrollBar x:Name="PART_VerticalScrollBar" Orientation="Vertical" HorizontalAlignment="Right" Opacity="0" IsHitTestVisible="False"
+                                       Value="{TemplateBinding VerticalOffset}" Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                            <ScrollBar x:Name="PART_HorizontalScrollBar" Orientation="Horizontal" VerticalAlignment="Bottom" Opacity="0" IsHitTestVisible="False"
+                                       Value="{TemplateBinding HorizontalOffset}" Maximum="{TemplateBinding ScrollableWidth}" ViewportSize="{TemplateBinding ViewportWidth}"
+                                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Scroll viewer with an always-visible vertical bar (no fade) -->
+        <Style x:Key="PinnedScroll" TargetType="ScrollViewer">
+            <Setter Property="app:ScrollFade.IsEnabled" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}" CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                            <ScrollBar x:Name="PART_VerticalScrollBar" Orientation="Vertical" HorizontalAlignment="Right"
                                        Value="{TemplateBinding VerticalOffset}" Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}"
                                        Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
                             <ScrollBar x:Name="PART_HorizontalScrollBar" Orientation="Horizontal" VerticalAlignment="Bottom" Opacity="0" IsHitTestVisible="False"

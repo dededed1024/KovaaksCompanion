@@ -22,6 +22,57 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="PlayerButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="#24FFFFFF"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="PlayerToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{StaticResource Dim}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/></Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#330A84FF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="Chip" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
             <Style.Triggers>
@@ -77,6 +128,7 @@
                                             <TextBlock Text="PB" Foreground="{StaticResource Green}" FontSize="12" FontWeight="SemiBold" Margin="10,3"/>
                                         </Grid>
                                         <TextBlock x:Name="RunDate" Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                        <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" ToolTip="Show video file in Explorer" Click="OnShowVideo" MinHeight="34" MinWidth="34" Padding="0" Margin="0,0,8,0"/>
                                         <Button Content="Overview" Click="OnOverview" MinHeight="34" Padding="14,0"/>
                                     </StackPanel>
                                 </Grid>
@@ -138,27 +190,40 @@
                             </Border>
 
                             <Slider x:Name="Seek" Grid.Row="3" Margin="11,8,11,0" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
-                                    PreviewMouseLeftButtonDown="OnSeekDown" PreviewMouseLeftButtonUp="OnSeekUp" ValueChanged="OnSeekChanged"/>
+                                    ValueChanged="OnSeekChanged"/>
 
-                            <WrapPanel x:Name="TransportBar" Grid.Row="4" Margin="0,8,0,0">
-                                <StackPanel x:Name="Transport" Orientation="Horizontal" Margin="0,0,16,0">
-                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Play / pause (Space)" Width="88" Style="{StaticResource Primary}" Click="OnPlayPause"/>
-                                    <Button Content="&#x2039; 1f" Click="OnStepBack" ToolTip="Step back 1/60 s (←)"/>
-                                    <Button Content="1f &#x203A;" Click="OnStepForward" ToolTip="Step forward 1/60 s (→)"/>
-                                    <ToggleButton x:Name="TrailBtn" Content="Trail" Style="{StaticResource Toggle}" ToolTip="Show or hide the trail (T)" Click="OnTrailClick"/>
-                                    <Button x:Name="FsBtn" Content="&#xE740;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Fullscreen (F)" Click="OnFsClick"/>
-                                    <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Show video file in Explorer" Click="OnShowVideo"/>
+                            <Grid x:Name="TransportBar" Grid.Row="4" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontSize="20" Width="40" Height="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Play / pause (Space)" Click="OnPlayPause"/>
+                                    <Button Content="&#x2039; 1f" Style="{StaticResource PlayerButton}" Click="OnStepBack" ToolTip="Step back 1/60 s (←)"/>
+                                    <Button Content="1f &#x203A;" Style="{StaticResource PlayerButton}" Click="OnStepForward" ToolTip="Step forward 1/60 s (→)"/>
+                                    <TextBlock x:Name="TimeReadout" FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource Dim}">
+                                        <Run x:Name="TimeNow" Foreground="{StaticResource Fg}" Text="0:00"/><Run Text=" / "/><Run x:Name="TimeTotal" Text="0:00"/>
+                                    </TextBlock>
                                 </StackPanel>
-                                <Border Style="{StaticResource SegmentTrack}">
-                                    <StackPanel x:Name="SpeedBar" Orientation="Horizontal">
-                                        <RadioButton Style="{StaticResource Segment}" Content="0.25x" Tag="0.25" Checked="OnSpeedChecked"/>
-                                        <RadioButton Style="{StaticResource Segment}" Content="0.5x" Tag="0.5" Checked="OnSpeedChecked"/>
-                                        <RadioButton Style="{StaticResource Segment}" Content="1x" Tag="1" IsChecked="True" Checked="OnSpeedChecked"/>
-                                        <RadioButton Style="{StaticResource Segment}" Content="1.5x" Tag="1.5" Checked="OnSpeedChecked"/>
-                                        <RadioButton Style="{StaticResource Segment}" Content="2x" Tag="2" Checked="OnSpeedChecked"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <StackPanel x:Name="NudgeBox" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Trail sync">
+                                        <Button x:Name="NudgeMinus" Content="&#x2212;" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail earlier 10 ms ([)" Click="OnNudgeMinus"/>
+                                        <TextBlock x:Name="NudgeText" Text="0 ms" FontSize="12.5" MinWidth="56" TextAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Dim}"
+                                                   Cursor="Hand" Background="Transparent" ToolTip="Trail sync (click to reset)" MouseLeftButtonUp="OnNudgeReset"/>
+                                        <Button x:Name="NudgePlus" Content="+" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail later 10 ms (])" Click="OnNudgePlus"/>
                                     </StackPanel>
-                                </Border>
-                            </WrapPanel>
+                                    <ToggleButton x:Name="TrailBtn" Content="Trail" Style="{StaticResource PlayerToggle}" ToolTip="Show or hide the trail (T)" Click="OnTrailClick"/>
+                                    <Button x:Name="SpeedBtn" Content="1x" Style="{StaticResource PlayerButton}" MinWidth="48" ToolTip="Playback speed" Click="OnSpeedClick"/>
+                                    <Popup x:Name="SpeedPop" PlacementTarget="{Binding ElementName=SpeedBtn}" Placement="Top" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                                        <Border Margin="10,10,10,6" Padding="4" CornerRadius="10" Background="#FF2A2A2E" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                            <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                                            <StackPanel x:Name="SpeedMenu"/>
+                                        </Border>
+                                    </Popup>
+                                    <Button x:Name="FsBtn" Content="&#xE740;" FontSize="16" Width="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Fullscreen (F)" Click="OnFsClick"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Grid>
 
@@ -175,13 +240,11 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock x:Name="Heading" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                <Button x:Name="PlayScn" Content="Play" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
+                            <DockPanel>
+                                <Button x:Name="PlayScn" DockPanel.Dock="Right" Content="Play" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
                                         ToolTip="Start in KovaaK's" Click="OnPlayScenario" Visibility="Collapsed"/>
-                            </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource SheetClose}" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
-                                    Width="36" Height="36" Margin="12,0,0,0" ToolTip="Close" Click="OnCloseClick"/>
+                                <TextBlock x:Name="Heading" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                            </DockPanel>
                         </Grid>
                         <ItemsControl x:Name="SideTiles" Grid.Row="1" Style="{StaticResource StatTiles}" Margin="0,0,0,4"/>
                         <Border x:Name="SideChartCard" Grid.Row="2" Style="{StaticResource SheetCard}" Padding="14,10,14,8">

@@ -96,7 +96,7 @@ public partial class StatsView
             var st = BenchmarkTable.Summarize(cat, tiers);
             Brush? rb = st.Rank >= 1 && st.Rank <= c.Brushes.Count ? c.Brushes[st.Rank - 1] : null;
             var nb = st.Rank < tiers && st.Rank < c.Brushes.Count ? c.Brushes[st.Rank] : rb ?? DimB;
-            return new CatInfo(cat, st, rb == null ? "Unranked" : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
+            return new CatInfo(cat, st, rb == null ? "UNRANKED" : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
         }).ToList();
     }
 
@@ -166,7 +166,7 @@ public partial class StatsView
         var p = c.P;
         var r = c.Report;
         var ranked = p.OverallRank > 0;
-        page.Children.Add(Hero(ranked ? p.OverallRankName : "Unranked", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {p.Progress:#,0} pts",
+        page.Children.Add(Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.ProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
             $"{r.PlayedCount} of {r.ScenarioCount} scenarios played · {r.TotalPlays} plays · {Dur(r.TimePlayed)}"));
 
         var tiers = c.Names.Count;
@@ -237,7 +237,7 @@ public partial class StatsView
     UIElement BuildDistribution(PlaylistCtx c)
     {
         var donut = new RankDonut { Margin = new Thickness(16, 4, 16, 12) };
-        donut.Set(Enumerable.Range(0, c.Counts.Length).Select(k => k == 0 ? ("Unranked", DimB, c.Counts[0]) : (c.Names[k - 1], c.Brushes[k - 1], c.Counts[k])).ToList());
+        donut.Set(Enumerable.Range(0, c.Counts.Length).Select(k => k == 0 ? ("UNRANKED", DimB, c.Counts[0]) : (c.Names[k - 1], c.Brushes[k - 1], c.Counts[k])).ToList());
         return TitledCard("Rank distribution", null, donut);
     }
 
@@ -262,10 +262,11 @@ public partial class StatsView
     /// <summary>Activity calendar (left) and progress chart (right) in one card; stacked when narrower than 820px.</summary>
     UIElement BuildActivity(PlaylistCtx c) => ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), c.Note);
 
-    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int weeks, FrameworkElement chart, string? note = null)
+    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, string? note = null, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0)
     {
         var cal = new ActivityCalendar { FixedWeeks = weeks, MaxCell = 16, Margin = new Thickness(0, 0, 0, 12) };
         cal.Set(plays, tone);
+        withCalendar?.Invoke(cal);
         var left = new StackPanel();
         left.Children.Add(cal);
 
@@ -302,7 +303,8 @@ public partial class StatsView
             }
             else
             {
-                body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var share = calendarShare > 0;
+                body.ColumnDefinitions.Add(new ColumnDefinition { Width = share ? new GridLength(calendarShare, GridUnitType.Star) : GridLength.Auto });
                 body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 Grid.SetRow(left, 0); Grid.SetColumn(left, 0); Grid.SetRow(right, 0); Grid.SetColumn(right, 2);
@@ -443,7 +445,7 @@ public partial class StatsView
             name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = a.Label;
             g.Children.Add(name);
             var right = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0) };
-            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : "Unranked", 12, tb, FontWeights.SemiBold));
+            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : "UNRANKED", 12, tb, FontWeights.SemiBold));
             Grid.SetColumn(right, 1);
             g.Children.Add(right);
             var f = v / max;

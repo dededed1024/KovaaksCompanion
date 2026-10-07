@@ -20,10 +20,8 @@ public partial class SettingsView : UserControl
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     bool _open, _loading = true;
     int _tok;
-    string _releaseUrl = UpdateCheck.LatestPage;
 
-    static Version Current => UpdateCheck.ParseVersion(typeof(SettingsView).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion) ?? new Version(0, 0, 0);
+    static Version Current => App.CurrentVersion;
 
     public SettingsView(AppHost host)
     {
@@ -117,21 +115,29 @@ public partial class SettingsView : UserControl
         Save();
     }
 
-    async void OnCheckUpdate(object sender, RoutedEventArgs e) => await CheckUpdate();
+    const string CheckText = "Check for updates";
 
-    async Task CheckUpdate()
+    void OnAutoStartLabel(object sender, MouseButtonEventArgs e) => AutoStart.IsChecked = AutoStart.IsChecked != true;
+
+    async void OnCheckUpdate(object sender, RoutedEventArgs e)
     {
+        var tok = _tok;
         CheckBtn.IsEnabled = false;
-        UpdateStatus.Text = "Checking…";
+        CheckBtn.Content = "Checking…";
         var latest = await UpdateCheck.Fetch(Http);
-        CheckBtn.IsEnabled = true;
-        if (latest == null) { UpdateStatus.Text = "Could not check"; return; }
-        _releaseUrl = latest.Url;
-        UpdateStatus.Text = UpdateCheck.IsNewer(latest, Current) ? $"Update available: v{latest.Version.ToString(3)}" : "Up to date";
+        if (tok != _tok) return;
+        if (latest != null && UpdateCheck.IsNewer(latest, Current))
+        {
+            ResetCheck();
+            _host.ShowUpdate(latest);
+            return;
+        }
+        CheckBtn.Content = latest == null ? "Could not check" : "Up to date";
+        await Task.Delay(3000);
+        if (tok == _tok) ResetCheck();
     }
 
-    void OnOpenRelease(object sender, RoutedEventArgs e) =>
-        Process.Start(new ProcessStartInfo(_releaseUrl) { UseShellExecute = true });
+    void ResetCheck() { CheckBtn.Content = CheckText; CheckBtn.IsEnabled = true; }
 
     // ---- popup shell -------------------------------------------------------------------------------------------
 
@@ -150,9 +156,8 @@ public partial class SettingsView : UserControl
         Load();
         _open = true;
         VersionCaption.Text = $"Version {Current.ToString(3)}";
-        UpdateStatus.Text = "";
-        _ = CheckUpdate();
         var tok = ++_tok;
+        ResetCheck();
         Scrim.BeginAnimation(OpacityProperty, null); Scrim.Opacity = 0;
         Card.BeginAnimation(OpacityProperty, null); Card.Opacity = 0;
         Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);

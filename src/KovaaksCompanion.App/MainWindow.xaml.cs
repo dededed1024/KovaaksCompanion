@@ -10,6 +10,7 @@ public partial class MainWindow : Window
     readonly StatsView _stats;
     readonly ReplayView _replay;
     readonly SettingsView _settings;
+    readonly UpdateView _update = new();
 
     public MainWindow(AppHost host)
     {
@@ -21,6 +22,7 @@ public partial class MainWindow : Window
         Pages.Children.Add(_stats);
         Root.Children.Add(_replay); // above the pages, below the title bar (ZIndex 1), so the caption buttons keep working
         Root.Children.Add(_settings);
+        Root.Children.Add(_update);
         PreviewKeyDown += OnNavKey;
         PreviewMouseDown += (_, e) => { if (e.ChangedButton == MouseButton.XButton1) { e.Handled = true; GoBack(); } };
         Closed += (_, _) => { _stats.Detach(); _replay.Detach(); _settings.Detach(); };
@@ -42,19 +44,31 @@ public partial class MainWindow : Window
 
     void OnNavKey(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_update.IsOpen) { e.Handled = true; OnSearch(null!, null!); return; }
         if (!_settings.IsOpen && _replay.HandleKey(e)) return;
         var back = (e.Key == Key.Escape && Keyboard.FocusedElement is not TextBox) || (e.Key == Key.System && e.SystemKey == Key.Left && Keyboard.Modifiers.HasFlag(ModifierKeys.Alt));
         if (back) e.Handled = GoBack();
     }
 
     /// <summary>Closes the topmost popup or overlay; false when nothing was open.</summary>
-    bool GoBack() => _settings.Close() || _replay.Close() || _stats.CloseOverlay();
+    bool GoBack() => _update.Close() || _settings.Close() || _replay.Close() || _stats.CloseOverlay();
+
+    void OnSearch(object sender, RoutedEventArgs e)
+    {
+        _settings.Close();
+        _replay.Close();
+        _stats.OpenSearch();
+    }
 
     void OnGear(object sender, RoutedEventArgs e)
     {
+        _stats.CloseSearch();
         _replay.Close();
         _settings.Open();
     }
+
+    /// <summary>Opens the update popup above everything else.</summary>
+    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) => _update.Open(release);
 
     public void ShowPage(string page)
     {

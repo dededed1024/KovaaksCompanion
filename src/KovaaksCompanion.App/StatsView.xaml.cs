@@ -26,6 +26,7 @@ public partial class StatsView : UserControl
     readonly AppHost _host;
     readonly KovaaksApi _api = new();
     readonly Dictionary<int, BenchmarkProgress> _progress = [];
+    readonly Dictionary<int, BenchmarkProgress> _rawProgress = [];
     readonly Dictionary<string, double> _serverBest = new(StringComparer.OrdinalIgnoreCase);
     RunLibrary _lib = new([]);
     List<SessionInfo> _sessions = [];
@@ -59,11 +60,11 @@ public partial class StatsView : UserControl
             sv.PreviewMouseWheel += OnWheel;
             sv.ScrollChanged += OnScrolled;
         }
+        MiddleScroll.Started += _ => StopEase();
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); };
         HomeScroll.ScrollChanged += (_, _) => UpdateLivePill();
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
-        InitSearch();
         Loaded += (_, _) => { if (_loaded) return; _loaded = true; Reload(); };
     }
 
@@ -75,11 +76,23 @@ public partial class StatsView : UserControl
     readonly System.Diagnostics.Stopwatch _clock = new();
     TimeSpan _lastTick;
 
-    /// <summary>Smooth wheel scrolling over the whole playlist page: ease towards a target offset (about 40px per notch).</summary>
+    /// <summary>Smooth wheel scrolling over the whole page: ease towards a target offset (about 40px per notch). Inner scrollers that can still move get the wheel first; otherwise it chains to the outer one.</summary>
     void OnWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
     {
         e.Handled = true;
-        var sv = (ScrollViewer)sender;
+        var outer = (ScrollViewer)sender;
+        var sv = outer;
+        var node = e.OriginalSource as DependencyObject;
+        while (node != null && node != outer)
+        {
+            if (node is ScrollViewer inner && inner.ScrollableHeight > 0
+                && (e.Delta > 0 ? inner.VerticalOffset > 0 : e.Delta < 0 && inner.VerticalOffset < inner.ScrollableHeight))
+            {
+                sv = inner;
+                break;
+            }
+            node = node is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        }
         if (_easing && sv != _ws) StopEase();
         _ws = sv;
         if (!_easing) _target = sv.VerticalOffset;
@@ -126,17 +139,17 @@ public partial class StatsView : UserControl
     /// <summary>The difficulty control sits right of the title, or wraps below it when they do not fit together.</summary>
     void FitHeading()
     {
-        var avail = Detail.ActualWidth - 48 - (CodeChip.Visibility == Visibility.Visible ? 200 : 0); // minus the close button and sharecode controls
+        var avail = Detail.ActualWidth - (CodeChip.Visibility == Visibility.Visible ? 200 : 0); // minus the sharecode controls
         var diff = DiffTrack.Visibility == Visibility.Visible;
         Heading.MaxWidth = double.PositiveInfinity;
         Heading.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         DiffTrack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         var dw = DiffTrack.DesiredSize.Width + 12;
-        var below = diff && Heading.DesiredSize.Width + 140 + dw > avail;
+        var below = diff && Heading.DesiredSize.Width + 180 + dw > avail;
         DockPanel.SetDock(DiffTrack, below ? Dock.Bottom : Dock.Right);
         DiffTrack.HorizontalAlignment = below ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
         DiffTrack.Margin = below ? new Thickness(0, 10, 0, 0) : new Thickness(12, 0, 0, 0);
-        Heading.MaxWidth = Math.Max(120, avail - 140 - (diff && !below ? dw : 0));
+        Heading.MaxWidth = Math.Max(120, avail - 180 - (diff && !below ? dw : 0));
     }
 
     /// <summary>Playlist page: up to 1100px wide, centred.</summary>
@@ -177,11 +190,23 @@ public partial class StatsView : UserControl
         if (_playlist is { } key) ToggleFavorite(key);
     }
 
+    /// <summary>Pins this playlist's tier to the Home hero, or unpins it.</summary>
+    void OnPinClick(object sender, RoutedEventArgs e)
+    {
+        if (_playlist is not { } key) return;
+        _host.Ui.TogglePinned(key);
+        _host.SaveUi();
+        ShowStar();
+        FitHeading();
+        RefreshHome();
+    }
+
     void ToggleFavorite(string key)
     {
         _host.Ui.ToggleFavorite(key);
         _host.SaveUi();
         ShowStar();
+        RefreshHome();
     }
 
     /// <summary>The difficulty shown for a benchmark: the remembered one, else the first favourite, else the first.</summary>
@@ -191,7 +216,12 @@ public partial class StatsView : UserControl
 
     void ShowStar()
     {
-        if (_playlist is not { } key) { Star.Visibility = Visibility.Collapsed; return; }
+        if (_playlist is not { } key) { Star.Visibility = Visibility.Collapsed; Pin.Visibility = Visibility.Collapsed; return; }
+        var pinned = _host.Ui.IsPinned(key);
+        Pin.Content = ((char)(pinned ? 0xE842 : 0xE718)).ToString();
+        Pin.Foreground = (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim");
+        Pin.ToolTip = pinned ? "Remove tier from Home" : "Show tier on Home";
+        Pin.Visibility = Visibility.Visible;
         var fav = _host.Ui.IsFavorite(key);
         Star.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
         Star.Foreground = (System.Windows.Media.Brush)FindResource(fav ? "Orange" : "Dim");
@@ -202,7 +232,14 @@ public partial class StatsView : UserControl
     /// <summary>The run's CSV is complete: show it now, without waiting for the clip to be cut.</summary>
     void OnRunFinished() => Dispatcher.InvokeAsync(() => { if (_loaded) Reload(); });
 
-    void OnGameStateChanged() => Dispatcher.InvokeAsync(CheckLive);
+    void OnGameStateChanged() => Dispatcher.InvokeAsync(() =>
+    {
+        var active = _host.GameActive;
+        if (_gameWasActive && !active) _gameClosed = true;
+        else if (active) _gameClosed = false;
+        _gameWasActive = active;
+        CheckLive();
+    });
 
     /// <summary>Redraws Home when the live state flipped: the game started or stopped, or the newest session aged out.</summary>
     void CheckLive()
@@ -230,6 +267,7 @@ public partial class StatsView : UserControl
             ApplyProgress(c.D, c.P);
             _fetched[c.D.KovaaksBenchmarkId] = c.At;
         }
+        ReapplyLocal();
         ShowHome();
         if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         _ = RefreshProgressAsync();
@@ -240,9 +278,10 @@ public partial class StatsView : UserControl
     /// <summary>True while the playlist popup is open.</summary>
     public bool IsPopupOpen => _popupOpen;
 
-    /// <summary>Closes the playlist popup; false when it was not open.</summary>
+    /// <summary>Closes the topmost popup (search, then playlist); false when none was open.</summary>
     public bool CloseOverlay()
     {
+        if (_searchOpen) { CloseSearch(); return true; }
         if (!_popupOpen) return false;
         ClosePopup();
         return true;
@@ -305,25 +344,26 @@ public partial class StatsView : UserControl
         });
     }
 
-    void Animate(bool show, Action? done)
+    void Animate(bool show, Action? done, Border? scrim = null, Border? card = null, ScaleTransform? scale = null)
     {
+        scrim ??= Scrim; card ??= PopupCard; scale ??= Scale;
         var ms = TimeSpan.FromMilliseconds(show ? 260 : 180);
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        Scrim.BeginAnimation(OpacityProperty, new DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(show ? 200 : 180)), HandoffBehavior.SnapshotAndReplace);
+        scrim.BeginAnimation(OpacityProperty, new DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(show ? 200 : 180)), HandoffBehavior.SnapshotAndReplace);
         var fade = new DoubleAnimation(show ? 1 : 0, ms) { EasingFunction = ease };
         if (done != null) fade.Completed += (_, _) => done();
-        PopupCard.BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
+        card.BeginAnimation(OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
         var sx = new DoubleAnimation(show ? 1 : 0.96, ms) { EasingFunction = ease };
         var sy = sx.Clone();
-        Scale.BeginAnimation(ScaleTransform.ScaleXProperty, sx, HandoffBehavior.SnapshotAndReplace);
-        Scale.BeginAnimation(ScaleTransform.ScaleYProperty, sy, HandoffBehavior.SnapshotAndReplace);
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, sx, HandoffBehavior.SnapshotAndReplace);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, sy, HandoffBehavior.SnapshotAndReplace);
     }
 
     string ItemSubtitle(Benchmark b)
     {
         var d0 = b.Difficulties[0];
         var text = b.Difficulties.Count > 1 ? $"{b.Difficulties.Count} difficulties · {d0.ScenarioCount} scenarios" : $"{d0.ScenarioCount} scenarios";
-        if (_progress.TryGetValue(Chosen(b).KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0) text += $" · {p.OverallRankName}";
+        if (_progress.TryGetValue(Chosen(b).KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0) text += $" · {TierText.Label(p.OverallRankName)}";
         return text;
     }
 
@@ -418,6 +458,7 @@ public partial class StatsView : UserControl
                 return;
             }
             ApplyProgress(d, p);
+            p = _progress[d.KovaaksBenchmarkId];
         }
         if (tok != _token) return;
 
@@ -458,7 +499,7 @@ public partial class StatsView : UserControl
             }).ToList();
             cats.Add(new BenchCategory(g.Key, ParseBrush(def?.Color), subs));
         }
-        _ctx = new PlaylistCtx(item, d, p, report, cats, tierNames, tierBrushes, history, counts, blocks, entries, cutoff, item.Theme, "");
+        _ctx = new PlaylistCtx(item, d, p, report, cats, tierNames.Select(TierText.Label).ToList(), tierBrushes, history, counts, blocks, entries, cutoff, item.Theme, "");
         SetLayout("playlist");
         ShowPlaylist(keep);
         _ = LoadCloudAsync(tok, d, p);
@@ -511,7 +552,7 @@ public partial class StatsView : UserControl
         var d = BenchmarkCatalog.All.SelectMany(b => b.Difficulties).FirstOrDefault(x => x.KovaaksBenchmarkId == h.Id);
         if (d == null) return null;
         var sc = h.P.Scenarios.First(x => x.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && x.RankMaxes.Count > 0);
-        return sc.RankMaxes.Select((v, i) => new ChartBand(v, h.P.RankName(i + 1), RankBrush(d, h.P.RankName(i + 1)))).ToList();
+        return sc.RankMaxes.Select((v, i) => new ChartBand(v, TierText.Label(h.P.RankName(i + 1)), RankBrush(d, h.P.RankName(i + 1)))).ToList();
     }
 
     /// <summary>The colour blended <paramref name="t"/> of the way towards white.</summary>

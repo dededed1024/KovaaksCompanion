@@ -44,9 +44,20 @@ public partial class StatsView
     /// <summary>Stores a difficulty's progress and feeds the server-best and playlist-scenario lookups.</summary>
     void ApplyProgress(Difficulty d, BenchmarkProgress p)
     {
-        _progress[d.KovaaksBenchmarkId] = p;
+        _rawProgress[d.KovaaksBenchmarkId] = p;
+        _progress[d.KovaaksBenchmarkId] = WithLocal(p);
         foreach (var s in p.Scenarios) if (s.Score > 0) _serverBest[s.Scenario] = s.Score;
         _index.Set(d.KovaaksBenchmarkId, p.Scenarios.Select(s => s.Scenario));
+    }
+
+    /// <summary>The server progress with the local bests folded in, so tiers reflect runs the server does not have yet.</summary>
+    BenchmarkProgress WithLocal(BenchmarkProgress p) =>
+        p.WithLocalBests(n => _lib.Runs(n) is { Count: > 0 } r ? r.Max(x => x.Score) : null);
+
+    /// <summary>Re-applies the local bests after the run library changed.</summary>
+    void ReapplyLocal()
+    {
+        foreach (var (id, raw) in _rawProgress) _progress[id] = WithLocal(raw);
     }
 
     /// <summary>Fetches one difficulty's progress and caches the raw JSON.</summary>

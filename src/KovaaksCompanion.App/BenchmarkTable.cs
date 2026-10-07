@@ -158,7 +158,7 @@ public sealed class BenchmarkTable : UserControl
             {
                 CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Background = WithAlpha(rankBrush ?? dim, 0.15),
-                Child = new TextBlock { Text = rankBrush == null ? "Unranked" : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = ChartPaths.TextTone(rankBrush ?? dim) },
+                Child = new TextBlock { Text = rankBrush == null ? "UNRANKED" : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = ChartPaths.TextTone(rankBrush ?? dim) },
             }, 1);
             var bar = new Grid { Width = 120, Height = 4, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
@@ -175,7 +175,7 @@ public sealed class BenchmarkTable : UserControl
         Put(g, Cell("SCENARIO", 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
         Put(g, Cell("SCORE", 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
-            Put(g, Cell(tierNames[k].ToUpperInvariant(), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, -8, 0), false), cr, 3 + k);
+            Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, -8, 0), false), cr, 3 + k);
         Put(g, Cell("PLAYS", 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 3 + tiers);
 
         foreach (var sub in subs)
