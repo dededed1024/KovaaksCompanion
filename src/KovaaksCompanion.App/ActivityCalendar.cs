@@ -14,6 +14,7 @@ public sealed class ActivityCalendar : FrameworkElement
     IReadOnlyDictionary<DateTime, int> _plays = new Dictionary<DateTime, int>();
     Brush _tone = Brushes.Gray;
     (int Week, int Row)? _hover;
+    static Brush? _pbDotShadow;
 
     /// <summary>Most weeks shown (53 = a full year). Fewer weeks make the cells grow to fill the width (10..18px).</summary>
     public int MaxWeeks { get; set; } = 53;
@@ -24,9 +25,17 @@ public sealed class ActivityCalendar : FrameworkElement
     /// <summary>When set, always shows exactly this many weeks; the cells (and so the height and the label sizes) scale with the width, keeping the aspect ratio.</summary>
     public int? FixedWeeks { get; set; }
 
+    IReadOnlySet<DateTime> _pbDays = new HashSet<DateTime>();
+    /// <summary>Days with a personal best; their cells get a green dot.</summary>
+    public IReadOnlySet<DateTime> PbDays
+    {
+        get => _pbDays;
+        set { _pbDays = value ?? new HashSet<DateTime>(); InvalidateVisual(); }
+    }
+
     double CellFor(double w) => FixedWeeks is { } n ? Math.Clamp((w - LeftW - Right) / n - Gap, 6, MaxCell) : Math.Clamp((w - LeftW - Right) / MaxWeeks - Gap, 10, MaxCell);
 
-    double ScaleFor(double cell) => FixedWeeks == null ? 1 : Math.Clamp(cell / 12, 0.85, 1.3);
+    double ScaleFor(double cell) => FixedWeeks == null ? (cell >= 20 ? 1.3 : 1) : Math.Clamp(cell / 12, 0.85, 1.3);
 
     double Cell => CellFor(ActualWidth);
 
@@ -158,11 +167,31 @@ public sealed class ActivityCalendar : FrameworkElement
                     g.Freeze();
                     fill = g;
                 }
-                Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : _selected == day ? new Pen(fg, 1.5) : day == today ?new Pen(Alpha(fg, 0.5), 1) : null;
+                Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : _selected == day ? new Pen(fg, 1.5) : day == today ? new Pen(Alpha(fg, 0.5), 1) : null;
                 dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
+                if (PbDays.Contains(day))
+                {
+                    var dotRadius = Math.Max(2, Cell * 0.16);
+                    var dotCenter = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+                    if (_pbDotShadow == null)
+                    {
+                        _pbDotShadow = new RadialGradientBrush
+                        {
+                            GradientStops = new GradientStopCollection
+                            {
+                                new GradientStop(Color.FromArgb(0x22, 0, 0, 0), 0),
+                                new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 0.5),
+                                new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)
+                            }
+                        };
+                        _pbDotShadow.Freeze();
+                    }
+                    dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
+                    dc.DrawEllipse(Res("Green"), null, dotCenter, dotRadius, dotRadius);
+                }
             }
 
-        // Legend, bottom right.
+        // Legend, bottom right. Layout: "More" swatches "Less" [PB dot "Personal best"]
         var more = Text("More", 10 * sc, dim);
         var less = Text("Less", 10 * sc, dim);
         var y = h - FootH + 6 * sc;
@@ -177,7 +206,35 @@ public sealed class ActivityCalendar : FrameworkElement
             x0 -= 3;
         }
         x0 -= 1;
-        dc.DrawText(less, new Point(x0 - less.Width, y));
+
+        // "Less" and PB legend layout: right-to-left from lessX
+        var lessX = x0 - less.Width;
+        dc.DrawText(less, new Point(lessX, y));
+
+        // PB legend to the left of "Less"
+        if (PbDays.Count > 0)
+        {
+            var pbText = Text("Personal best", 10 * sc, dim);
+            var pbTextX = lessX - 14 * sc - pbText.Width;
+            dc.DrawText(pbText, new Point(pbTextX, y));
+            var dotRadius = Math.Max(2, Cell * 0.16);
+            var dotCenter = new Point(pbTextX - 6 * sc - dotRadius, y + sw / 2);
+            if (_pbDotShadow == null)
+            {
+                _pbDotShadow = new RadialGradientBrush
+                {
+                    GradientStops = new GradientStopCollection
+                    {
+                        new GradientStop(Color.FromArgb(0x22, 0, 0, 0), 0),
+                        new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 0.5),
+                        new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)
+                    }
+                };
+                _pbDotShadow.Freeze();
+            }
+            dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
+            dc.DrawEllipse(Res("Green"), null, dotCenter, dotRadius, dotRadius);
+        }
 
         if (_hover is { } hv)
         {

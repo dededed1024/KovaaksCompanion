@@ -34,7 +34,7 @@ public sealed class BenchmarkTable : UserControl
 
     public BenchmarkTable() => Content = _stack;
 
-    /// <summary>Narrowest width at which every column keeps its minimum (scenario 170, score 76, % 44, tiers 44 each, plays 48).</summary>
+    /// <summary>Narrowest width at which every column keeps its minimum (scenario 170, score 76, % 44, tiers 44 each).</summary>
     public double MinTableWidth { get; private set; }
 
     static Brush Res(string key) => (Brush)Application.Current.FindResource(key);
@@ -98,7 +98,7 @@ public sealed class BenchmarkTable : UserControl
     {
         _stack.Children.Clear();
         _cards.Clear();
-        MinTableWidth = 170 + 76 + 44 + 44 * tierNames.Count + 48 + 2;
+        MinTableWidth = 170 + 76 + 44 + 44 * tierNames.Count + 2;
         var dim = Res("Dim");
         var shown = cats.Where(c => c.Subs.Any(s => s.Rows.Count > 0)).ToList();
         if (shown.Count == 0)
@@ -132,7 +132,7 @@ public sealed class BenchmarkTable : UserControl
     {
         var dim = Res("Dim");
         var tiers = tierNames.Count;
-        var cols = tiers + 4; // scenario, score, to-next, tiers..., plays
+        var cols = tiers + 3; // scenario, score, to-next, tiers...
         var stat = Summarize(cat, tiers);
         var subs = cat.Subs.Where(s => s.Rows.Count > 0).ToList();
         var g = new Grid();
@@ -140,7 +140,6 @@ public sealed class BenchmarkTable : UserControl
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
         for (var i = 0; i < tiers; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 44 });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
 
         if (ShowCategoryHeader)
         {
@@ -176,7 +175,6 @@ public sealed class BenchmarkTable : UserControl
         Put(g, Cell("SCORE", 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
             Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, -8, 0), false), cr, 3 + k);
-        Put(g, Cell("PLAYS", 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 3 + tiers);
 
         foreach (var sub in subs)
         {
@@ -202,13 +200,14 @@ public sealed class BenchmarkTable : UserControl
     }
 
     /// <summary>A 4px progress track with a gradient fill of <paramref name="fraction"/> in the next tier's colour.</summary>
-    public static UIElement NextBar(double fraction, Brush next, double height = 4)
+    public static UIElement NextBar(double fraction, Brush next, double height = 4, Brush? track = null)
     {
         var c = next is SolidColorBrush s ? s.Color : Colors.Gray;
         var fill = new LinearGradientBrush(Color.FromArgb(0x99, c.R, c.G, c.B), c, 0);
         fill.Freeze();
         var g = new Grid { Height = height, VerticalAlignment = VerticalAlignment.Bottom };
-        g.Children.Add(new Border { CornerRadius = new CornerRadius(height / 2), Background = Argb("#1AFFFFFF") });
+        var trackBrush = track ?? Argb("#1AFFFFFF");
+        g.Children.Add(new Border { CornerRadius = new CornerRadius(height / 2), Background = trackBrush });
         var f = Math.Clamp(fraction, 0, 1);
         if (f > 0.001)
         {
@@ -281,8 +280,6 @@ public sealed class BenchmarkTable : UserControl
             }
             Add(cell, 2 + k);
         }
-
-        Add(Cell(row.Plays.ToString(), 12, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 8, 0)), 3 + tiers);
 
         var wash = new Border { Background = Argb("#0DFFFFFF"), Opacity = 0, IsHitTestVisible = false };
         Put(g, wash, r, 0, cols);

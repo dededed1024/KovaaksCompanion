@@ -85,13 +85,10 @@
                 <Image Source="pack://application:,,,/Assets/app.ico" Width="16" Height="16" Margin="0,0,8,0"/>
                 <TextBlock Text="KovaaK's Companion" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Dim}" VerticalAlignment="Center"/>
             </StackPanel>
-            <Button x:Name="SearchBtn" Grid.Column="3" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,2,0" VerticalAlignment="Center" ToolTip="Search" Click="OnSearch">
-                <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
-            </Button>
-            <Button x:Name="GearBtn" Grid.Column="4" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Settings" Click="OnGear">
+            <Button x:Name="GearBtn" Grid.Column="3" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Settings" Click="OnGear">
                 <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
             </Button>
-            <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Top">
+            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top">
                 <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize"/>
                 <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize"/>
                 <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Close"/>

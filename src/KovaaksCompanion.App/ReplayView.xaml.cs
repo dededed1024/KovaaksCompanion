@@ -55,7 +55,7 @@ public partial class ReplayView : UserControl
     const double FrameSec = 1.0 / 60;
     const string PlayGlyph = "", PauseGlyph = "";
     const int Page = 100;
-    static readonly TimeSpan SeekDelay = TimeSpan.FromSeconds(0.5);
+    static readonly TimeSpan SeekDelay = TimeSpan.FromSeconds(0.08);
     const double NudgeStepMs = 10, NudgeMaxMs = 500;
     static readonly TimeSpan NudgeSaveDelay = TimeSpan.FromMilliseconds(500);
 
@@ -72,10 +72,6 @@ public partial class ReplayView : UserControl
     ScenarioStats _stats = new("", []);
     HashSet<int> _pbs = [];
     string _scenario = "";
-    PlaySession? _sess; // session mode: the sidebar lists this session's runs; _scenario/_stats follow the selected run
-    DateTime _sessStart;
-    List<RunRecord> _sessRuns = [];
-    HashSet<DateTime> _sessPbs = [];
     DateTime? _selEnd;
     int _runIdx = -1;
     bool _open, _runMode;
@@ -89,6 +85,8 @@ public partial class ReplayView : UserControl
     double _speed = 1;
     bool _playing, _dragging, _seekPending;
     double _dragPos;
+    double _shownPos;
+    bool _resumeAfterDrag;
     long _holdUntil;
     FsState? _fs; // non-null while the stage fills the monitor
     readonly DispatcherTimer _fsTimer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -173,9 +171,6 @@ public partial class ReplayView : UserControl
     /// <summary>Opens (or replaces the content of) the popup on the scenario overview. <paramref name="origin"/> is in this control's coordinates.</summary>
     public void Show(ScenarioData data, string scenario, Point? origin) => Open(data, scenario, null, origin);
 
-    /// <summary>Opens the popup on a play session: its runs in the sidebar, the session overview on the stage.</summary>
-    public void ShowSession(ScenarioData data, PlaySession session, Point? origin) => Open(data, "", null, origin, session);
-
     /// <summary>Opens the popup with the run that ended at <paramref name="end"/> selected; false when it has no recording.</summary>
     public bool ShowRun(ScenarioData data, string scenario, DateTime end)
     {
@@ -192,11 +187,10 @@ public partial class ReplayView : UserControl
         return ShowRun(data, i.Scenario, i.End);
     }
 
-    void Open(ScenarioData data, string scenario, DateTime? end, Point? origin, PlaySession? sess = null)
+    void Open(ScenarioData data, string scenario, DateTime? end, Point? origin)
     {
-        var changed = !_open || sess != null || _sess != null || !_scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) || end != null || _runMode;
+        var changed = !_open || !_scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) || end != null || _runMode;
         _d = data; _scenario = scenario; _limit = Page;
-        _sess = sess; _sessStart = sess?.Start ?? default;
         if (changed) UnloadMedia();
         _selEnd = null; _runIdx = -1;
         BuildAll();
@@ -231,7 +225,7 @@ public partial class ReplayView : UserControl
         if (!_open) return false;
         ExitFullscreen();
         _open = false;
-        _seekTimer.Stop(); _seekPending = false; _dragging = false;
+        _seekTimer.Stop(); _seekPending = false; _dragging = false; _resumeAfterDrag = false;
         FlushNudge();
         Pause();
         Animate(false, ++_tok);
@@ -335,35 +329,6 @@ public partial class ReplayView : UserControl
     }
 
     /// <summary>Session mode: re-reads the session from the library (a live one grows), then the header, tiles and runs.</summary>
-    void BuildSession()
-    {
-        var d = _d!;
-        var cur = PlaySession.Group(d.Lib.AllRuns, all: d.Lib.AllRuns).FirstOrDefault(x => x.Start == _sessStart) ?? _sess!;
-        _sess = cur;
-        _sessRuns = cur.Runs.OrderByDescending(r => r.End).ToList();
-        _sessPbs = [];
-        foreach (var scn in cur.Scenarios)
-        {
-            var st = ScenarioStats.For(d.Lib, scn);
-            foreach (var i in st.PersonalBestIndexes()) _sessPbs.Add(st.Runs[i].End);
-        }
-        if (_scenario.Length > 0) SetScenario(_scenario);
-        Heading.Inlines.Clear();
-        Heading.Inlines.Add(new System.Windows.Documents.Run(DayLabel(cur.Start.Date)));
-        Heading.Inlines.Add(new System.Windows.Documents.Run($"  #{cur.Number}  " + ClockFormat.Range(cur.Start, cur.End)) { FontSize = 13, FontWeight = FontWeights.Normal, Foreground = DimB });
-        Heading.ToolTip = null;
-        PlayScn.Visibility = Visibility.Collapsed;
-        var pb = cur.PersonalBests;
-        SideTiles.ItemsSource = new List<StatTile>
-        {
-            new("Span", Dur(cur.Span)), new("Played", Dur(cur.Duration)), new("Runs", cur.RunCount.ToString()),
-            new("Scenarios", cur.ScenarioCount.ToString()), new("Avg accuracy", cur.AverageAccuracy.ToString("P1")), new(pb == 1 ? "PB" : "PBs", pb.ToString()),
-        };
-        SideChartCard.Visibility = Visibility.Collapsed;
-        NoRuns.Visibility = Visibility.Collapsed;
-        BuildRuns();
-    }
-
     void OnPlayScenario(object sender, RoutedEventArgs e)
     {
         if (_scenario.Length > 0) KovaaksCompanion.Core.KovaaksLaunch.Open(KovaaksCompanion.Core.KovaaksLaunch.Scenario(_scenario));
@@ -372,7 +337,6 @@ public partial class ReplayView : UserControl
     void BuildAll()
     {
         var d = _d!;
-        if (_sess is not null) { BuildSession(); return; }
         SideChartCard.Visibility = Visibility.Visible;
         _stats = ScenarioStats.For(d.Lib, _scenario);
         _pbs = new HashSet<int>(_stats.PersonalBestIndexes());
@@ -403,26 +367,24 @@ public partial class ReplayView : UserControl
     {
         RunsHost.Children.Clear();
         _rows.Clear();
-        var order = _sess is not null ? Enumerable.Range(0, _sessRuns.Count).ToList() : Enumerable.Range(0, _stats.Runs.Count).Reverse().ToList();
-        foreach (var i in order.Take(_limit)) RunsHost.Children.Add(_sess is not null ? RunRow(_sessRuns[i], _sessPbs.Contains(_sessRuns[i].End), true) : RunRow(_stats.Runs[i], _pbs.Contains(i), false));
+        var order = Enumerable.Range(0, _stats.Runs.Count).Reverse().ToList();
+        foreach (var i in order.Take(_limit)) RunsHost.Children.Add(RunRow(_stats.Runs[i], _pbs.Contains(i)));
         var left = order.Count - _limit;
         MoreBtn.Visibility = left > 0 ? Visibility.Visible : Visibility.Collapsed;
-        MoreBtn.Content = $"Show {Math.Min(Page, Math.Max(left, 0))} more";
+        MoreBtn.Content = "";
         ApplySelection();
     }
 
     void OnMore(object sender, RoutedEventArgs e) { _limit += Page; BuildRuns(); }
 
-    /// <summary>One run row; <paramref name="named"/> (session mode) adds the scenario name in place of the date.</summary>
-    Border RunRow(RunRecord r, bool pb, bool named)
+    /// <summary>One run row for a scenario.</summary>
+    Border RunRow(RunRecord r, bool pb)
     {
         var replay = SessionStore.FindRun(Infos(), r.Scenario, r.End) >= 0;
         var g = new Grid { Margin = new Thickness(8, 0, 8, 0) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = named ? new GridLength(64) : new GridLength(1.5, GridUnitType.Star) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = named ? new GridLength(1.6, GridUnitType.Star) : new GridLength(1, GridUnitType.Star) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(named ? 0.7 : 0.8, GridUnitType.Star) });
-        if (named) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
-        var o = named ? 1 : 0;
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
         void Put(UIElement e, int col)
@@ -432,30 +394,21 @@ public partial class ReplayView : UserControl
             g.Children.Add(e);
         }
         TextBlock T(string text, Brush? fg = null, bool bold = false) => new() { Text = text, FontSize = 13, Foreground = fg ?? FgB, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
-        if (named)
+        Put(T(r.End.ToString("MM-dd", System.Globalization.CultureInfo.InvariantCulture) + " " + ClockFormat.Clock(r.End), DimB), 0);
+        if (TierOf(r.Score) is { } t)
         {
-            Put(T(ClockFormat.Clock(r.End), DimB), 0);
-            var nm = T(r.Scenario, null, true);
-            nm.TextTrimming = TextTrimming.CharacterEllipsis;
-            nm.ToolTip = r.Scenario;
-            nm.Margin = new Thickness(0, 0, 8, 0);
-            Put(nm, 1);
-            Put(T(r.Score.ToString("0.#"), null, true), 2);
+            var tierText = T(t.Label, ChartPaths.TextTone(t.Brush));
+            tierText.HorizontalAlignment = HorizontalAlignment.Center;
+            Put(tierText, 1);
         }
-        else
-        {
-            Put(T(r.End.ToString("MM-dd", System.Globalization.CultureInfo.InvariantCulture) + " " + ClockFormat.Clock(r.End), DimB), 0);
-            Put(T(r.Score.ToString("0.#"), TierOf(r.Score) is { } rt ? ChartPaths.TextTone(rt.Brush) : null, true), 1);
-            Put(T(r.Accuracy.ToString("P0"), DimB), 2);
-        }
-        if (named) Put(T(r.Accuracy.ToString("P0"), DimB), 3);
+        Put(T(r.Score.ToString("0.#"), TierOf(r.Score) is { } rt ? ChartPaths.TextTone(rt.Brush) : null, true), 2);
         if (pb)
         {
             var green = (Brush)FindResource("Green");
             var pill = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
             pill.Children.Add(new Border { CornerRadius = new CornerRadius(7), Background = green, Opacity = 0.18 });
             pill.Children.Add(new TextBlock { Text = "PB", Foreground = green, FontSize = 10.5, FontWeight = FontWeights.SemiBold, Margin = new Thickness(6, 1, 6, 1) });
-            Put(pill, 3 + o);
+            Put(pill, 3);
         }
         if (replay)
         {
@@ -463,7 +416,13 @@ public partial class ReplayView : UserControl
             play.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
             play.FontSize = 15;
             play.HorizontalAlignment = HorizontalAlignment.Center;
-            Put(play, 4 + o);
+            Put(play, 4);
+        }
+        else if (_host.IsPending(r.Scenario, r.End))
+        {
+            var spinner = Spinner.Create((Brush)FindResource("Accent"), 13);
+            spinner.HorizontalAlignment = HorizontalAlignment.Center;
+            Put(spinner, 4);
         }
         var row = new Border { Height = 34, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Child = g, Cursor = Cursors.Hand };
         var end = r.End;
@@ -471,7 +430,7 @@ public partial class ReplayView : UserControl
         row.MouseEnter += (_, _) => Paint(row, end, false);
         row.MouseLeave += (_, _) => Paint(row, end, false);
         var scn = r.Scenario;
-        RowClick.Attach(row, _ => SelectRun(end, scn), down => Paint(row, end, down));
+        RowClick.Attach(row, _ => { if (_selEnd == end) ShowOverview(); else SelectRun(end, scn); }, down => Paint(row, end, down));
         return row;
     }
 
@@ -520,7 +479,6 @@ public partial class ReplayView : UserControl
     void BuildOverview()
     {
         OverviewHost.Children.Clear();
-        if (_sess is not null) { BuildSessionOverview(); return; }
         var bands = _d!.TierBands(_scenario);
         if (_stats.Plays == 0) { OverviewHost.Children.Add(EmptyCard(bands)); return; }
         var s = _stats;
@@ -558,47 +516,6 @@ public partial class ReplayView : UserControl
         chartBody.Children.Add(_bigChart);
         _bigChart.Set(s.Runs.Select(r => (r.End, r.Score)).ToList(), "0.#", ChartKind.Line, true, bands);
         OverviewHost.Children.Add(new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(20, 16, 20, 14), Margin = new Thickness(0, 4, 0, 0), Child = chartBody });
-    }
-
-    /// <summary>Session mode: a few tiles, a per-scenario breakdown and accuracy per run (scores are not comparable across scenarios).</summary>
-    void BuildSessionOverview()
-    {
-        var runs = _sess!.Runs.OrderBy(r => r.End).ToList();
-        var tiles = new List<StatTile>
-        {
-            new("Kills", runs.Sum(r => r.Kills).ToString("N0")), new("Best accuracy", runs.Max(r => r.Accuracy).ToString("P1")),
-            new("Avg run", Dur(TimeSpan.FromTicks(_sess.Duration.Ticks / runs.Count))), new("Last run", Ago(runs[^1].End)),
-        };
-        OverviewHost.Children.Add(new ItemsControl { Style = (Style)FindResource("StatTiles"), ItemsSource = tiles, Margin = new Thickness(0, 0, 0, 4) });
-
-        var sp = new StackPanel();
-        sp.Children.Add(new TextBlock { Text = "Scenarios", Style = (Style)FindResource("Caption"), FontSize = 12.5, Margin = new Thickness(4, 0, 0, 6) });
-        foreach (var g in runs.GroupBy(r => r.Scenario).OrderByDescending(g => g.Count()))
-        {
-            var row = new Grid { Margin = new Thickness(4, 3, 4, 3) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            foreach (var w in new[] { 56, 84, 84, 60 }) row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
-            void Cell(string t, int c, Brush? fg = null, bool bold = false, bool right = true)
-            {
-                var tb = new TextBlock { Text = t, FontSize = 13, Foreground = fg ?? FgB, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left };
-                Grid.SetColumn(tb, c);
-                row.Children.Add(tb);
-            }
-            Cell(g.Key, 0, null, true, false);
-            Cell($"{g.Count()}×", 1, DimB);
-            Cell($"best {g.Max(r => r.Score):0.#}", 2);
-            Cell($"avg {g.Average(r => r.Score):0.#}", 3, DimB);
-            Cell(g.Average(r => r.Accuracy).ToString("P0"), 4, DimB);
-            sp.Children.Add(row);
-        }
-        OverviewHost.Children.Add(new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(16, 14, 16, 10), Margin = new Thickness(0, 4, 0, 0), Child = sp });
-
-        var chartBody = new StackPanel();
-        chartBody.Children.Add(new TextBlock { Text = "Accuracy per run", Style = (Style)FindResource("Caption"), FontSize = 12.5, Margin = new Thickness(4, 0, 0, 8) });
-        if (_bigChart.Parent is Panel old) old.Children.Remove(_bigChart);
-        chartBody.Children.Add(_bigChart);
-        _bigChart.Set(runs.Select(r => (r.End, r.Accuracy)).ToList(), "P0");
-        OverviewHost.Children.Add(new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(20, 16, 20, 14), Margin = new Thickness(0, 12, 0, 0), Child = chartBody });
     }
 
     /// <summary>Current tier pill and progress to the next tier. A band's value is the score that reaches it.</summary>
@@ -661,7 +578,7 @@ public partial class ReplayView : UserControl
 
     void SelectRun(DateTime end, string? scenario = null)
     {
-        if (_sess is not null && scenario is not null) SetScenario(scenario);
+        if (scenario is not null) SetScenario(scenario);
         _selEnd = end;
         _runIdx = NearestRun(end);
         if (_runIdx >= 0) _selEnd = _stats.Runs[_runIdx].End;
@@ -698,8 +615,6 @@ public partial class ReplayView : UserControl
         }
         RunTiles.ItemsSource = tiles;
         PbBadge.Visibility = _runIdx >= 0 && _pbs.Contains(_runIdx) ? Visibility.Visible : Visibility.Collapsed;
-        var when = run?.End ?? info?.End ?? _selEnd;
-        RunDate.Text = when is { } wt ? ClockFormat.DateClock(wt) : "";
     }
 
     void SetRecorded(bool on)
@@ -722,7 +637,7 @@ public partial class ReplayView : UserControl
         FlushNudge();
         ExitFullscreen();
         _playing = false; PlayBtn.Content = PlayGlyph;
-        _seekTimer.Stop(); _seekPending = false; _dragging = false; _holdUntil = 0;
+        _seekTimer.Stop(); _seekPending = false; _dragging = false; _resumeAfterDrag = false; _holdUntil = 0;
         Media.Close();
         Media.Source = null;
         _s = null;
@@ -1008,7 +923,7 @@ public partial class ReplayView : UserControl
     }
 
     /// <summary>Playhead in video seconds: the pending drag position while a seek is not yet applied, else the media clock.</summary>
-    double CurPos => _dragging || _seekPending || Environment.TickCount64 < _holdUntil ? _dragPos : Media.Position.TotalSeconds;
+    double CurPos => _dragging || _seekPending ? _shownPos : Environment.TickCount64 < _holdUntil ? _dragPos : Media.Position.TotalSeconds;
 
     void OnRendering(object? sender, EventArgs e)
     {
@@ -1034,6 +949,13 @@ public partial class ReplayView : UserControl
         var hfov = ViewProjection.HorizontalFovDeg(st.Fov, st.FovScale, renderAspect);
         Overlay.Set(CameraPath.BuildTrail(traj.Samples, traj.Events, t, outcomes: _outcomes), CameraPath.At(traj.Samples, t), hfov, videoAspect, renderAspect, _held);
     }
+    void BeginDrag()
+    {
+        _shownPos = Media.Position.TotalSeconds;
+        if (_playing) { Media.Pause(); _resumeAfterDrag = true; }
+    }
+
+
 
     // Scrubbing: the playhead, metrics and trail follow the drag at once (cheap); the video only seeks once the
     // marker has rested for SeekDelay, or on release, because decoding a frame per mouse move lags.
@@ -1041,8 +963,7 @@ public partial class ReplayView : UserControl
     {
         _dragPos = Math.Clamp(sec, 0, _duration);
         _seekPending = true;
-        _seekTimer.Stop();
-        _seekTimer.Start();
+        if (!_seekTimer.IsEnabled) _seekTimer.Start();
     }
 
     void CommitSeek()
@@ -1050,6 +971,7 @@ public partial class ReplayView : UserControl
         _seekTimer.Stop();
         if (!_seekPending) return;
         _seekPending = false;
+        _shownPos = _dragPos;
         _holdUntil = Environment.TickCount64 + 250; // Media.Position settles asynchronously; keep showing the target meanwhile
         Media.Position = TimeSpan.FromSeconds(_dragPos);
     }
@@ -1059,6 +981,7 @@ public partial class ReplayView : UserControl
     void OnSeekDown(object sender, MouseButtonEventArgs e)
     {
         if (_duration <= 0) return;
+        BeginDrag();
         _dragging = true;
         if (Seek.Template.FindName("PART_Track", Seek) is System.Windows.Controls.Primitives.Track t && !t.Thumb.IsMouseOver)
         {
@@ -1094,8 +1017,9 @@ public partial class ReplayView : UserControl
         _trackScrub = false;
         DragTo(Seek.Value);
         CommitSeek();
+        if (_resumeAfterDrag) { _resumeAfterDrag = false; Media.Play(); }
     }
-    void OnChartDown(object sender, MouseButtonEventArgs e) { if (_duration <= 0) return; _dragging = true; Chart.CaptureMouse(); SeekToChart(e); }
+    void OnChartDown(object sender, MouseButtonEventArgs e) { if (_duration <= 0) return; BeginDrag(); _dragging = true; Chart.CaptureMouse(); SeekToChart(e); }
     void OnChartMove(object sender, MouseEventArgs e) { if (_dragging && Chart.IsMouseCaptured) SeekToChart(e); }
     void OnChartUp(object sender, MouseButtonEventArgs e)
     {
@@ -1104,6 +1028,7 @@ public partial class ReplayView : UserControl
         Chart.ReleaseMouseCapture();
         _dragging = false;
         CommitSeek();
+        if (_resumeAfterDrag) { _resumeAfterDrag = false; Media.Play(); }
     }
     void SeekToChart(MouseEventArgs e)
     {

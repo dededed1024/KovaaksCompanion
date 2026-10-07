@@ -115,7 +115,7 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <Border x:Name="RunStrip" Style="{StaticResource SheetCard}" Padding="12,6,12,0">
+                            <Border x:Name="RunStrip" Padding="0,0,0,0">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -127,9 +127,7 @@
                                             <Border CornerRadius="9" Background="{StaticResource Green}" Opacity="0.18"/>
                                             <TextBlock Text="PB" Foreground="{StaticResource Green}" FontSize="12" FontWeight="SemiBold" Margin="10,3"/>
                                         </Grid>
-                                        <TextBlock x:Name="RunDate" Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center" Margin="0,0,12,0"/>
                                         <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" ToolTip="Show video file in Explorer" Click="OnShowVideo" MinHeight="34" MinWidth="34" Padding="0" Margin="0,0,8,0"/>
-                                        <Button Content="Overview" Click="OnOverview" MinHeight="34" Padding="14,0"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -258,8 +256,8 @@
                                 <ScrollViewer x:Name="RunsScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <StackPanel Margin="6,6,6,6">
                                         <StackPanel x:Name="RunsHost"/>
-                                        <Button x:Name="MoreBtn" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,6" Padding="14,0" MinHeight="34" Background="Transparent"
-                                                Foreground="{StaticResource Accent}" Click="OnMore"/>
+                                        <Button x:Name="MoreBtn" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,0,0,2" Padding="8,0,8,0" MinHeight="26" Background="Transparent"
+                                                Foreground="{StaticResource Accent}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Click="OnMore"/>
                                     </StackPanel>
                                 </ScrollViewer>
                                 <TextBlock x:Name="NoRuns" Text="No local runs yet" Foreground="{StaticResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>

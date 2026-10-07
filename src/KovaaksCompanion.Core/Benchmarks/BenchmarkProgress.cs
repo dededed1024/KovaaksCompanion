@@ -5,7 +5,7 @@ namespace KovaaksCompanion.Core.Benchmarks;
 /// <summary>Score in the same unit as the local stats CSV (the server sends hundredths).</summary>
 public sealed record ScenarioProgress(string Scenario, double Score, int Rank, IReadOnlyList<double> RankMaxes, long LeaderboardId, int? LeaderboardRank);
 
-/// <summary><see cref="Parent"/> is the benchmark site category the subcategory belongs to; empty when it cannot be matched.</summary>
+/// <summary><see cref="Parent"/> is the benchmark category the subcategory belongs to; empty when it cannot be matched.</summary>
 public sealed record SubcategoryProgress(string Parent, string Name, double Progress, int Rank, IReadOnlyList<double> RankMaxes, IReadOnlyList<ScenarioProgress> Scenarios);
 
 public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOnlyList<string> RankNames, IReadOnlyList<SubcategoryProgress> Subcategories)
@@ -57,7 +57,7 @@ public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOn
     }
 
     /// <summary>
-    /// Parses KovaaK's player-progress-rank-benchmark JSON. Subcategories come in the same order as the benchmark site
+    /// Parses KovaaK's player-progress-rank-benchmark JSON. Subcategories come in the same order as the benchmark
     /// definition, which is how they get their parent category.
     /// </summary>
     public static BenchmarkProgress Parse(string json, Difficulty? definition = null)
@@ -135,4 +135,5 @@ public sealed class KovaaksApi(HttpClient? http = null)
     /// <summary>The higher of the local and server scores; a zero server score counts as none.</summary>
     public static double? Reconcile(double? local, double server) =>
         server > 0 && (local == null || server > local.Value) ? server : local;
+
 }

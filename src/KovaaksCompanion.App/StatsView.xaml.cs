@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -18,7 +19,7 @@ sealed record RadarEntry(string Category, string Sub, string Scenario, double Va
 
 /// <summary>
 /// The Stats page: Home (search, current tier, activity, play sessions, playlists) is the whole page; a playlist opens
-/// as a popup over it. Benchmarks (the benchmark site's playlists and categories, from the embedded snapshot), per-scenario score
+/// as a popup over it. Benchmarks (the embedded playlists and categories), per-scenario score
 /// history from the stats folder, and the player's server scores. A different non-zero server score wins over the local best.
 /// </summary>
 public partial class StatsView : UserControl
@@ -65,6 +66,19 @@ public partial class StatsView : UserControl
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); };
         HomeScroll.ScrollChanged += (_, _) => UpdateLivePill();
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
+        HomeScroll.Loaded += (_, _) =>
+        {
+            var scrollbar = HomeScroll.Template?.FindName("PART_VerticalScrollBar", HomeScroll) as ScrollBar;
+            if (scrollbar != null) scrollbar.Margin = new Thickness(0, 48, 0, 0);
+        };
+        SessionPopup.SizeChanged += (_, _) =>
+        {
+            if (SessionPopup.ActualWidth > 0 && SessionPopup.ActualHeight > 0)
+            {
+                SessionCardBorder.Width = Math.Min(1100, SessionPopup.ActualWidth - 160);
+                SessionCardBorder.MaxHeight = Math.Max(0, SessionPopup.ActualHeight - 128);
+            }
+        };
         Loaded += (_, _) => { if (_loaded) return; _loaded = true; Reload(); };
     }
 
@@ -218,10 +232,17 @@ public partial class StatsView : UserControl
     {
         if (_playlist is not { } key) { Star.Visibility = Visibility.Collapsed; Pin.Visibility = Visibility.Collapsed; return; }
         var pinned = _host.Ui.IsPinned(key);
-        Pin.Content = ((char)(pinned ? 0xE842 : 0xE718)).ToString();
-        Pin.Foreground = (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim");
-        Pin.ToolTip = pinned ? "Remove tier from Home" : "Show tier on Home";
-        Pin.Visibility = Visibility.Visible;
+        if (PinnedTiersEnabled)
+        {
+            Pin.Content = ((char)(pinned ? 0xE842 : 0xE718)).ToString();
+            Pin.Foreground = (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim");
+            Pin.ToolTip = pinned ? "Remove tier from Home" : "Show tier on Home";
+            Pin.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            Pin.Visibility = Visibility.Collapsed;
+        }
         var fav = _host.Ui.IsFavorite(key);
         Star.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
         Star.Foreground = (System.Windows.Media.Brush)FindResource(fav ? "Orange" : "Dim");
@@ -273,15 +294,68 @@ public partial class StatsView : UserControl
         _ = RefreshProgressAsync();
     }
 
+    // Session popup
+
+    bool _sessionOpen;
+    int _sessionTok;
+
+    /// <summary>Opens the session popup with the given session as an expanded card.</summary>
+    public void OpenSession(PlaySession s, Point? origin)
+    {
+        if (_sessionOpen) return;
+        _sessionOpen = true;
+        _sessionTok++;
+        SessionScrim.BeginAnimation(OpacityProperty, null); SessionScrim.Opacity = 0;
+        SessionCardBorder.BeginAnimation(OpacityProperty, null); SessionCardBorder.Opacity = 0;
+        SessionScale.BeginAnimation(ScaleTransform.ScaleXProperty, null); SessionScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        SessionScale.ScaleX = SessionScale.ScaleY = 0.94;
+
+        SessionHost.Children.Clear();
+        SessionHost.Children.Add(SessionCard(s, PbSet(), false, expanded: true));
+
+        SessionPopup.Visibility = Visibility.Visible;
+        if (origin is { } o && SessionCardBorder.ActualWidth > 0 && SessionCardBorder.ActualHeight > 0)
+        {
+            var tl = SessionCardBorder.TranslatePoint(new Point(0, 0), this);
+            SessionCardBorder.RenderTransformOrigin = new Point(Math.Clamp((o.X - tl.X) / SessionCardBorder.ActualWidth, 0, 1), Math.Clamp((o.Y - tl.Y) / SessionCardBorder.ActualHeight, 0, 1));
+        }
+        else SessionCardBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+        Animate(true, null, SessionScrim, SessionCardBorder, SessionScale);
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_sessionOpen) SessionPopup.Focus(); });
+    }
+
+    public void CloseSession()
+    {
+        if (!_sessionOpen) return;
+        _sessionOpen = false;
+        var tok = ++_sessionTok;
+        Animate(false, () =>
+        {
+            if (tok != _sessionTok) return;
+            SessionPopup.Visibility = Visibility.Collapsed;
+            SessionHost.Children.Clear();
+        }, SessionScrim, SessionCardBorder, SessionScale);
+    }
+
+    void OnSessionScrim(object sender, MouseButtonEventArgs e) => CloseSession();
+
+    void OnSessionKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        e.Handled = true;
+        CloseSession();
+    }
+
     // The playlist popup
 
     /// <summary>True while the playlist popup is open.</summary>
     public bool IsPopupOpen => _popupOpen;
 
-    /// <summary>Closes the topmost popup (search, then playlist); false when none was open.</summary>
+    /// <summary>Closes the topmost popup (search, then session, then playlist); false when none was open.</summary>
     public bool CloseOverlay()
     {
         if (_searchOpen) { CloseSearch(); return true; }
+        if (_sessionOpen) { CloseSession(); return true; }
         if (!_popupOpen) return false;
         ClosePopup();
         return true;
@@ -300,7 +374,7 @@ public partial class StatsView : UserControl
     BrowserItem MakeItem(Benchmark b)
     {
         var theme = ParseBrush(b.Color);
-        return new BrowserItem(b.BenchmarkName, b, theme, b.Abbreviation.ToUpperInvariant(), Lighten(theme, 0.45));
+        return new BrowserItem(b.BenchmarkName, b, theme, "", Lighten(theme, 0.45));
     }
 
     /// <summary>Opens a playlist (at <paramref name="d"/> when given, else the remembered difficulty) in the popup.</summary>
@@ -371,7 +445,7 @@ public partial class StatsView : UserControl
     void SetHeadAccent(BrowserItem item)
     {
         HeadPill.Visibility = Visibility.Visible;
-        HeadMark.Visibility = Visibility.Visible;
+        HeadMark.Visibility = item.Watermark.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         HeadPill.Background = item.Theme;
         HeadMark.Text = item.Watermark;
         HeadMark.Foreground = item.MarkBrush;

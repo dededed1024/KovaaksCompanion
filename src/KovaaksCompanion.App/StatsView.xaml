@@ -26,7 +26,7 @@
     </UserControl.Resources>
     <Grid>
         <!-- Home: the whole page -->
-        <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0">
+        <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0" Margin="0,0,8,0">
             <Grid x:Name="HomeHost" HorizontalAlignment="Center" Margin="0,60,0,24"/>
         </ScrollViewer>
         <!-- Scroll edge under the title bar -->
@@ -73,7 +73,7 @@
                                 <StackPanel x:Name="DiffBar" Orientation="Horizontal"/>
                             </Border>
                             <StackPanel Orientation="Horizontal">
-                                <Border x:Name="HeadPill" Width="5" Height="30" CornerRadius="3" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <Border x:Name="HeadPill" Width="10" Height="10" CornerRadius="5" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
                                         MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Favorite" Click="OnStarClick" Visibility="Collapsed"/>
@@ -110,6 +110,17 @@
                     <ScrollViewer x:Name="SearchScroll" Focusable="False" MaxHeight="440" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   CanContentScroll="False" Visibility="Collapsed" Margin="0,0,0,10"/>
                 </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Session popup: scrim + card centered on screen -->
+        <Grid x:Name="SessionPopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnSessionKey">
+            <Border x:Name="SessionScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnSessionScrim"/>
+            <Border x:Name="SessionCardBorder" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="80,64,80,80" CornerRadius="18" Background="#F2232326"
+                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><ScaleTransform x:Name="SessionScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+                <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                <Grid x:Name="SessionHost"/>
             </Border>
         </Grid>
     </Grid>

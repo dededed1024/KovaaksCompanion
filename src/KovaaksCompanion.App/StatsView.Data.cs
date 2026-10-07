@@ -222,4 +222,5 @@ public partial class StatsView
         n.Text = text;
         n.Visibility = text.Length == 0 ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
     }
+
 }

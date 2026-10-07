@@ -29,6 +29,7 @@ public sealed class AppHost : IDisposable
     string _lastError = "";
     ReleaseInfo? _pendingUpdate;
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    readonly List<(string Scenario, DateTime End)> _pending = [];
 
     public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
     readonly string _uiFile;
@@ -37,6 +38,14 @@ public sealed class AppHost : IDisposable
     /// <summary>True while the game window is being recorded.</summary>
     public bool GameActive => _video?.IsRecording == true;
     public string SessionsFolder => _settings.SessionsFolder;
+    /// <summary>Checks if a run's replay is currently being saved.</summary>
+    public bool IsPending(string scenario, DateTime end)
+    {
+        lock (_pending)
+        {
+            return _pending.Any(p => p.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - end).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds);
+        }
+    }
     /// <summary>Favorites and chart selection. Mutate on the UI thread, then call <see cref="SaveUi"/>.</summary>
     public UiState Ui { get; }
     /// <summary>Raised on the calling (UI) thread after <see cref="SaveUi"/>.</summary>
@@ -86,12 +95,30 @@ public sealed class AppHost : IDisposable
         _saver.Error += SetError;
         _saver.Saved += (info, folder) =>
         {
+            lock (_pending)
+            {
+                _pending.RemoveAll(p => p.Scenario.Equals(info.Scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - info.End).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds);
+            }
             AppLog.Write("session", $"saved {folder}");
             SessionSaved?.Invoke(info, folder);
         };
 
         _watcher = new StatsWatcher(_settings.StatsFolder, DateTime.Now);
-        _watcher.RunFinished += (run, csv) => { AppLog.Write("session", $"run finished: {csv}"); RunFinished?.Invoke(); _ = _saver.Enqueue(run, csv); };
+        _watcher.RunFinished += (run, csv) =>
+        {
+            AppLog.Write("session", $"run finished: {csv}");
+            lock (_pending) { _pending.Add((run.Scenario, run.End)); }
+            _ = _saver.Enqueue(run, csv).ContinueWith(_ =>
+            {
+                lock (_pending)
+                {
+                    if (_pending.RemoveAll(p => p.Scenario.Equals(run.Scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - run.End).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds) > 0)
+                    {
+                        RunFinished?.Invoke();
+                    }
+                }
+            });
+        };
         try { _watcher.Start(); } catch (Exception e) { SetError("stats folder: " + e.Message); }
 
         BuildTray();

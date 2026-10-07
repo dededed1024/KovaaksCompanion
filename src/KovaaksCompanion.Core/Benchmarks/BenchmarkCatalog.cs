@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core.Benchmarks;
 
 /// <summary>One benchmark group (e.g. "Voltaic S5") with its difficulties. Each difficulty is a KovaaK's playlist.</summary>
-public sealed record Benchmark(string BenchmarkName, string Abbreviation, string Color, string SpreadsheetUrl, string DateAdded, IReadOnlyList<Difficulty> Difficulties);
+public sealed record Benchmark(string BenchmarkName, string Abbreviation, string Color, IReadOnlyList<Difficulty> Difficulties);
 
 public sealed record Difficulty(string DifficultyName, int KovaaksBenchmarkId, string Sharecode, IReadOnlyDictionary<string, string> RankColors, IReadOnlyList<BenchmarkCategory> Categories)
 {
@@ -17,15 +17,15 @@ public sealed record BenchmarkCategory(string CategoryName, string Color, IReadO
 public sealed record Subcategory(string SubcategoryName, int ScenarioCount, string Color);
 
 /// <summary>
-/// Snapshot of the benchmark site's benchmark list (playlists and their categories), embedded in the assembly.
-/// Refresh with scripts/update-benchmarks.mjs.
+/// The playlist list (benchmarks, difficulties, categories, tier colours), embedded in the assembly as playlists.json.
+/// Regenerate it from a source list with scripts/convert-benchmarks.mjs.
 /// </summary>
 public static class BenchmarkCatalog
 {
     static readonly Lazy<IReadOnlyList<Benchmark>> Embedded = new(() =>
     {
-        using var s = typeof(BenchmarkCatalog).Assembly.GetManifestResourceStream("benchmarks.json")
-            ?? throw new InvalidOperationException("benchmarks.json is not embedded");
+        using var s = typeof(BenchmarkCatalog).Assembly.GetManifestResourceStream("playlists.json")
+            ?? throw new InvalidOperationException("playlists.json is not embedded");
         return Parse(new StreamReader(s).ReadToEnd());
     });
 
@@ -33,22 +33,23 @@ public static class BenchmarkCatalog
 
     public static IReadOnlyList<Benchmark> Parse(string json)
     {
-        var raw = JsonSerializer.Deserialize<List<RawBenchmark>>(json, JsonOptions) ?? [];
-        return raw.Select(b => new Benchmark(
-            b.BenchmarkName ?? "", b.Abbreviation ?? "", b.Color ?? "", b.SpreadsheetURL ?? "", b.DateAdded ?? "",
-            (b.Difficulties ?? []).Select(d => new Difficulty(
-                d.DifficultyName ?? "", d.KovaaksBenchmarkId, d.Sharecode ?? "",
-                d.RankColors ?? new Dictionary<string, string>(),
-                (d.Categories ?? []).Select(c => new BenchmarkCategory(
-                    c.CategoryName ?? "", c.Color ?? "",
-                    (c.Subcategories ?? []).Select(s => new Subcategory(s.SubcategoryName ?? "", s.ScenarioCount, s.Color ?? "")).ToList())).ToList()
+        var file = JsonSerializer.Deserialize<RawFile>(json, JsonOptions);
+        return (file?.Playlists ?? []).Select(p => new Benchmark(
+            p.Name ?? "", p.Abbr ?? "", p.Color ?? "",
+            (p.Levels ?? []).Select(l => new Difficulty(
+                l.Level ?? "", l.Id, l.Code ?? "",
+                l.TierColors ?? new Dictionary<string, string>(),
+                (l.Groups ?? []).Select(g => new BenchmarkCategory(
+                    g.Name ?? "", g.Color ?? "",
+                    (g.Parts ?? []).Select(x => new Subcategory(x.Name ?? "", x.Count, x.Color ?? "")).ToList())).ToList()
             )).ToList())).ToList();
     }
 
     static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    sealed record RawBenchmark(string? BenchmarkName, string? Abbreviation, string? Color, string? SpreadsheetURL, string? DateAdded, List<RawDifficulty>? Difficulties);
-    sealed record RawDifficulty(string? DifficultyName, int KovaaksBenchmarkId, string? Sharecode, Dictionary<string, string>? RankColors, List<RawCategory>? Categories);
-    sealed record RawCategory(string? CategoryName, string? Color, List<RawSub>? Subcategories);
-    sealed record RawSub(string? SubcategoryName, int ScenarioCount, string? Color);
+    sealed record RawFile(int Version, List<RawPlaylist>? Playlists);
+    sealed record RawPlaylist(string? Name, string? Abbr, string? Color, List<RawLevel>? Levels);
+    sealed record RawLevel(string? Level, int Id, string? Code, Dictionary<string, string>? TierColors, List<RawGroup>? Groups);
+    sealed record RawGroup(string? Name, string? Color, List<RawPart>? Parts);
+    sealed record RawPart(string? Name, int Count, string? Color);
 }

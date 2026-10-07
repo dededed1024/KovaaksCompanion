@@ -51,7 +51,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Closes the topmost popup or overlay; false when nothing was open.</summary>
-    bool GoBack() => _update.Close() || _settings.Close() || _replay.Close() || _stats.CloseOverlay();
+    bool GoBack() => _update.Close() || _settings.Close() || _stats.CloseOverlay() || _replay.Close();
 
     void OnSearch(object sender, RoutedEventArgs e)
     {
@@ -87,12 +87,12 @@ public partial class MainWindow : Window
         _replay.Show(_stats.SheetData(), scenario, o);
     }
 
-    /// <summary>Opens the replay popup on a play session overview.</summary>
+    /// <summary>Opens the session popup on a play session overview.</summary>
     public void ShowSession(KovaaksCompanion.Core.Library.PlaySession session, Point? origin)
     {
         _settings.Close();
-        var o = origin is { } p ? this.TranslatePoint(p, _replay) : (Point?)null;
-        _replay.ShowSession(_stats.SheetData(), session, o);
+        _replay.Close();
+        _stats.OpenSession(session, origin);
     }
 
     /// <summary>Opens the replay popup with the run ending at <paramref name="end"/> selected; false when it was not recorded.</summary>

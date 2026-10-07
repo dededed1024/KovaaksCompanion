@@ -13,7 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Benchmarks/benchmarks.json" LogicalName="benchmarks.json" />
+    <EmbeddedResource Include="Benchmarks/playlists.json" LogicalName="playlists.json" />
   </ItemGroup>
 
 </Project>

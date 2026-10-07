@@ -262,9 +262,9 @@ public partial class StatsView
     /// <summary>Activity calendar (left) and progress chart (right) in one card; stacked when narrower than 820px.</summary>
     UIElement BuildActivity(PlaylistCtx c) => ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), c.Note);
 
-    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, string? note = null, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0)
+    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, string? note = null, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0, double maxCell = 16, int maxWeeks = 53)
     {
-        var cal = new ActivityCalendar { FixedWeeks = weeks, MaxCell = 16, Margin = new Thickness(0, 0, 0, 12) };
+        var cal = new ActivityCalendar { FixedWeeks = weeks, MaxCell = maxCell, MaxWeeks = maxWeeks, Margin = new Thickness(0, 0, 0, 12) };
         cal.Set(plays, tone);
         withCalendar?.Invoke(cal);
         var left = new StackPanel();
