@@ -1,4 +1,3 @@
-using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -12,8 +11,6 @@ public partial class App : Application
     const string ShowEventName = @"Local\KovaaksCompanion.ShowMain";
     const string QuitEventName = @"Local\KovaaksCompanion.Quit";
     const string VersionMapName = @"Local\KovaaksCompanion.Version";
-    public const string ReplaceArg = "--replace";
-    public const string OldExeName = "KovaaksCompanion.old.exe";
 
     /// <summary>This build's version (assembly informational version).</summary>
     public static Version CurrentVersion { get; } = UpdateCheck.ParseVersion(typeof(App).Assembly
@@ -37,7 +34,7 @@ public partial class App : Application
         _single =new Mutex(true, @"Local\KovaaksCompanion.SingleInstance", out var first);
         if (!first)
         {
-            var replace = UpdateCheck.ShouldReplace(CurrentVersion, RunningVersion(), e.Args.Contains(ReplaceArg));
+            var replace = UpdateCheck.ShouldReplace(CurrentVersion, RunningVersion());
             if (replace) SignalQuit();
             if (!replace || !TakeOver(_single))
             {
@@ -56,7 +53,6 @@ public partial class App : Application
         PublishVersion();
         _quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
         _quitWait = ThreadPool.RegisterWaitForSingleObject(_quitEvent, (_, _) => Dispatcher.BeginInvoke(new Action(Shutdown)), null, Timeout.Infinite, false);
-        DeleteOldExe();
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
         _showWait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) => _host?.ShowMain("Stats"), null, Timeout.Infinite, false);
         _host = new AppHost(this);
@@ -102,22 +98,6 @@ public partial class App : Application
             s.Write(bytes, 0, bytes.Length);
         }
         catch { }
-    }
-
-    /// <summary>Removes the exe left behind by a self-update; the old process may still be exiting, so retry briefly.</summary>
-    static void DeleteOldExe()
-    {
-        var dir = Path.GetDirectoryName(Environment.ProcessPath);
-        if (dir == null) return;
-        var old = Path.Combine(dir, OldExeName);
-        if (!File.Exists(old)) return;
-        Task.Run(async () =>
-        {
-            for (var i = 0; i < 10; i++)
-            {
-                try { File.Delete(old); return; } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { await Task.Delay(500); }
-            }
-        });
     }
 
     protected override void OnExit(ExitEventArgs e)

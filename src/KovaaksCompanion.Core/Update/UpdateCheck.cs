@@ -2,8 +2,8 @@ using System.Text.Json;
 
 namespace KovaaksCompanion.Core.Update;
 
-/// <summary>Newest published release: version without the leading "v", its page URL, and the first .exe asset's download URL (null when none).</summary>
-public sealed record ReleaseInfo(Version Version, string Url, string? DownloadUrl = null);
+/// <summary>Newest published release: version without the leading "v" and its page URL.</summary>
+public sealed record ReleaseInfo(Version Version, string Url);
 
 /// <summary>GitHub latest-release lookup: JSON parsing and version comparison are pure; Fetch does the one HTTP call.</summary>
 public static class UpdateCheck
@@ -23,22 +23,9 @@ public static class UpdateCheck
             var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
             var url = root.TryGetProperty("html_url", out var u) ? u.GetString() : null;
             var v = ParseVersion(tag);
-            return v == null || string.IsNullOrEmpty(url) ? null : new(v, url, ExeAsset(root));
+            return v == null || string.IsNullOrEmpty(url) ? null : new(v, url);
         }
         catch (JsonException) { return null; }
-    }
-
-    static string? ExeAsset(JsonElement root)
-    {
-        if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
-        foreach (var a in assets.EnumerateArray())
-        {
-            if (a.ValueKind != JsonValueKind.Object) continue;
-            var name = a.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
-            var link = a.TryGetProperty("browser_download_url", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
-            if (name != null && !string.IsNullOrEmpty(link) && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return link;
-        }
-        return null;
     }
 
     /// <summary>"v1.2.3", "1.2" or "1.2.3+sha" to a Version; null when not parseable.</summary>
@@ -53,8 +40,8 @@ public static class UpdateCheck
 
     public static bool IsNewer(ReleaseInfo? latest, Version current) => latest != null && latest.Version > current;
 
-    /// <summary>Whether a newly started instance should take over: forced by --replace, or strictly newer than the running one.</summary>
-    public static bool ShouldReplace(Version mine, Version? running, bool replaceArg) => replaceArg || (running != null && mine > running);
+    /// <summary>Whether a newly started instance should take over: strictly newer than the running one.</summary>
+    public static bool ShouldReplace(Version mine, Version? running) => running != null && mine > running;
 
     /// <summary>Latest release, or null when offline, rate-limited or no release exists.</summary>
     public static async Task<ReleaseInfo?> Fetch(HttpClient http, CancellationToken ct = default)
