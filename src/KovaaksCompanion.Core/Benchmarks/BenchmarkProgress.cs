@@ -14,6 +14,48 @@ public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOn
     public string OverallRankName => RankName(OverallRank);
     public IEnumerable<ScenarioProgress> Scenarios => Subcategories.SelectMany(s => s.Scenarios);
 
+    /// <summary>Playlist point cap: the sum of each subcategory's top rank max (its point cap).</summary>
+    public double MaxProgress => Subcategories.Sum(s => s.RankMaxes.Count == 0 ? 0 : s.RankMaxes[^1]);
+
+    /// <summary><see cref="Progress"/> over <see cref="MaxProgress"/> (0..1); null when the cap is unknown.</summary>
+    public double? ProgressShare => MaxProgress > 0 ? Math.Clamp(Progress / MaxProgress, 0, 1) : null;
+
+    /// <summary>Progress from the overall tier to the next: mean continuous tier progress (<see cref="Tier.ValueOf"/>) of the ranked scenarios minus <see cref="OverallRank"/>, clamped to 0..1; 1 at the top tier.</summary>
+    public double OverallFraction
+    {
+        get
+        {
+            var ranked = Scenarios.Where(s => s.RankMaxes.Count > 0).ToList();
+            if (OverallRank >= Math.Max(RankNames.Count - 1, 0)) return 1;
+            if (ranked.Count == 0) return 0;
+            return Math.Clamp(ranked.Average(s => Tier.ValueOf(s.Score, s.RankMaxes)) - OverallRank, 0, 1);
+        }
+    }
+
+    /// <summary>
+    /// Raises scenario scores (and their tiers) to a higher local best, and the overall tier to the mean tier progress when that is
+    /// higher than the server's. Never lowers anything. Returns this when no local best beats the server.
+    /// </summary>
+    public BenchmarkProgress WithLocalBests(Func<string, double?> localBest)
+    {
+        var changed = false;
+        var subs = Subcategories.Select(sub => sub with
+        {
+            Scenarios = sub.Scenarios.Select(s =>
+            {
+                if (localBest(s.Scenario) is not { } b || b <= s.Score) return s;
+                changed = true;
+                return s with { Score = b, Rank = s.RankMaxes.Count == 0 ? s.Rank : Math.Max(s.Rank, Tier.TierOf(b, s.RankMaxes).Rank) };
+            }).ToList(),
+        }).ToList();
+        if (!changed) return this;
+
+        var ranked = subs.SelectMany(s => s.Scenarios).Where(s => s.RankMaxes.Count > 0).ToList();
+        var top = Math.Max(RankNames.Count - 1, 0);
+        var local = ranked.Count == 0 ? 0 : Math.Min((int)Math.Floor(ranked.Average(s => Tier.ValueOf(s.Score, s.RankMaxes)) + 1e-9), top);
+        return this with { Subcategories = subs, OverallRank = Math.Max(OverallRank, local) };
+    }
+
     /// <summary>
     /// Parses KovaaK's player-progress-rank-benchmark JSON. Subcategories come in the same order as the benchmark site
     /// definition, which is how they get their parent category.
@@ -90,7 +132,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
         CloudScores.ParseLastScores(await _http.GetStringAsync(
             $"https://kovaaks.com/webapp-backend/user/scenario/last-scores/by-name?username={Uri.EscapeDataString(username)}&scenarioName={Uri.EscapeDataString(scenario)}", ct));
 
-    /// <summary>The local score wins unless the server has a different, non-zero score for the scenario.</summary>
+    /// <summary>The higher of the local and server scores; a zero server score counts as none.</summary>
     public static double? Reconcile(double? local, double server) =>
-        server > 0 && (local == null || Math.Abs(server - local.Value) > 0.005) ? server : local;
+        server > 0 && (local == null || server > local.Value) ? server : local;
 }
