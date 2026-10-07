@@ -81,10 +81,6 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel x:Name="Identity" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
-                <Image Source="pack://application:,,,/Assets/app.ico" Width="16" Height="16" Margin="0,0,8,0"/>
-                <TextBlock Text="KovaaK's Companion" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Dim}" VerticalAlignment="Center"/>
-            </StackPanel>
             <Button x:Name="GearBtn" Grid.Column="3" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Settings" Click="OnGear">
                 <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
             </Button>
