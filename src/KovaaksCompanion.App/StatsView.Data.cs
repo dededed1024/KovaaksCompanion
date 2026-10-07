@@ -120,13 +120,13 @@ public partial class StatsView
         finally { _refreshing = false; }
     }
 
-    /// <summary>Redraws the hero and the playlist lists shortly after the last progress update (many arrive in a burst).</summary>
+    /// <summary>Redraws the hero and the playlist lists at most every 400 ms while progress updates arrive in a burst (a debounce would starve the redraw until the whole burst ends, leaving favourite cards empty).</summary>
     void ScheduleRefresh()
     {
         _refreshTimer ??= new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(400) };
+        if (_refreshTimer.IsEnabled) return;
         _refreshTimer.Tick -= OnRefreshTick;
         _refreshTimer.Tick += OnRefreshTick;
-        _refreshTimer.Stop();
         _refreshTimer.Start();
     }
 
