@@ -25,9 +25,48 @@ public sealed class ScoreChart : FrameworkElement
 
     public void Set(IReadOnlyList<(DateTime When, double Value)> points, string format = "0.#", ChartKind kind = ChartKind.Line, bool overlays = false, IReadOnlyList<ChartBand>? bands = null)
     {
-        _points = points; _format = format; _kind = kind; _overlays = overlays; _bands = bands ?? [];
+        _points = points; _format = format; _kind = kind; _overlays = overlays; _bands = bands ?? []; _miniBrush = null;
         _hover = -1;
         InvalidateVisual();
+    }
+
+    Brush? _miniBrush;
+    string _watermark = "";
+
+    /// <summary>Card mode: only the line over a gradient (tier colour at the bottom, transparent on top), with the tier name as a card-high watermark behind it. No axes, bands, labels or hover.</summary>
+    public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName)
+    {
+        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _hover = -1;
+        IsHitTestVisible = false;
+        InvalidateVisual();
+    }
+
+    void RenderMini(DrawingContext dc, double w, double h, Brush tier)
+    {
+        var c = ColorOf(tier);
+        if (_watermark.Length > 0)
+        {
+            var face = new Typeface(new FontFamily("Segoe UI Black, Arial Black, Segoe UI"), FontStyles.Normal, FontWeights.Black, FontStretches.Normal);
+            var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 100, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var size = 100 * Math.Min(h * 1.7 / probe.Height, w * 1.1 / probe.Width);
+            var mark = new SolidColorBrush(Color.FromArgb(0x80, c.R, c.G, c.B));
+            mark.Freeze();
+            var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, mark, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, h - ft.Baseline));
+        }
+        if (_points.Count < 2) return;
+        var lo = _points.Min(p => p.Value);
+        var hi = _points.Max(p => p.Value);
+        var pad = Math.Max((hi - lo) * 0.08, 1e-6);
+        lo -= pad; hi += pad;
+        const double m = 6;
+        var n = _points.Count;
+        var pts = _points.Select((p, i) => new Point(i / (double)(n - 1) * w, m + (1 - (p.Value - lo) / (hi - lo)) * (h - 2 * m))).ToList();
+        // 90° runs top-to-bottom: transparent on top, tier colour at the bottom.
+        var grad = new LinearGradientBrush(Color.FromArgb(0, c.R, c.G, c.B), Color.FromArgb(0x99, c.R, c.G, c.B), 90);
+        grad.Freeze();
+        dc.DrawGeometry(grad, null, ChartPaths.MonotoneArea(pts, h));
+        dc.DrawGeometry(null, new Pen(tier, 2) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, ChartPaths.Monotone(pts));
     }
 
     static Brush Res(string key) => (Brush)Application.Current.FindResource(key);
@@ -99,6 +138,7 @@ public sealed class ScoreChart : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
+        if (_miniBrush != null) { RenderMini(dc, w, h, _miniBrush); return; }
         var dim = Res("Dim");
         if (_points.Count == 0)
         {
@@ -111,6 +151,7 @@ public sealed class ScoreChart : FrameworkElement
         var bg = Res("Bg");
         var fg = Res("Fg");
         var green = Res("Green");
+        var pbBrush = WithAlpha(green, 0.95);
         var sepBrush = WithAlpha(Res("Separator"), 0.5);
         var (left, pw, ph, lo, hi, ticks, bands) = Layout(w, h);
         var n = _points.Count;
@@ -198,7 +239,7 @@ public sealed class ScoreChart : FrameworkElement
                 {
                     if (_points[i].Value > best)
                     {
-                        if (i > 0) dc.DrawEllipse(green, null, pts[i], 3, 3);
+                        if (i > 0) dc.DrawEllipse(pbBrush, null, pts[i], 3, 3);
                         best = _points[i].Value;
                     }
                 }

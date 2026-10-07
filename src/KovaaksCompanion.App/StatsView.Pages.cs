@@ -158,6 +158,15 @@ public partial class StatsView
 
     TextBlock SectionTitle(string text) => Text(text, 20, FgB, FontWeights.SemiBold, new Thickness(4, 8, 0, 12));
 
+    /// <summary>Large Home section title fading to transparent at the bottom, overlapping the card below it.</summary>
+    TextBlock FadeTitle(string text)
+    {
+        var t = Text(text, 34, FgB, FontWeights.SemiBold, new Thickness(4, 8, 0, -5));
+        t.IsHitTestVisible = false;
+        t.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.White, 0.2), new GradientStop(Colors.Transparent, 0.95) }, new Point(0, 0), new Point(0, 1));
+        return t;
+    }
+
     // The page
 
     UIElement BuildPage(PlaylistCtx c)

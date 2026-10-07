@@ -617,12 +617,37 @@ public partial class StatsView : UserControl
         return (Brush)FindResource("Dim");
     }
 
-    /// <summary>Tier thresholds of a scenario as chart bands, from the cached progress of the selected playlist's benchmark (else any cached one) that contains it.</summary>
-    List<ChartBand>? TierBands(string scenario)
+    /// <summary>
+    /// Tier thresholds of a scenario as chart bands, from the cached progress of the selected playlist's benchmark that contains it.
+    /// Outside a playlist, the containing playlist is chosen by: favorite, played in the live session, most recently played, then catalog (difficulty) order.
+    /// </summary>
+    (BenchmarkProgress P, int Id)? TierSource(string scenario)
     {
         (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.RankMaxes.Count > 0) ? (pr, id) : null;
-        var hit = (int.TryParse(_playlist, out var cur) ? Find(cur) : null) ?? _progress.Keys.Select(Find).FirstOrDefault(x => x != null);
-        if (hit is not { } h) return null;
+        if (int.TryParse(_playlist, out var cur) && Find(cur) is { } sel) return sel;
+
+        var live = LiveNow() && PlaySession.Group(_lib.AllRuns).FirstOrDefault() is { } s
+            ? s.Runs.Select(r => r.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
+        return AllDifficulties()
+            .Select((x, order) => (Id: x.D.KovaaksBenchmarkId, Order: order))
+            .Select(x => (x.Id, x.Order, Hit: Find(x.Id)))
+            .Where(x => x.Hit != null)
+            .OrderByDescending(x => _host.Ui.IsFavorite($"{x.Id}"))
+            .ThenByDescending(x => _index.Scenarios(x.Id).Any(live.Contains))
+            .ThenByDescending(x => LastPlayed(x.Id) ?? DateTime.MinValue)
+            .ThenBy(x => x.Order)
+            .Select(x => x.Hit)
+            .FirstOrDefault();
+    }
+
+    /// <summary>Name of the benchmark whose tiers <see cref="TierBands"/> uses for <paramref name="scenario"/>, or null.</summary>
+    string? TierBenchmarkName(string scenario) =>
+        TierSource(scenario) is { } h ? BenchmarkCatalog.All.FirstOrDefault(b => b.Difficulties.Any(x => x.KovaaksBenchmarkId == h.Id))?.BenchmarkName : null;
+
+    List<ChartBand>? TierBands(string scenario)
+    {
+        if (TierSource(scenario) is not { } h) return null;
         var d = BenchmarkCatalog.All.SelectMany(b => b.Difficulties).FirstOrDefault(x => x.KovaaksBenchmarkId == h.Id);
         if (d == null) return null;
         var sc = h.P.Scenarios.First(x => x.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && x.RankMaxes.Count > 0);
