@@ -5,8 +5,10 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
 {
     /// <summary>1-based ordinal by start among all sessions of the <c>all</c> set given to <see cref="Group"/> (the oldest is 1).</summary>
     public int Number { get; init; }
-    public DateTime Start => Runs[0].Start;
-    public DateTime End => Runs.Max(r => r.End);
+    /// <summary>Opening time of a session that has no runs yet (an empty live session).</summary>
+    public DateTime Opened { get; init; }
+    public DateTime Start => Runs.Count > 0 ? Runs[0].Start : Opened;
+    public DateTime End => Runs.Count > 0 ? Runs.Max(r => r.End) : Opened;
     /// <summary>Wall-clock span from first start to last end.</summary>
     public TimeSpan Span => End - Start;
     /// <summary>Sum of run durations (time actually playing).</summary>

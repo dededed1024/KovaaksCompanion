@@ -41,7 +41,9 @@ public partial class StatsView
     bool _livePillOn, _liveShown;
     DateTime? _newestEnd;
 
-    bool _gameWasActive, _gameClosed;
+    // Closed until the game runs under this app, so sessions from before launch are never live.
+    bool _gameWasActive, _gameClosed = true;
+    DateTime _liveSince = DateTime.Now;
 
     /// <summary>The newest session is live while the game is being recorded, or while it can still take a run (gap not elapsed) and the game has not been closed since.</summary>
     bool LiveNow() => _host.GameActive || (!_gameClosed && _newestEnd is { } end && DateTime.Now - end <= PlaySession.DefaultGap);
@@ -160,7 +162,8 @@ public partial class StatsView
             var sessionsList = new StackPanel();
             var pagerPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
 
-            var totalPages = (sessions.Count + SessionsPerPage - 1) / SessionsPerPage;
+            var hasEmptyLive = LiveNow() && (sessions.Count == 0 || sessions[0].End < _liveSince);
+            var totalPages = (sessions.Count + (hasEmptyLive ? 1 : 0) + SessionsPerPage - 1) / SessionsPerPage;
             if (_sessionPage >= totalPages) _sessionPage = Math.Max(0, totalPages - 1);
 
             void FillSessions()
@@ -168,11 +171,16 @@ public partial class StatsView
                 sessionsList.Children.Clear();
                 _liveCard = null;
                 _newestEnd = sessions.Count > 0 ? sessions[0].End : null;
-                var live = sessions.Count > 0 && _sessionPage == 0 && LiveNow();
-                _liveShown = LiveNow();
+                var liveNow = LiveNow();
+                _liveShown = liveNow;
+                // No run yet this game launch: show an empty live session on top.
+                var shown = sessions;
+                if (liveNow && (sessions.Count == 0 || sessions[0].End < _liveSince))
+                    shown = [new PlaySession([], 0) { Number = sessions.Count > 0 ? sessions[0].Number + 1 : 1, Opened = _liveSince }, .. sessions];
+                var live = shown.Count > 0 && _sessionPage == 0 && liveNow;
                 var start = _sessionPage * SessionsPerPage;
-                var end = Math.Min(start + SessionsPerPage, sessions.Count);
-                for (var i = start; i < end; i++) sessionsList.Children.Add(SessionCard(sessions[i], pbs, i == 0 && live));
+                var end = Math.Min(start + SessionsPerPage, shown.Count);
+                for (var i = start; i < end; i++) sessionsList.Children.Add(SessionCard(shown[i], pbs, i == 0 && live));
                 if (live && sessionsList.Children.Count > 0) _liveCard = sessionsList.Children[0] as FrameworkElement;
                 Dispatcher.BeginInvoke(DispatcherPriority.Loaded, UpdateLivePill);
 

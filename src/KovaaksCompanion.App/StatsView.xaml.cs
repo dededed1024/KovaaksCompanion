@@ -257,7 +257,11 @@ public partial class StatsView : UserControl
     {
         var active = _host.GameActive;
         if (_gameWasActive && !active) _gameClosed = true;
-        else if (active) _gameClosed = false;
+        else if (active)
+        {
+            if (!_gameWasActive) _liveSince = DateTime.Now;
+            _gameClosed = false;
+        }
         _gameWasActive = active;
         CheckLive();
     });
@@ -626,7 +630,7 @@ public partial class StatsView : UserControl
         (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.RankMaxes.Count > 0) ? (pr, id) : null;
         if (int.TryParse(_playlist, out var cur) && Find(cur) is { } sel) return sel;
 
-        var live = LiveNow() && PlaySession.Group(_lib.AllRuns).FirstOrDefault() is { } s
+        var live = LiveNow() && PlaySession.Group(_lib.AllRuns).FirstOrDefault() is { } s && s.End >= _liveSince
             ? s.Runs.Select(r => r.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
         return AllDifficulties()
