@@ -381,15 +381,15 @@ public partial class ReplayView : UserControl
     Border RunRow(RunRecord r, bool pb)
     {
         var replay = SessionStore.FindRun(Infos(), r.Scenario, r.End) >= 0;
-        var g = new Grid { Margin = new Thickness(8, 0, 8, 0) };
+        var g = new Grid { Margin = new Thickness(4, 0, 4, 0) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
         void Put(UIElement e, int col)
         {
-            if (e is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
+            if (e is FrameworkElement fe) { fe.VerticalAlignment = VerticalAlignment.Center; fe.Margin = new Thickness(4, 0, 4, 0); }
             Grid.SetColumn(e, col);
             g.Children.Add(e);
         }
@@ -401,7 +401,9 @@ public partial class ReplayView : UserControl
             tierText.HorizontalAlignment = HorizontalAlignment.Center;
             Put(tierText, 1);
         }
-        Put(T(r.Score.ToString("0.#"), TierOf(r.Score) is { } rt ? ChartPaths.TextTone(rt.Brush) : null, true), 2);
+        var scoreText = T(r.Score.ToString("0.#"), TierOf(r.Score) is { } rt ? ChartPaths.TextTone(rt.Brush) : null, true);
+        scoreText.HorizontalAlignment = HorizontalAlignment.Right;
+        Put(scoreText, 2);
         if (pb)
         {
             var green = (Brush)FindResource("Green");

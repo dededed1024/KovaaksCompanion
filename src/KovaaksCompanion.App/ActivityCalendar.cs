@@ -171,7 +171,7 @@ public sealed class ActivityCalendar : FrameworkElement
                 dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
                 if (PbDays.Contains(day))
                 {
-                    var dotRadius = Math.Max(2, Cell * 0.16);
+                    var dotRadius = Math.Max(1.2, Cell * 0.09);
                     var dotCenter = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
                     if (_pbDotShadow == null)
                     {
@@ -179,15 +179,15 @@ public sealed class ActivityCalendar : FrameworkElement
                         {
                             GradientStops = new GradientStopCollection
                             {
-                                new GradientStop(Color.FromArgb(0x22, 0, 0, 0), 0),
-                                new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 0.5),
-                                new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)
+                                new GradientStop(Color.FromArgb(0x55, 0x1A, 0x22, 0x3A), 0),
+                                new GradientStop(Color.FromArgb(0x42, 0x1A, 0x22, 0x3A), 0.5),
+                                new GradientStop(Color.FromArgb(0, 0x1A, 0x22, 0x3A), 1)
                             }
                         };
                         _pbDotShadow.Freeze();
                     }
                     dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
-                    dc.DrawEllipse(Res("Green"), null, dotCenter, dotRadius, dotRadius);
+                    dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
                 }
             }
 
@@ -217,7 +217,7 @@ public sealed class ActivityCalendar : FrameworkElement
             var pbText = Text("Personal best", 10 * sc, dim);
             var pbTextX = lessX - 14 * sc - pbText.Width;
             dc.DrawText(pbText, new Point(pbTextX, y));
-            var dotRadius = Math.Max(2, Cell * 0.16);
+            var dotRadius = Math.Max(1.2, Cell * 0.09);
             var dotCenter = new Point(pbTextX - 6 * sc - dotRadius, y + sw / 2);
             if (_pbDotShadow == null)
             {
@@ -225,15 +225,15 @@ public sealed class ActivityCalendar : FrameworkElement
                 {
                     GradientStops = new GradientStopCollection
                     {
-                        new GradientStop(Color.FromArgb(0x22, 0, 0, 0), 0),
-                        new GradientStop(Color.FromArgb(0x10, 0, 0, 0), 0.5),
-                        new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)
+                        new GradientStop(Color.FromArgb(0x55, 0x1A, 0x22, 0x3A), 0),
+                        new GradientStop(Color.FromArgb(0x42, 0x1A, 0x22, 0x3A), 0.5),
+                        new GradientStop(Color.FromArgb(0, 0x1A, 0x22, 0x3A), 1)
                     }
                 };
                 _pbDotShadow.Freeze();
             }
             dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
-            dc.DrawEllipse(Res("Green"), null, dotCenter, dotRadius, dotRadius);
+            dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
         }
 
         if (_hover is { } hv)
