@@ -156,9 +156,7 @@ public partial class StatsView
         return sp;
     }
 
-    TextBlock SectionTitle(string text) => Text(text, 20, FgB, FontWeights.SemiBold, new Thickness(4, 8, 0, 12));
-
-    /// <summary>Large Home section title fading to transparent at the bottom, overlapping the card below it.</summary>
+    /// <summary>Large section title fading to transparent at the bottom, overlapping the card below it.</summary>
     TextBlock FadeTitle(string text)
     {
         var t = Text(text, 34, FgB, FontWeights.SemiBold, new Thickness(4, 8, 0, -5));
@@ -175,7 +173,7 @@ public partial class StatsView
         var p = c.P;
         var r = c.Report;
         var ranked = p.OverallRank > 0;
-        page.Children.Add(Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.ProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
+        page.Children.Add(Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.PlayedProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
             $"{r.PlayedCount} of {r.ScenarioCount} scenarios played · {r.TotalPlays} plays · {Dur(r.TimePlayed)}"));
 
         var tiers = c.Names.Count;
@@ -221,13 +219,12 @@ public partial class StatsView
         page.Children.Add(BuildActivity(c));
 
         // Scenarios
-        page.Children.Add(SectionTitle("Scenarios"));
+        page.Children.Add(FadeTitle("Scenarios"));
         page.Children.Add(BuildTable(c));
 
         // Charts
-        page.Children.Add(SectionTitle("Charts"));
+        page.Children.Add(FadeTitle("Charts"));
         page.Children.Add(BuildBalance(c, cats));
-        page.Children.Add(BuildDistribution(c));
         page.Children.Add(BuildBlocks(c));
         return page;
     }
@@ -241,13 +238,6 @@ public partial class StatsView
         var sv = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Content = bench, Margin = new Thickness(0, 0, 0, CardGap) };
         sv.SizeChanged += (_, ev) => bench.Width = Math.Max(ev.NewSize.Width, bench.MinTableWidth);
         return sv;
-    }
-
-    UIElement BuildDistribution(PlaylistCtx c)
-    {
-        var donut = new RankDonut { Margin = new Thickness(16, 4, 16, 12) };
-        donut.Set(Enumerable.Range(0, c.Counts.Length).Select(k => k == 0 ? ("UNRANKED", DimB, c.Counts[0]) : (c.Names[k - 1], c.Brushes[k - 1], c.Counts[k])).ToList());
-        return TitledCard("Rank distribution", null, donut);
     }
 
     UIElement BuildBlocks(PlaylistCtx c)
@@ -337,11 +327,12 @@ public partial class StatsView
             rb.Checked += OnAxesChecked;
             axes.Children.Add(rb);
         }
-        var compare = new CheckBox { Content = "Compare with 30 days ago", IsChecked = _host.Ui.RadarCompare, VerticalAlignment = VerticalAlignment.Center };
-        compare.Click += OnCompareClick;
         var head = new WrapPanel { Margin = new Thickness(16, 6, 16, 12) };
         head.Children.Add(new Border { Style = (Style)FindResource("SegmentTrack"), Child = axes, Margin = new Thickness(0, 0, 20, 0) });
-        head.Children.Add(compare);
+        var legend = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        legend.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0x93)), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        legend.Children.Add(new TextBlock { Text = "30 days ago", FontSize = 12.5, Foreground = DimB, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(legend);
 
         var ui = new BalanceUi();
         ui.Radar.VerticalAlignment = VerticalAlignment.Top;
@@ -418,14 +409,13 @@ public partial class StatsView
         var key = KeyFor(mode);
         var groups = c.Entries.GroupBy(key).ToList();
         if (groups.Count < 3 && mode == "Categories") { mode = "Subcategories"; key = KeyFor(mode); groups = c.Entries.GroupBy(key).ToList(); }
-        var compare = _host.Ui.RadarCompare;
         var axes = groups.Select(g =>
         {
             var f = g.First();
             var label = mode == "Scenarios" ? f.Scenario : mode == "Subcategories" ? Join(f.Category, f.Sub) : f.Category;
             return new RadarAxis(label.Length > 0 ? label : "Other", g.Average(r => r.Value), g.Average(r => r.Previous));
         }).ToList();
-        ui.Radar.Set(axes, c.Names, c.Brushes, compare);
+        ui.Radar.Set(axes, c.Names, c.Brushes, true);
         ui.Rows = RankingRows(axes, c);
         LayoutBalance(ui);
     }

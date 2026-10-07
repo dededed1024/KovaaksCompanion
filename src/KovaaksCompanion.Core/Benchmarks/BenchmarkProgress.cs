@@ -20,6 +20,29 @@ public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOn
     /// <summary><see cref="Progress"/> over <see cref="MaxProgress"/> (0..1); null when the cap is unknown.</summary>
     public double? ProgressShare => MaxProgress > 0 ? Math.Clamp(Progress / MaxProgress, 0, 1) : null;
 
+    /// <summary>Every scenario with tier thresholds reached its top threshold; one unplayed scenario is enough to be incomplete.</summary>
+    public bool IsComplete
+    {
+        get
+        {
+            var ranked = Scenarios.Where(s => s.RankMaxes.Count > 0).ToList();
+            return ranked.Count > 0 && ranked.All(s => s.Score >= s.RankMaxes[^1]);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Progress"/> over the point cap of the scenarios played so far (0..1); null when the cap is unknown.
+    /// Each subcategory's cap is split evenly between its scenarios, so unplayed scenarios leave the denominator.
+    /// </summary>
+    public double? PlayedProgressShare
+    {
+        get
+        {
+            var cap = Subcategories.Sum(s => s.RankMaxes.Count == 0 || s.Scenarios.Count == 0 ? 0 : s.RankMaxes[^1] * s.Scenarios.Count(x => x.Score > 0) / s.Scenarios.Count);
+            return cap > 0 ? Math.Clamp(Progress / cap, 0, 1) : null;
+        }
+    }
+
     /// <summary>Progress from the overall tier to the next: mean continuous tier progress (<see cref="Tier.ValueOf"/>) of the ranked scenarios minus <see cref="OverallRank"/>, clamped to 0..1; 1 at the top tier.</summary>
     public double OverallFraction
     {

@@ -490,13 +490,6 @@ public partial class StatsView : UserControl
         RenderRadar();
     }
 
-    void OnCompareClick(object sender, RoutedEventArgs e)
-    {
-        _host.Ui.RadarCompare = ((CheckBox)sender).IsChecked == true;
-        _host.SaveUi();
-        RenderRadar();
-    }
-
     void SetSummary(string note)
     {
         Summary.Text = note;

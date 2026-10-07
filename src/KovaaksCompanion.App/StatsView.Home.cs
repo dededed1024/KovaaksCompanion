@@ -241,7 +241,7 @@ public partial class StatsView
         return page;
     }
 
-    /// <summary>One row above the calendar: days played, longest daily streak, total scenario time and playlists at the top rank (unplayed scenarios included).</summary>
+    /// <summary>One row above the calendar: days played, longest daily streak, total scenario time and playlists with every scenario at its top tier (one unplayed scenario makes it incomplete).</summary>
     UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays)
     {
         var days = plays.Keys.Order().ToList();
@@ -253,7 +253,7 @@ public partial class StatsView
         }
         var time = TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks));
         var done = AllDifficulties().Select(x => x.D.KovaaksBenchmarkId).Distinct()
-            .Count(id => _progress.TryGetValue(id, out var p) && p.RankNames.Count >= 2 && p.OverallRank >= p.RankNames.Count - 1);
+            .Count(id => _progress.TryGetValue(id, out var p) && p.IsComplete);
         var cells = new (string Label, string Value)[]
         {
             ("Days", $"{days.Count}"),
