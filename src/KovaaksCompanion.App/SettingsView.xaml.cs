@@ -41,9 +41,9 @@ public partial class SettingsView : UserControl
         Kovaaks.Text = s.KovaaksPath; Data.Text = s.DataRoot; Steam.Text = s.SteamId;
         foreach (RadioButton r in QualityBar.Children) r.IsChecked = (string)r.Tag == s.VideoQuality.ToString();
         AutoStart.IsChecked = Autostart.IsOn();
-        KovaaksNote.Visibility = Visibility.Collapsed;
         _loading = false;
         Validate(null, null);
+        if (Kovaaks.Text.Length == 0 && PathDetector.FindKovaaks() is { } found) { Kovaaks.Text = found; Save(); }
     }
 
     bool SteamValid()
@@ -91,16 +91,6 @@ public partial class SettingsView : UserControl
     {
         if (_loading) return;
         Autostart.Apply(AutoStart.IsChecked == true);
-        Save();
-    }
-
-    void OnDetectKovaaks(object sender, RoutedEventArgs e)
-    {
-        var found = PathDetector.FindKovaaks();
-        KovaaksNote.Text = "Not found";
-        KovaaksNote.Visibility = found == null ? Visibility.Visible : Visibility.Collapsed;
-        if (found == null) return;
-        Kovaaks.Text = found;
         Save();
     }
 

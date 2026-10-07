@@ -24,12 +24,12 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
+        <Border x:Name="Card" Width="520" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
                 BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
             <Border x:Name="Clipper" CornerRadius="17" SizeChanged="OnCardSized">
-                <Grid Margin="36,28,36,32">
+                <Grid Margin="28,24,28,28">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -43,20 +43,16 @@
                     </Grid>
                     <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
-
                             <TextBlock Style="{StaticResource Caption}" Text="KovaaK's folder"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="Kovaaks" LostFocus="OnCommit" KeyDown="OnTextKey"/>
-                                <Button Grid.Column="1" Content="Detect" Margin="8,0,0,0" Click="OnDetectKovaaks"/>
-                                <Button Grid.Column="2" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseKovaaks"/>
+                                <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseKovaaks"/>
                             </Grid>
-                            <TextBlock x:Name="KovaaksNote" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" Visibility="Collapsed"/>
-                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Data folder"/>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,16,0,0" Text="Data folder"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -65,23 +61,27 @@
                                 <TextBox x:Name="Data" LostFocus="OnCommit" KeyDown="OnTextKey"/>
                                 <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseData"/>
                             </Grid>
-                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Steam ID"/>
-                            <StackPanel>
-                                <TextBox x:Name="Steam" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey"/>
-                                <TextBlock x:Name="SteamError" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
-                            </StackPanel>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,16,0,0" Text="Steam ID"/>
+                            <TextBox x:Name="Steam" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey"/>
+                            <TextBlock x:Name="SteamError" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
 
-                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Recording quality"/>
-                            <Border Style="{StaticResource SegmentTrack}">
-                                <UniformGrid x:Name="QualityBar" Rows="1">
-                                    <RadioButton Style="{StaticResource Segment}" Content="Low" Tag="Low" Checked="OnQuality"/>
-                                    <RadioButton Style="{StaticResource Segment}" Content="Medium" Tag="Medium" Checked="OnQuality"/>
-                                    <RadioButton Style="{StaticResource Segment}" Content="High" Tag="High" Checked="OnQuality"/>
-                                    <RadioButton Style="{StaticResource Segment}" Content="Ultra" Tag="Ultra" Checked="OnQuality"/>
-                                </UniformGrid>
-                            </Border>
+                            <Grid Margin="0,20,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Recording quality" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                <Border Grid.Column="1" Width="260" Style="{StaticResource SegmentTrack}">
+                                    <UniformGrid x:Name="QualityBar" Rows="1">
+                                        <RadioButton Style="{StaticResource Segment}" Content="Low" Tag="Low" Checked="OnQuality"/>
+                                        <RadioButton Style="{StaticResource Segment}" Content="Medium" Tag="Medium" Checked="OnQuality"/>
+                                        <RadioButton Style="{StaticResource Segment}" Content="High" Tag="High" Checked="OnQuality"/>
+                                        <RadioButton Style="{StaticResource Segment}" Content="Ultra" Tag="Ultra" Checked="OnQuality"/>
+                                    </UniformGrid>
+                                </Border>
+                            </Grid>
 
-                            <Grid Margin="0,18,0,0">
+                            <Grid Margin="0,14,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -90,8 +90,14 @@
                                 <CheckBox Grid.Column="1" x:Name="AutoStart" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
                             </Grid>
 
-                            <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" Margin="0,18,0,0"/>
-                            <Button x:Name="CheckBtn" Content="Check for updates" HorizontalAlignment="Left" Click="OnCheckUpdate"/>
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                <Button Grid.Column="1" x:Name="CheckBtn" Content="Check for updates" Click="OnCheckUpdate"/>
+                            </Grid>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
