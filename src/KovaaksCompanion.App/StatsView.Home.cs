@@ -214,10 +214,12 @@ public partial class StatsView
 
             if (activityCard is Border activityBorder)
             {
-                activityBorder.Padding = new Thickness(8, 32, 8, 8);
+                activityBorder.Padding = new Thickness(8, 16, 8, 8);
                 var wrapper = new StackPanel();
                 var inner = activityBorder.Child;
                 activityBorder.Child = null;
+                wrapper.Children.Add(BuildPlayStats(runs, plays));
+                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 24, 16, 40) });
                 wrapper.Children.Add(inner ?? new Border());
                 wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 32, 16, 36) });
                 var sessionsPanel = new StackPanel { Margin = new Thickness(16, 0, 16, 4) };
@@ -229,6 +231,48 @@ public partial class StatsView
             page.Children.Add(activityCard);
         }
         return page;
+    }
+
+    /// <summary>One row above the calendar: days played, longest daily streak, total scenario time and playlists at the top rank (unplayed scenarios included).</summary>
+    UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays)
+    {
+        var days = plays.Keys.Order().ToList();
+        int best = 0, run = 0;
+        for (var i = 0; i < days.Count; i++)
+        {
+            run = i > 0 && (days[i] - days[i - 1]).Days == 1 ? run + 1 : 1;
+            best = Math.Max(best, run);
+        }
+        var time = TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks));
+        var done = AllDifficulties().Select(x => x.D.KovaaksBenchmarkId).Distinct()
+            .Count(id => _progress.TryGetValue(id, out var p) && p.RankNames.Count >= 2 && p.OverallRank >= p.RankNames.Count - 1);
+        var cells = new (string Label, string Value)[]
+        {
+            ("Days", $"{days.Count}"),
+            ("Streak", $"{best}"),
+            ("Time", time.TotalHours > 1 ? $"{(int)time.TotalHours}h" : Dur(time)),
+            ("Complete", $"{done}")
+        };
+        var grid = new Grid { Margin = new Thickness(16, 12, 16, 12) };
+        for (var i = 0; i < cells.Length; i++)
+        {
+            if (i > 0)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var sep = new Border { Width = 1, Margin = new Thickness(0, 6, 0, 6), Background = Solid("#14FFFFFF") };
+                Grid.SetColumn(sep, grid.ColumnDefinitions.Count - 1);
+                grid.Children.Add(sep);
+            }
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            cell.Children.Add(Text(cells[i].Value, 32, FgB, FontWeights.SemiBold));
+            cell.Children.Add(Text(cells[i].Label, 16, DimB, null, new Thickness(0, 2, 0, 0)));
+            ((TextBlock)cell.Children[0]).HorizontalAlignment = HorizontalAlignment.Center;
+            ((TextBlock)cell.Children[1]).HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(cell, grid.ColumnDefinitions.Count - 1);
+            grid.Children.Add(cell);
+        }
+        return grid;
     }
 
     // Search popup
@@ -732,7 +776,7 @@ public partial class StatsView
         title.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = FgB });
         title.Inlines.Add(new System.Windows.Documents.Run($"  {DayLabel(s.Start.Date)} · " + ClockFormat.Range(s.Start, s.End)) { FontSize = 12, Foreground = DimB });
 
-        var titleCol = new StackPanel { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 4, 0, 0) };
+        var titleCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 6) };
         if (live)
         {
             var dot = new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, Fill = Brushes.White, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -741,7 +785,7 @@ public partial class StatsView
             pillRow.Children.Add(dot);
             pillRow.Children.Add(Text("LIVE", 10.5, Brushes.White, FontWeights.Bold));
             var pill = new Border { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, CornerRadius = new CornerRadius(8), Background = Solid("#FF453A"), Child = pillRow };
-            var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+            var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             line.Children.Add(title); line.Children.Add(pill);
             titleCol.Children.Add(line);
         }
@@ -1031,7 +1075,7 @@ public partial class StatsView
                         EndPoint = new Point(1, 0),
                         GradientStops = new GradientStopCollection
                         {
-                            new GradientStop(Color.FromArgb(0x0A, 255, 255, 255), 0),
+                            new GradientStop(Color.FromArgb(0x05, 255, 255, 255), 0),
                             new GradientStop(Color.FromArgb(0x38, c.R, c.G, c.B), 1)
                         }
                     };
@@ -1058,7 +1102,7 @@ public partial class StatsView
             else
             {
                 card.Child = cell;
-                HoverFade(card, "#0AFFFFFF", "#14FFFFFF");
+                HoverFade(card, "#05FFFFFF", "#0FFFFFFF");
             }
 
             Clickable(card, () => OpenPlaylist(bb, dd));
