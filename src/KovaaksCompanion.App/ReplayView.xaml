@@ -192,26 +192,28 @@
 
                             <Grid x:Name="TransportBar" Grid.Row="4" Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontSize="20" Width="40" Height="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Play / pause (Space)" Click="OnPlayPause"/>
-                                    <Button Content="&#x2039; 1f" Style="{StaticResource PlayerButton}" Click="OnStepBack" ToolTip="Step back 1/60 s (←)"/>
-                                    <Button Content="1f &#x203A;" Style="{StaticResource PlayerButton}" Click="OnStepForward" ToolTip="Step forward 1/60 s (→)"/>
-                                    <TextBlock x:Name="TimeReadout" FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource Dim}">
-                                        <Run x:Name="TimeNow" Foreground="{StaticResource Fg}" Text="0:00"/><Run Text=" / "/><Run x:Name="TimeTotal" Text="0:00"/>
-                                    </TextBlock>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <StackPanel x:Name="NudgeBox" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0" ToolTip="Trail sync">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <ToggleButton x:Name="TrailBtn" Content="Trail" Style="{StaticResource PlayerToggle}" ToolTip="Show or hide the trail (T)" Click="OnTrailClick"/>
+                                    <StackPanel x:Name="NudgeBox" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0" ToolTip="Trail sync">
                                         <Button x:Name="NudgeMinus" Content="&#x2212;" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail earlier 10 ms ([)" Click="OnNudgeMinus"/>
                                         <TextBlock x:Name="NudgeText" Text="0 ms" FontSize="12.5" MinWidth="56" TextAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Dim}"
                                                    Cursor="Hand" Background="Transparent" ToolTip="Trail sync (click to reset)" MouseLeftButtonUp="OnNudgeReset"/>
                                         <Button x:Name="NudgePlus" Content="+" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail later 10 ms (])" Click="OnNudgePlus"/>
                                     </StackPanel>
-                                    <ToggleButton x:Name="TrailBtn" Content="Trail" Style="{StaticResource PlayerToggle}" ToolTip="Show or hide the trail (T)" Click="OnTrailClick"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="&#x2039; 1f" Style="{StaticResource PlayerButton}" Click="OnStepBack" ToolTip="Step back 1/60 s (←)"/>
+                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontSize="20" Width="40" Height="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Play / pause (Space)" Click="OnPlayPause"/>
+                                    <Button Content="1f &#x203A;" Style="{StaticResource PlayerButton}" Click="OnStepForward" ToolTip="Step forward 1/60 s (→)"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <TextBlock x:Name="TimeReadout" FontSize="13" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{StaticResource Dim}">
+                                        <Run x:Name="TimeNow" Foreground="{StaticResource Fg}" Text="0:00"/><Run Text=" / "/><Run x:Name="TimeTotal" Text="0:00"/>
+                                    </TextBlock>
                                     <Button x:Name="SpeedBtn" Content="1x" Style="{StaticResource PlayerButton}" MinWidth="48" ToolTip="Playback speed" Click="OnSpeedClick"/>
                                     <Popup x:Name="SpeedPop" PlacementTarget="{Binding ElementName=SpeedBtn}" Placement="Top" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
                                         <Border Margin="10,10,10,6" Padding="4" CornerRadius="10" Background="#FF2A2A2E" BorderBrush="#1FFFFFFF" BorderThickness="1">

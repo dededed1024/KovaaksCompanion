@@ -883,7 +883,7 @@ public partial class ReplayView : UserControl
         Seek.Maximum = _duration;
         Media.SpeedRatio = _speed;
         Media.Pause();
-        Media.Position = TimeSpan.FromSeconds(Math.Clamp(_s.Info.VideoTime(0), 0, _duration));
+        Media.Position = TimeSpan.FromSeconds(Math.Clamp(_s.Info.VideoTime(0) - 1, 0, _duration));
         BuildChart();
         SetTransport(true);
         FitScreen();
