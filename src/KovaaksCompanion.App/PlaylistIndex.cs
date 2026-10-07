@@ -15,7 +15,7 @@ sealed class PlaylistIndex
         _file = file;
         try
         {
-            if (JsonSerializer.Deserialize<Dictionary<int, string[]>>(File.ReadAllText(_file)) is { } m) foreach (var (k, v) in m) _map[k] = v;
+            if (SignedFile.TryRead(_file) is { } b && JsonSerializer.Deserialize<Dictionary<int, string[]>>(b) is { } m) foreach (var (k, v) in m) _map[k] = v;
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { }
     }
@@ -30,7 +30,7 @@ sealed class PlaylistIndex
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
-            File.WriteAllText(_file, JsonSerializer.Serialize(_map));
+            SignedFile.Write(_file, JsonSerializer.SerializeToUtf8Bytes(_map));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }

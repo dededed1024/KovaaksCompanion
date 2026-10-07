@@ -1,3 +1,4 @@
+using System.Text;
 using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
@@ -12,23 +13,32 @@ public sealed record LoadedSession(string Folder, SessionInfo Info, TrajectoryDa
 
 public static class SessionStore
 {
-    public static void WriteInfo(string folder, SessionInfo info)
+    public static void WriteInfo(string folder, SessionInfo info) =>
+        SignedFile.Write(Path.Combine(folder, SessionFolder.InfoFile), Encoding.UTF8.GetBytes(info.ToJson()));
+
+    /// <summary>Reads the signed session.dat; a tampered one throws <see cref="SessionFormatException"/>. A pre-1.3.0 plain session.json is read once and upgraded in place.</summary>
+    public static SessionInfo ReadInfo(string folder)
     {
         var path = Path.Combine(folder, SessionFolder.InfoFile);
-        var tmp = path + ".tmp";
-        File.WriteAllText(tmp, info.ToJson());
-        File.Move(tmp, path, overwrite: true);
+        if (File.Exists(path))
+            return SignedFile.TryRead(path) is { } b ? SessionInfo.FromJson(Encoding.UTF8.GetString(b))
+                : throw new SessionFormatException("session.dat is damaged or was modified.");
+        var legacy = Path.Combine(folder, SessionFolder.LegacyInfoFile);
+        var info = SessionInfo.FromJson(File.ReadAllText(legacy));
+        WriteInfo(folder, info);
+        File.Delete(legacy);
+        return info;
     }
 
-    /// <summary>Complete session folders (those with session.json), newest first; unreadable ones are skipped.</summary>
+    /// <summary>Complete session folders (those with session.dat), newest first; unreadable ones are skipped.</summary>
     public static List<(string Folder, SessionInfo Info)> List(string root)
     {
         var list = new List<(string, SessionInfo)>();
         if (!Directory.Exists(root)) return list;
         foreach (var dir in Directory.GetDirectories(root))
         {
-            try { list.Add((dir, SessionInfo.FromJson(File.ReadAllText(Path.Combine(dir, SessionFolder.InfoFile))))); }
-            catch (Exception e) when (e is IOException or SessionFormatException or System.Text.Json.JsonException) { }
+            try { list.Add((dir, ReadInfo(dir))); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or SessionFormatException or System.Text.Json.JsonException) { }
         }
         return list.OrderByDescending(s => s.Item2.Start).ToList();
     }
@@ -53,7 +63,7 @@ public static class SessionStore
     /// <summary>Throws <see cref="SessionFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>
     public static LoadedSession Load(string folder)
     {
-        var info = SessionInfo.FromJson(File.ReadAllText(Path.Combine(folder, SessionFolder.InfoFile)));
+        var info = ReadInfo(folder);
         var trajPath = Path.Combine(folder, SessionFolder.TrajectoryFile);
         var traj = File.Exists(trajPath) ? TrajectorySerializer.Deserialize(File.ReadAllBytes(trajPath)) : null;
         var csv = Directory.GetFiles(folder, "*Stats.csv").FirstOrDefault();

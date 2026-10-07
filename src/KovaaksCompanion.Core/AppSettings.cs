@@ -34,7 +34,7 @@ public sealed record AppSettings
     }
     [JsonIgnore] public string SessionsFolder => Path.Combine(DataRoot, "sessions");
     [JsonIgnore] public string UiFile => Path.Combine(DataRoot, "ui.json");
-    [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DataRoot, "playlist-scenarios.json");
+    [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DataRoot, "playlist-scenarios.dat");
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
 
     /// <summary>Fills KovaaksPath from detection when it is empty or missing; unchanged when nothing is found.</summary>

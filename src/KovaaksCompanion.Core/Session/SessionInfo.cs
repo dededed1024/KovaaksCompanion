@@ -6,7 +6,7 @@ namespace KovaaksCompanion.Core.Session;
 
 public sealed class SessionFormatException(string message) : Exception(message);
 
-/// <summary>session.json (SES-001). Times are local wall clock, as in the CSV.</summary>
+/// <summary>session.dat payload (SES-001). Times are local wall clock, as in the CSV.</summary>
 public sealed record SessionInfo
 {
     public const int CurrentVersion = 1;
