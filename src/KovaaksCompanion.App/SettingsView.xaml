@@ -71,7 +71,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Recording quality" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
-                                <Border Grid.Column="1" Width="260" Style="{StaticResource SegmentTrack}">
+                                <Border Grid.Column="1" Width="300" Style="{StaticResource SegmentTrack}">
                                     <UniformGrid x:Name="QualityBar" Rows="1">
                                         <RadioButton Style="{StaticResource Segment}" Content="Low" Tag="Low" Checked="OnQuality"/>
                                         <RadioButton Style="{StaticResource Segment}" Content="Medium" Tag="Medium" Checked="OnQuality"/>

@@ -195,7 +195,7 @@
         <!-- Segmented control item (RadioButton): 36pt item inside a 44pt track -->
         <Style x:Key="Segment" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource Dim}"/>
-            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Padding" Value="6,0"/>
             <Setter Property="MinHeight" Value="36"/>
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="Cursor" Value="Hand"/>
