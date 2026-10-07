@@ -14,7 +14,6 @@ public sealed class ActivityCalendar : FrameworkElement
     IReadOnlyDictionary<DateTime, int> _plays = new Dictionary<DateTime, int>();
     Brush _tone = Brushes.Gray;
     (int Week, int Row)? _hover;
-    static Brush? _pbDotShadow;
 
     /// <summary>Most weeks shown (53 = a full year). Fewer weeks make the cells grow to fill the width (10..18px).</summary>
     public int MaxWeeks { get; set; } = 53;
@@ -173,20 +172,6 @@ public sealed class ActivityCalendar : FrameworkElement
                 {
                     var dotRadius = Math.Max(1.2, Cell * 0.09);
                     var dotCenter = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
-                    if (_pbDotShadow == null)
-                    {
-                        _pbDotShadow = new RadialGradientBrush
-                        {
-                            GradientStops = new GradientStopCollection
-                            {
-                                new GradientStop(Color.FromArgb(0x55, 0x1A, 0x22, 0x3A), 0),
-                                new GradientStop(Color.FromArgb(0x42, 0x1A, 0x22, 0x3A), 0.5),
-                                new GradientStop(Color.FromArgb(0, 0x1A, 0x22, 0x3A), 1)
-                            }
-                        };
-                        _pbDotShadow.Freeze();
-                    }
-                    dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
                     dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
                 }
             }
@@ -219,20 +204,6 @@ public sealed class ActivityCalendar : FrameworkElement
             dc.DrawText(pbText, new Point(pbTextX, y));
             var dotRadius = Math.Max(1.2, Cell * 0.09);
             var dotCenter = new Point(pbTextX - 6 * sc - dotRadius, y + sw / 2);
-            if (_pbDotShadow == null)
-            {
-                _pbDotShadow = new RadialGradientBrush
-                {
-                    GradientStops = new GradientStopCollection
-                    {
-                        new GradientStop(Color.FromArgb(0x55, 0x1A, 0x22, 0x3A), 0),
-                        new GradientStop(Color.FromArgb(0x42, 0x1A, 0x22, 0x3A), 0.5),
-                        new GradientStop(Color.FromArgb(0, 0x1A, 0x22, 0x3A), 1)
-                    }
-                };
-                _pbDotShadow.Freeze();
-            }
-            dc.DrawEllipse(_pbDotShadow, null, dotCenter, dotRadius * 2, dotRadius * 2);
             dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
         }
 
