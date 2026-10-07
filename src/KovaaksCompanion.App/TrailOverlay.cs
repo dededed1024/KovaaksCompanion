@@ -42,76 +42,7 @@ public sealed class TrailOverlay : FrameworkElement
             prev = pt; prevP = p;
         }
 
-        // Recolor grey segments near colored ones with gradient
-        var origColors = segs.Select(s => s.C).ToList();
-        const int K = 2;
-        for (int i = 0; i < segs.Count; i++)
-        {
-            if (segs[i].C != NeutralGrey) continue;
-            // Find nearest non-grey segment within K segments
-            Color? nearest = null;
-            int nearestDist = int.MaxValue;
-            for (int d = 1; d <= K; d++)
-            {
-                if (i - d >= 0 && (i - d == 0 || segs[i - d].A == segs[i - d + 1].A))
-                {
-                    if (segs[i - d].C != NeutralGrey)
-                    {
-                        nearest = segs[i - d].C;
-                        nearestDist = d;
-                        break;
-                    }
-                }
-                if (i + d < segs.Count && (i + d == segs.Count - 1 || segs[i + d].A == segs[i + d - 1].B))
-                {
-                    if (segs[i + d].C != NeutralGrey)
-                    {
-                        nearest = segs[i + d].C;
-                        nearestDist = d;
-                        break;
-                    }
-                }
-            }
-            if (nearest is { } nc)
-            {
-                var t = nearestDist / (K + 1.0);
-                var r = (byte)((nc.R * (1 - t)) + (NeutralGrey.R * t));
-                var g = (byte)((nc.G * (1 - t)) + (NeutralGrey.G * t));
-                var b = (byte)((nc.B * (1 - t)) + (NeutralGrey.B * t));
-                var seg = segs[i];
-                segs[i] = (seg.A, seg.B, Color.FromRgb(r, g, b), seg.O);
-            }
-        }
-
-        // Draw with gradient transitions
-        for (int i = 0; i < segs.Count; i++)
-        {
-            var s = segs[i];
-            var startColor = origColors[i];
-            var endColor = origColors[i];
-
-            if (i > 0 && segs[i - 1].B == s.A)
-                startColor = Blend(origColors[i - 1], origColors[i]);
-            if (i + 1 < segs.Count && segs[i + 1].A == s.B)
-                endColor = Blend(origColors[i], origColors[i + 1]);
-
-            if (startColor == endColor)
-            {
-                dc.DrawLine(Pen(startColor, s.O), s.A, s.B);
-            }
-            else
-            {
-                var brush = new LinearGradientBrush(
-                    Color.FromArgb((byte)(255 * Math.Clamp(s.O, 0, 1)), startColor.R, startColor.G, startColor.B),
-                    Color.FromArgb((byte)(255 * Math.Clamp(s.O, 0, 1)), endColor.R, endColor.G, endColor.B),
-                    s.A, s.B);
-                brush.MappingMode = BrushMappingMode.Absolute;
-                brush.Freeze();
-                var pen = new Pen(brush, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-                pen.Freeze();
-                dc.DrawLine(pen, s.A, s.B);
-            }
-        }
+        foreach (var s in segs) dc.DrawLine(Pen(s.C, s.O), s.A, s.B);
         dc.Pop();
     }
 
@@ -153,14 +84,6 @@ public sealed class TrailOverlay : FrameworkElement
 
     /// <summary>Not firing, or no data.</summary>
     public static readonly Color NeutralGrey = Color.FromRgb(0x8E, 0x8E, 0x93);
-
-    static Color Blend(Color a, Color b)
-    {
-        var r = (byte)((a.R + b.R) / 2);
-        var g = (byte)((a.G + b.G) / 2);
-        var bl = (byte)((a.B + b.B) / 2);
-        return Color.FromRgb(r, g, bl);
-    }
 
     const double Thickness = 3;
     static readonly Dictionary<(Color, byte), Pen> Pens = [];
