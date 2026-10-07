@@ -11,8 +11,8 @@ public sealed record SessionInfo
 {
     public const int CurrentVersion = 1;
 
-    // Base video-lag compensation: video shows an input ~50 ms after its wall-clock time (measured: DWM + capture latency), so map mouse time later.
-    public const double DefaultSyncMs = 50;
+    // Base video-lag compensation; 0 = no correction, adjust per user with SyncNudgeMs.
+    public const double DefaultSyncMs = 0;
 
     public int FormatVersion { get; init; } = CurrentVersion;
     public string Scenario { get; init; } = "";
@@ -20,7 +20,7 @@ public sealed record SessionInfo
     public DateTime End { get; init; }
     /// <summary>Seconds of video time at which the run Start happens (video t = mouse t + VideoOffsetSec).</summary>
     public double VideoOffsetSec { get; init; }
-    /// <summary>Stored for compatibility; playback uses the constant DefaultSyncMs (50 ms base offset).</summary>
+    /// <summary>Stored for compatibility; playback uses the constant DefaultSyncMs (0 ms base offset).</summary>
     public double SyncDefaultMs { get; init; } = DefaultSyncMs;
     /// <summary>User nudge in ms (VIEW-005), added to the base offset at playback.</summary>
     public double SyncNudgeMs { get; init; }
