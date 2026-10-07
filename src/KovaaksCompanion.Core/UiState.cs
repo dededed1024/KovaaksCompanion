@@ -6,6 +6,8 @@ namespace KovaaksCompanion.Core;
 public sealed class UiState
 {
     public static readonly string[] DefaultSeries = ["Accuracy", "Score"];
+    /// <summary>Voltaic S5 Novice.</summary>
+    public static readonly string[] DefaultFavorites = ["459"];
 
     public static string DefaultFile => Path.Combine(AppSettings.DefaultDataFolder, "ui.json");
 
@@ -56,7 +58,15 @@ public sealed class UiState
         try
         {
             var d = JsonSerializer.Deserialize<Dto>(File.ReadAllText(path ?? DefaultFile), Options);
-            if (d?.FavoritePlaylists is { } f) foreach (var n in f) s._favs.Add(n);
+            if (d?.FavoritePlaylists is { } f)
+            {
+                foreach (var n in f) s._favs.Add(n);
+            }
+            else
+            {
+                // Use defaults when file is missing or FavoritePlaylists is null
+                foreach (var n in DefaultFavorites) s._favs.Add(n);
+            }
             if (d?.VisibleSeries is { } v) s.VisibleSeries = v;
             if (d?.ShowTrail is { } t) s.ShowTrail = t;
             if (d?.StatsChart is { } sc) s.StatsChart = sc;
@@ -65,7 +75,11 @@ public sealed class UiState
             if (d?.TierPlaylists is { } tl) s._tiers = tl.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             else if (d?.TierPlaylist is { Length: > 0 } tp && !s.IsPinned(tp)) s._tiers.Add(tp);
         }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // Use defaults when file is missing or malformed
+            foreach (var n in DefaultFavorites) s._favs.Add(n);
+        }
         return s;
     }
 
