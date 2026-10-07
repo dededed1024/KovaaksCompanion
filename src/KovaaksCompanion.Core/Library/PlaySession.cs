@@ -3,6 +3,8 @@ namespace KovaaksCompanion.Core.Library;
 /// <summary>Consecutive runs with short gaps between them. <see cref="Runs"/> is chronological.</summary>
 public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBests)
 {
+    /// <summary>1-based ordinal by start among all sessions of the <c>all</c> set given to <see cref="Group"/> (the oldest is 1).</summary>
+    public int Number { get; init; }
     public DateTime Start => Runs[0].Start;
     public DateTime End => Runs.Max(r => r.End);
     /// <summary>Wall-clock span from first start to last end.</summary>
@@ -52,18 +54,27 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
             var stats = new ScenarioStats(g.Key, g.OrderBy(r => r.Start).ToList());
             foreach (var i in stats.PersonalBestIndexes()) pbs.Add(stats.Runs[i]);
         }
-        var sessions = new List<PlaySession>();
+        var sessions = Split(ordered, gap).Select(c => new PlaySession(c, c.Count(pbs.Contains))).ToList();
+        // Number by the full set's chronological grouping so a session keeps its number whichever subset is shown.
+        var starts = Split((all ?? ordered).OrderBy(r => r.Start).ToList(), gap).Select(c => c[0].Start).ToList();
+        for (var i = 0; i < sessions.Count; i++)
+            sessions[i] = sessions[i] with { Number = Math.Max(1, starts.Count(t => t <= sessions[i].Start)) };
+        sessions.Reverse();
+        return sessions;
+    }
+
+    static List<List<RunRecord>> Split(List<RunRecord> ordered, TimeSpan gap)
+    {
+        var result = new List<List<RunRecord>>();
         var cur = new List<RunRecord>();
         var end = DateTime.MinValue;
-        void Flush() { if (cur.Count > 0) sessions.Add(new(cur, cur.Count(pbs.Contains))); cur = []; }
         foreach (var r in ordered)
         {
-            if (cur.Count > 0 && r.Start - end > gap) Flush();
+            if (cur.Count > 0 && r.Start - end > gap) { result.Add(cur); cur = []; }
             end = cur.Count == 0 || r.End > end ? r.End : end;
             cur.Add(r);
         }
-        Flush();
-        sessions.Reverse();
-        return sessions;
+        if (cur.Count > 0) result.Add(cur);
+        return result;
     }
 }
