@@ -33,6 +33,23 @@ public static class SessionStore
         return list.OrderByDescending(s => s.Item2.Start).ToList();
     }
 
+    /// <summary>Max gap between a stats-folder run's end and a session's end for both to be the same run.</summary>
+    public static readonly TimeSpan RunMatchTolerance = TimeSpan.FromSeconds(60);
+
+    /// <summary>Index of the <paramref name="scenario"/> session ending nearest <paramref name="end"/> within <see cref="RunMatchTolerance"/>, else -1.</summary>
+    public static int FindRun(IReadOnlyList<SessionInfo> sessions, string scenario, DateTime end)
+    {
+        var best = -1;
+        var bestGap = RunMatchTolerance;
+        for (var i = 0; i < sessions.Count; i++)
+        {
+            if (!sessions[i].Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase)) continue;
+            var gap = (sessions[i].End - end).Duration();
+            if (gap < bestGap) { best = i; bestGap = gap; }
+        }
+        return best;
+    }
+
     /// <summary>Throws <see cref="SessionFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>
     public static LoadedSession Load(string folder)
     {

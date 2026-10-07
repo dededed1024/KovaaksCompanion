@@ -6,14 +6,14 @@ namespace KovaaksCompanion.Core;
 /// <summary>APP-003 settings, stored as JSON in %LOCALAPPDATA%\KovaaksCompanion\settings.json.</summary>
 public sealed record AppSettings
 {
-    public string KovaaksPath { get; init; } = @"F:\Steam\steamapps\common\FPSAimTrainer";
-    public string FfmpegPath { get; init; } = @"C:\ffmpeg\bin\ffmpeg.exe";
-    public string DataFolder { get; init; } = DefaultDataFolder;
+    /// <summary>Empty = auto-detect (Steam libraries).</summary>
+    public string KovaaksPath { get; init; } = "";
+    /// <summary>Parent location of the data root: sessions and buffer live in its "KovaaksCompanion" subfolder.</summary>
+    public string DataFolder { get; init; } = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     /// <summary>SteamID64 used for server scores. Empty = detect from Steam's loginusers.vdf.</summary>
     public string SteamId { get; init; } = "";
-    /// <summary>0 = match the game monitor's refresh rate.</summary>
-    public int Fps { get; init; } = 0;
-    public int BufferMinutes { get; init; } = 10;
+    public bool StartWithWindows { get; init; }
+    public Video.VideoQuality VideoQuality { get; init; } = Video.VideoQuality.High;
 
     public static string DefaultDataFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KovaaksCompanion");
@@ -22,18 +22,36 @@ public sealed record AppSettings
 
     [JsonIgnore] public string StatsFolder => Path.Combine(KovaaksPath, "FPSAimTrainer", "stats");
     [JsonIgnore] public string EffectiveSteamId => SteamId.Trim().Length > 0 ? SteamId.Trim() : Benchmarks.SteamAccount.Detect(KovaaksPath) ?? "";
-    [JsonIgnore] public string SessionsFolder => Path.Combine(DataFolder, "sessions");
-    [JsonIgnore] public string BufferFolder => Path.Combine(DataFolder, "buffer");
+    /// <summary><see cref="DataFolder"/>\KovaaksCompanion; a value already ending in that name (legacy files) is used as-is, empty = default.</summary>
+    [JsonIgnore] public string DataRoot
+    {
+        get
+        {
+            var d = string.IsNullOrWhiteSpace(DataFolder) ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) : DataFolder.Trim();
+            var last = Path.GetFileName(d.TrimEnd((char)92, '/'));
+            return string.Equals(last, "KovaaksCompanion", StringComparison.OrdinalIgnoreCase) ? d : Path.Combine(d, "KovaaksCompanion");
+        }
+    }
+    [JsonIgnore] public string SessionsFolder => Path.Combine(DataRoot, "sessions");
+    [JsonIgnore] public string UiFile => Path.Combine(DataRoot, "ui.json");
+    [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DataRoot, "playlist-scenarios.json");
+    [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
+
+    /// <summary>Fills KovaaksPath from detection when it is empty or missing; unchanged when nothing is found.</summary>
+    public AppSettings WithDetectedPaths(Func<string?>? findKovaaks = null, Func<string, bool>? dirExists = null)
+    {
+        if (KovaaksPath.Length > 0 && (dirExists ?? Directory.Exists)(KovaaksPath)) return this;
+        return (findKovaaks ?? PathDetector.FindKovaaks)() is { } k ? this with { KovaaksPath = k } : this;
+    }
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    /// <summary>Defaults when the file is missing or unreadable; invalid numbers are clamped.</summary>
+    /// <summary>Defaults when the file is missing or unreadable.</summary>
     public static AppSettings Load(string? path = null)
     {
         try
         {
-            var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path ?? DefaultFile), Options) ?? new();
-            return s with { Fps = s.Fps <= 0 ? 0 : Math.Clamp(s.Fps, 10, 240), BufferMinutes = Math.Clamp(s.BufferMinutes, 2, 120) };
+            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path ?? DefaultFile), Options) ?? new();
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return new(); }
     }

@@ -13,13 +13,14 @@ public sealed class SessionSaver
 
     readonly string _root;
     readonly MouseRingBuffer _buffer;
-    readonly ClockAnchor _anchor;
+    readonly Func<ClockAnchor> _anchor;
     readonly ClipExtractor _extract;
 
     public event Action<SessionInfo, string>? Saved;
     public event Action<string>? Error;
 
-    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, ClockAnchor anchor, ClipExtractor extract)
+    /// <param name="anchor">Called once per run: QPC and the wall clock drift apart (sleep, clock sync), so a startup anchor misplaces the mouse window.</param>
+    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract)
     {
         _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract;
     }
@@ -64,7 +65,7 @@ public sealed class SessionSaver
         catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
         var videoCovers = clip != null && clip.ClipStartUtc <= startUtc && clip.ClipStartUtc + clip.Duration >= endUtc;
 
-        var built = TrajectoryBuilder.Build(run, _buffer, _anchor);
+        var built = TrajectoryBuilder.Build(run, _buffer, _anchor());
         if (built.Trajectory != null)
             await File.WriteAllBytesAsync(Path.Combine(folder, SessionFolder.TrajectoryFile), TrajectorySerializer.Serialize(built.Trajectory));
         File.Copy(csvPath, Path.Combine(folder, Path.GetFileName(csvPath)), overwrite: true);

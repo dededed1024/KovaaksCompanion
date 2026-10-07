@@ -5,7 +5,8 @@ namespace KovaaksCompanion.Core.Stats;
 
 /// <summary>
 /// Parses the "&lt;Scenario&gt; - Challenge - yyyy.MM.dd-HH.mm.ss Stats.csv" files KovaaK's writes when a run ends.
-/// The file holds only times of day, so dates come from the file name (the run's end).
+/// The file holds only times of day, so dates come from the file name (the run's end, truncated to whole seconds:
+/// <see cref="RunStats.End"/> is the name plus 1 s (upper bound of the truncated second) and never before the last kill).
 /// </summary>
 public static partial class StatsCsvParser
 {
@@ -24,12 +25,16 @@ public static partial class StatsCsvParser
         var values = ReadKeyValues(lines);
 
         var start = values.TryGetValue("Challenge Start", out var cs) ? AtOrBefore(end, ParseTime(cs)) : end;
+        var kills = ReadKills(lines, start);
+        // The file name truncates to whole seconds: the true end lies in [name, name + 1 s). Never before the last kill.
+        var trueEnd = end.AddSeconds(1);
+        if (kills.Count > 0 && kills[^1].Time > trueEnd) trueEnd = kills[^1].Time;
 
         return new RunStats
         {
             Scenario = values.GetValueOrDefault("Scenario", m.Groups["scenario"].Value),
             Start = start,
-            End = end,
+            End = trueEnd,
             Score = Double(values, "Score"),
             Kills = Int(values, "Kills"),
             HitCount = Int(values, "Hit Count"),
@@ -48,7 +53,7 @@ public static partial class StatsCsvParser
                 FovScale = values.GetValueOrDefault("FOVScale", ""),
                 Resolution = values.GetValueOrDefault("Resolution", ""),
             },
-            KillEvents = ReadKills(lines, start),
+            KillEvents = kills,
         };
     }
 

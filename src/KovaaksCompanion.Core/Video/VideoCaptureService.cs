@@ -1,3 +1,5 @@
+using KovaaksCompanion.Core.Diagnostics;
+
 namespace KovaaksCompanion.Core.Video;
 
 /// <summary>Glue for the App: records while the game runs, cuts clips on demand.</summary>
@@ -20,6 +22,8 @@ public sealed class VideoCaptureService : IAsyncDisposable
     public bool IsRecording => _rec?.IsRunning == true;
     public VideoRecorder? Recorder => _rec;
     public event Action<string>? Error;
+    /// <summary>Raised (thread-pool thread) when <see cref="IsRecording"/> may have changed.</summary>
+    public event Action? StateChanged;
 
     public void Start() => _watcher.Start();
 
@@ -38,8 +42,9 @@ public sealed class VideoCaptureService : IAsyncDisposable
             }
             else if (!cts.IsCancellationRequested) Error?.Invoke(rec.LastError);
         }
-        catch (Exception e) { Error?.Invoke(e.Message); }
+        catch (Exception e) { AppLog.Write("video", "start failed: " + e); Error?.Invoke(e.Message); }
         finally { _gate.Release(); }
+        StateChanged?.Invoke();
     }
 
     private async Task StopRecordingAsync()
@@ -48,6 +53,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
         await _gate.WaitAsync();
         try { if (_rec != null) await _rec.StopAsync(); }
         finally { _gate.Release(); }
+        StateChanged?.Invoke();
     }
 
     /// <summary>Null when there is no recorder / no footage for that window. The recorder (and its segments) stays usable after the game exits.</summary>

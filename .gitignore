@@ -482,3 +482,9 @@ $RECYCLE.BIN/
 *.swp
 
 /publish/
+dist/
+samples/
+
+# fetched ffmpeg copy (embedded at build)
+src/KovaaksCompanion.App/ffmpeg/
+dist-release/

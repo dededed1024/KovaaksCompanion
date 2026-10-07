@@ -1,0 +1,101 @@
+<UserControl x:Class="KovaaksCompanion.App.StatsView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:KovaaksCompanion.App"
+        SizeChanged="OnViewSized" Typography.NumeralAlignment="Tabular"
+        >
+    <UserControl.Resources>
+        <Style x:Key="PopupClose" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <!-- Home: the whole page -->
+        <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0">
+            <Grid x:Name="HomeHost" HorizontalAlignment="Center" Margin="0,60,0,24"/>
+        </ScrollViewer>
+        <!-- Scroll edge under the title bar -->
+        <Border Height="48" VerticalAlignment="Top" IsHitTestVisible="False">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#E61C1C1E" Offset="0"/>
+                    <GradientStop Color="#001C1C1E" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <!-- Floating jump-to-live pill -->
+        <Border x:Name="LivePill" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24" Padding="14,7,12,7" CornerRadius="16" Background="#FF453A"
+                Opacity="0" Visibility="Collapsed" IsHitTestVisible="False" Cursor="Hand" MouseLeftButtonUp="OnLivePill">
+            <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.45" Color="Black"/></Border.Effect>
+            <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="LivePillDot" Width="7" Height="7" Fill="White" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                <TextBlock Text="LIVE" Foreground="White" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                <TextBlock Text="&#xE74B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="White" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Playlist popup: scrim + card below the title bar -->
+        <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
+            <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1480" Margin="16,56,16,16" CornerRadius="18" Background="#F2232326"
+                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+                <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                <Grid x:Name="Detail" Margin="28,20,28,18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <DockPanel>
+                            <Border x:Name="DiffTrack" DockPanel.Dock="Right" Margin="12,0,0,0" Style="{StaticResource SegmentTrack}" VerticalAlignment="Center" Visibility="Collapsed">
+                                <StackPanel x:Name="DiffBar" Orientation="Horizontal"/>
+                            </Border>
+                            <StackPanel Orientation="Horizontal">
+                                <Border x:Name="HeadPill" Width="5" Height="30" CornerRadius="3" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Favorite" Click="OnStarClick" Visibility="Collapsed"/>
+                                <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <Border x:Name="CodeChip" Background="#14FFFFFF" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
+                                        ToolTip="Copy sharecode" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
+                                    <TextBlock x:Name="CodeText" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Dim}"/>
+                                </Border>
+                                <Button x:Name="PlayList" Content="Play" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="8,0,0,0" VerticalAlignment="Center"
+                                        ToolTip="Start in KovaaK's" Click="OnPlayListClick" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <Button Grid.Column="1" Style="{StaticResource PopupClose}" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
+                                Width="36" Height="36" Margin="12,0,0,0" VerticalAlignment="Top" ToolTip="Close (Esc)" Click="OnCloseClick"/>
+                    </Grid>
+                    <TextBlock x:Name="Summary" Grid.Row="1" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{StaticResource Dim}"/>
+                    <ScrollViewer x:Name="PlaylistScroll" Focusable="False" Grid.Row="2" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Visibility="Collapsed">
+                        <Grid x:Name="PageHost" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

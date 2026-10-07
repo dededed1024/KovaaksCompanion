@@ -1,0 +1,105 @@
+<UserControl x:Class="KovaaksCompanion.App.SettingsView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Visibility="Collapsed" SizeChanged="OnSized">
+    <UserControl.Resources>
+        <Style x:Key="SheetClose" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
+        <Border x:Name="Card" Width="820" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
+                BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+            <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+            <Border x:Name="Clipper" CornerRadius="17" SizeChanged="OnCardSized">
+                <Grid Margin="36,28,36,32">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="2,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource Title}" FontSize="22" Text="Settings" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Style="{StaticResource SheetClose}" Content="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
+                                Width="36" Height="36" Margin="12,0,-8,0" ToolTip="Close" Click="OnCloseClick"/>
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+
+                            <TextBlock Style="{StaticResource Caption}" Text="KovaaK's folder"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="Kovaaks" LostFocus="OnCommit" KeyDown="OnTextKey"/>
+                                <Button Grid.Column="1" Content="Detect" Margin="8,0,0,0" Click="OnDetectKovaaks"/>
+                                <Button Grid.Column="2" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseKovaaks"/>
+                            </Grid>
+                            <TextBlock x:Name="KovaaksNote" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" Visibility="Collapsed"/>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Data folder"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="Data" LostFocus="OnCommit" KeyDown="OnTextKey"/>
+                                <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseData"/>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Steam ID"/>
+                            <StackPanel>
+                                <TextBox x:Name="Steam" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey"/>
+                                <TextBlock x:Name="SteamError" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,18,0,0" Text="Recording quality"/>
+                            <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
+                                <StackPanel x:Name="QualityBar" Orientation="Horizontal">
+                                    <RadioButton Style="{StaticResource Segment}" Content="Low" Tag="Low" Checked="OnQuality"/>
+                                    <RadioButton Style="{StaticResource Segment}" Content="Medium" Tag="Medium" Checked="OnQuality"/>
+                                    <RadioButton Style="{StaticResource Segment}" Content="High" Tag="High" Checked="OnQuality"/>
+                                    <RadioButton Style="{StaticResource Segment}" Content="Ultra" Tag="Ultra" Checked="OnQuality"/>
+                                </StackPanel>
+                            </Border>
+
+                            <CheckBox x:Name="AutoStart" Content="Start with Windows" Margin="0,18,0,0" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
+
+                            <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" Margin="0,18,0,0"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="UpdateStatus" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="{StaticResource Fg}"/>
+                                <Button Grid.Column="1" x:Name="CheckBtn" Content="Check for updates" Margin="8,0,0,0" Click="OnCheckUpdate"/>
+                                <Button Grid.Column="2" Content="Latest release" Margin="8,0,0,0" Click="OnOpenRelease"/>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

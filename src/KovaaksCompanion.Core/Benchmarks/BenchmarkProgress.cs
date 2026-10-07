@@ -67,6 +67,29 @@ public sealed class KovaaksApi(HttpClient? http = null)
         return BenchmarkProgress.Parse(await _http.GetStringAsync(url, ct), difficulty);
     }
 
+    /// <summary>Raw player-progress JSON (for caching); parse with <see cref="BenchmarkProgress.Parse"/>.</summary>
+    public Task<string> GetProgressJsonAsync(Difficulty difficulty, string steamId, CancellationToken ct = default) =>
+        _http.GetStringAsync($"https://kovaaks.com/webapp-backend/benchmarks/player-progress-rank-benchmark?benchmarkId={difficulty.KovaaksBenchmarkId}&steamId={Uri.EscapeDataString(steamId)}&page=0&max=100", ct);
+
+    /// <summary>
+    /// Resolves the player's webapp username from their own leaderboard entry on a scenario that has a rank.
+    /// Null when no scenario qualifies or the entry is not theirs.
+    /// </summary>
+    public async Task<string?> ResolveUsernameAsync(string steamId, IEnumerable<ScenarioProgress> scenarios, CancellationToken ct = default)
+    {
+        foreach (var s in scenarios.Where(s => s.LeaderboardId > 0 && s.LeaderboardRank is > 0).Take(3))
+        {
+            var json = await _http.GetStringAsync($"https://kovaaks.com/webapp-backend/leaderboard/scores/global?leaderboardId={s.LeaderboardId}&page={s.LeaderboardRank!.Value - 1}&max=1", ct);
+            if (CloudScores.ParseEntry(json, steamId) is { } e) return e.Username;
+        }
+        return null;
+    }
+
+    /// <summary>Last ~10 server-side runs of a scenario for the user, oldest first.</summary>
+    public async Task<List<CloudScore>> GetLastScoresAsync(string username, string scenario, CancellationToken ct = default) =>
+        CloudScores.ParseLastScores(await _http.GetStringAsync(
+            $"https://kovaaks.com/webapp-backend/user/scenario/last-scores/by-name?username={Uri.EscapeDataString(username)}&scenarioName={Uri.EscapeDataString(scenario)}", ct));
+
     /// <summary>The local score wins unless the server has a different, non-zero score for the scenario.</summary>
     public static double? Reconcile(double? local, double server) =>
         server > 0 && (local == null || Math.Abs(server - local.Value) > 0.005) ? server : local;

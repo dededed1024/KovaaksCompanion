@@ -1,17 +1,18 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
+using KovaaksCompanion.Core.Diagnostics;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Runs one ffmpeg ddagrab (game window) + process audio -> HW H.264/AAC -> segment-muxer process as a rolling buffer and tracks segment wall-clock times.</summary>
+/// <summary>Runs one ffmpeg gfxcapture (game window) + process audio -> HW H.264/AAC -> segment-muxer process as a rolling buffer and tracks segment wall-clock times.</summary>
 public sealed class VideoRecorder : IAsyncDisposable
 {
     private readonly VideoOptions _o;
     private readonly object _lock = new();
     private readonly List<SegmentInfo> _segments = [];
     private readonly List<(string File, TimeSpan Start, TimeSpan End)> _raw = [];
-    private StreamAnchor _anchor = new();
+    private DateTime _streamEpochUtc;
     private Process? _proc;
     private Task? _readTask;
     private ProcessAudioCapture? _audio;
@@ -30,8 +31,7 @@ public sealed class VideoRecorder : IAsyncDisposable
     public string FfmpegLog { get; private set; } = "";
     /// <summary>Why the clip has no audio (empty = audio recorded or not requested).</summary>
     public string AudioError { get; private set; } = "";
-    /// <summary>Resolved frame rate and the captured window region (null = whole monitor).</summary>
-    public int Fps { get; private set; }
+    /// <summary>Captured window region (null = whole monitor).</summary>
     public CaptureTarget? Target { get; private set; }
     public event Action<SegmentInfo>? SegmentClosed;
 
@@ -47,9 +47,9 @@ public sealed class VideoRecorder : IAsyncDisposable
         if (_o.CaptureWindow)
         {
             Target = await WaitForWindowAsync(ct);
-            if (Target is null) { LastError = ct.IsCancellationRequested ? "cancelled" : "game window not found"; return false; }
-            Output = Target.Output; outIdx = Target.Output.OutputIndex; adapter = Target.Output.AdapterIndex;
-            Fps = _o.Fps > 0 ? _o.Fps : Target.RefreshHz;
+            if (Target is null) { LastError = ct.IsCancellationRequested ? "cancelled" : "game exited before its window appeared"; return false; }
+            AppLog.Write("video", $"target: game window process={Target.ProcessId} hwnd={Target.Hwnd} {Target.Width}x{Target.Height}");
+            Output = Target.Output; outIdx = Target.Output?.OutputIndex ?? 0; adapter = Target.Output?.AdapterIndex ?? _o.AdapterIndex;
         }
         else
         {
@@ -57,31 +57,24 @@ public sealed class VideoRecorder : IAsyncDisposable
             Output = primary;
             outIdx = _o.OutputIndex ?? primary?.OutputIndex ?? 0;
             adapter = _o.OutputIndex is null ? primary?.AdapterIndex ?? _o.AdapterIndex : _o.AdapterIndex;
-            Fps = _o.Fps > 0 ? _o.Fps : Output is null ? 60 : GameWindow.RefreshRate(Output);
+            AppLog.Write("video", $"target: whole monitor adapter {adapter} output {outIdx}");
         }
 
-        var encoders = FfmpegCommand.ChooseEncoders(await RunCaptureAsync(["-hide_banner", "-encoders"]), _o.Encoder);
+        var probe = await RunCaptureAsync(["-hide_banner", "-encoders"]);
+        var encoders = FfmpegCommand.ChooseEncoders(probe, _o.Encoder);
+        AppLog.Write("video", $"encoder probe: {probe.Length} chars, candidates [{string.Join(", ", encoders)}] (requested '{_o.Encoder}')");
         foreach (var enc in encoders)
-            if (await TryLaunchAsync(enc, outIdx, adapter)) { Encoder = enc; return true; }
+            if (await TryLaunchAsync(enc, outIdx, adapter)) { Encoder = enc; AppLog.Write("video", "recording with encoder " + enc); return true; }
+        AppLog.Write("video", "no encoder worked: " + LastError);
         return false;
     }
 
-    private async Task<CaptureTarget?> WaitForWindowAsync(CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow + _o.WindowWait;
-        while (!ct.IsCancellationRequested)
-        {
-            var t = GameWindow.Find(_o.GameProcessName);
-            if (t != null) return t;
-            if (DateTime.UtcNow > deadline) break;
-            try { await Task.Delay(500, ct); } catch (OperationCanceledException) { break; }
-        }
-        return null;
-    }
+    private Task<CaptureTarget?> WaitForWindowAsync(CancellationToken ct)
+        => GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);
 
     private async Task<bool> TryLaunchAsync(string encoder, int outIdx, int adapter)
     {
-        lock (_lock) { _segments.Clear(); _raw.Clear(); _anchor = new StreamAnchor(); }
+        lock (_lock) { _segments.Clear(); _raw.Clear(); }
         string? pipePath = null;
         AudioError = "";
         if (_o.CaptureAudio && Target != null)
@@ -94,18 +87,27 @@ public sealed class VideoRecorder : IAsyncDisposable
                 _audioPipe = new NamedPipeServerStream(name, PipeDirection.Out, 1, PipeTransmissionMode.Byte);
                 pipePath = @"\\.\pipe\" + name;
             }
-            else { AudioError = audio.Error; audio.Dispose(); }
+            else { AudioError = audio.Error; audio.Dispose(); AppLog.Write("audio", "capture init failed: " + AudioError); }
         }
         var psi = new ProcessStartInfo(_o.FfmpegPath)
         {
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             UseShellExecute = false, CreateNoWindow = true,
         };
-        foreach (var a in FfmpegCommand.BuildRecord(_o with { Fps = Fps }, encoder, outIdx, adapter, _o.BufferDir, Target, pipePath)) psi.ArgumentList.Add(a);
+        var epoch = DateTime.UtcNow;
+        _streamEpochUtc = epoch;
+        foreach (var a in FfmpegCommand.BuildRecord(_o, encoder, outIdx, adapter, _o.BufferDir, (epoch - DateTime.UnixEpoch).Ticks / 10, Target, pipePath)) psi.ArgumentList.Add(a);
+        AppLog.Write("ffmpeg", $"start ({encoder}): {psi.FileName} {string.Join(' ', psi.ArgumentList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
         var p = Process.Start(psi) ?? throw new InvalidOperationException("ffmpeg did not start");
         _proc = p;
+        p.EnableRaisingEvents = true;
         var err = new System.Text.StringBuilder();
         p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (err) { err.AppendLine(e.Data); FfmpegLog = err.ToString(); } };
+        p.Exited += (_, _) =>
+        {
+            string log; lock (err) log = err.ToString();
+            AppLog.Write("ffmpeg", $"exited code={TryExitCode(p)}; stderr tail:{Environment.NewLine}{AppLog.Tail(log)}");
+        };
         p.BeginErrorReadLine();
         _readTask = Task.Run(() => ReadSegmentList(p));
         StartAudioPump();
@@ -151,9 +153,10 @@ public sealed class VideoRecorder : IAsyncDisposable
     private void ReadSegmentList(Process p)
     {
         string? line;
+        var first = true;
         while ((line = p.StandardOutput.ReadLine()) != null)
         {
-            var arrival = DateTime.UtcNow;
+            if (first) { first = false; continue; } // the muxer reports 0 as the first segment's start, not its real pts
             var parts = line.Split(',');
             if (parts.Length < 3 ||
                 !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ||
@@ -161,12 +164,11 @@ public sealed class VideoRecorder : IAsyncDisposable
             SegmentInfo info;
             lock (_lock)
             {
-                _anchor.AddSegmentClosed(arrival, TimeSpan.FromSeconds(e));
                 _raw.RemoveAll(r => r.File == parts[0]);   // slot wrapped: its older content is gone
                 _raw.Add((parts[0], TimeSpan.FromSeconds(s), TimeSpan.FromSeconds(e)));
-                _segments.Clear();                          // re-derive all with the refreshed anchor
+                _segments.Clear();
                 foreach (var r in _raw)
-                    _segments.Add(new SegmentInfo(Path.Combine(_o.BufferDir, r.File), _anchor.ToUtc(r.Start), r.End - r.Start));
+                    _segments.Add(new SegmentInfo(Path.Combine(_o.BufferDir, r.File), _streamEpochUtc + r.Start, r.End - r.Start));
                 info = _segments[^1];
             }
             SegmentClosed?.Invoke(info);
@@ -212,7 +214,7 @@ public sealed class VideoRecorder : IAsyncDisposable
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
         var list = outputPath + ".txt";
-        await File.WriteAllTextAsync(list, FfmpegCommand.BuildConcatList(sel.Select(s => s.File)));
+        await File.WriteAllTextAsync(list, FfmpegCommand.BuildConcatList(sel));
         try { await RunCaptureAsync(FfmpegCommand.BuildConcat(list, outputPath), throwOnFail: true); }
         finally { TryDelete(list); }
         var first = sel[0].StartUtc;
@@ -228,9 +230,16 @@ public sealed class VideoRecorder : IAsyncDisposable
         var so = p.StandardOutput.ReadToEndAsync();
         var se = p.StandardError.ReadToEndAsync();
         await p.WaitForExitAsync();
-        if (throwOnFail && p.ExitCode != 0) throw new IOException("ffmpeg failed: " + await se);
+        if (throwOnFail && p.ExitCode != 0)
+        {
+            var msg = await se;
+            AppLog.Write("ffmpeg", $"command failed code={p.ExitCode}: {string.Join(' ', psi.ArgumentList)}{Environment.NewLine}{AppLog.Tail(msg)}");
+            throw new IOException("ffmpeg failed: " + msg);
+        }
         return await so;
     }
+
+    private static string TryExitCode(Process p) { try { return p.ExitCode.ToString(); } catch { return "?"; } }
 
     private static void TryDelete(string f) { try { File.Delete(f); } catch { } }
 

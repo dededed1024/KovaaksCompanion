@@ -3,11 +3,14 @@ using System.Runtime.InteropServices;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Game window client area in desktop pixels, the DXGI output showing it, and that output's refresh rate.</summary>
-public sealed record CaptureTarget(DxgiOutput Output, int ProcessId, int X, int Y, int Width, int Height, int RefreshHz);
+/// <summary>
+/// Game window: <see cref="Hwnd"/> for gfxcapture; client area in desktop pixels (X/Y relative to <see cref="Output"/>, the DXGI output
+/// showing it, null when off-screen) for the ddagrab crop.
+/// </summary>
+public sealed record CaptureTarget(DxgiOutput? Output, int ProcessId, int X, int Y, int Width, int Height, long Hwnd = 0);
 
-/// <summary>Locates the game's window and turns it into a ddagrab crop region.</summary>
-public static unsafe class GameWindow
+/// <summary>Locates the game's window and (handle for gfxcapture, client rect for ddagrab).</summary>
+public static class GameWindow
 {
     private delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
@@ -20,7 +23,6 @@ public static unsafe class GameWindow
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out Rect r);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref Point p);
     [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr ctx);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool EnumDisplaySettingsW(string deviceName, int mode, byte* devMode);
 
     private const int MinSide = 200;
 
@@ -36,7 +38,7 @@ public static unsafe class GameWindow
         var prevCtx = SetThreadDpiAwarenessContext(new IntPtr(-4));
         try
         {
-            (uint Pid, Rect Client, long Area)? best = null;
+            (uint Pid, IntPtr Hwnd, Rect Client, long Area)? best = null;
             EnumWindows((h, _) =>
             {
                 GetWindowThreadProcessId(h, out var pid);
@@ -47,14 +49,38 @@ public static unsafe class GameWindow
                 if (w < MinSide || ht < MinSide) return true;
                 long area = (long)w * ht;
                 if (best is null || area > best.Value.Area)
-                    best = (pid, new Rect { Left = origin.X, Top = origin.Y, Right = origin.X + w, Bottom = origin.Y + ht }, area);
+                    best = (pid, h, new Rect { Left = origin.X, Top = origin.Y, Right = origin.X + w, Bottom = origin.Y + ht }, area);
                 return true;
             }, IntPtr.Zero);
             if (best is null) return null;
             var r = best.Value.Client;
-            return Resolve(r.Left, r.Top, r.Right, r.Bottom, (int)best.Value.Pid, outputs ?? MonitorResolver.Enumerate());
+            var t = Resolve(r.Left, r.Top, r.Right, r.Bottom, (int)best.Value.Pid, outputs ?? MonitorResolver.Enumerate());
+            return (t ?? new CaptureTarget(null, (int)best.Value.Pid, 0, 0, (r.Right - r.Left) & ~1, (r.Bottom - r.Top) & ~1)) with { Hwnd = best.Value.Hwnd.ToInt64() };
         }
         finally { SetThreadDpiAwarenessContext(prevCtx); }
+    }
+
+    /// <summary>
+    /// Polls <paramref name="find"/> until it yields a target. Gives up only when <paramref name="processAlive"/> turns false or
+    /// <paramref name="ct"/> fires: a fullscreen game alt-tabbed away has no usable window for as long as it likes.
+    /// </summary>
+    public static async Task<CaptureTarget?> WaitAsync(Func<CaptureTarget?> find, Func<bool> processAlive, TimeSpan poll, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var t = find();
+            if (t != null) return t;
+            if (!processAlive()) return null;
+            try { await Task.Delay(poll, ct); } catch (OperationCanceledException) { break; }
+        }
+        return null;
+    }
+
+    public static bool IsProcessAlive(string processName)
+    {
+        var ps = Process.GetProcessesByName(processName);
+        foreach (var p in ps) p.Dispose();
+        return ps.Length > 0;
     }
 
     /// <summary>
@@ -73,18 +99,6 @@ public static unsafe class GameWindow
         int x = Math.Max(left, best.Left), y = Math.Max(top, best.Top);
         int width = (Math.Min(right, best.Right) - x) & ~1, height = (Math.Min(bottom, best.Bottom) - y) & ~1;
         if (width < 2 || height < 2) return null;
-        return new CaptureTarget(best, pid, x - best.Left, y - best.Top, width, height, RefreshRate(best));
-    }
-
-    /// <summary>Current refresh rate of the output's display mode; 60 when unknown.</summary>
-    public static int RefreshRate(DxgiOutput output)
-    {
-        if (!OperatingSystem.IsWindows()) return 60;
-        var dm = stackalloc byte[220];       // DEVMODEW: dmSize @68, dmDisplayFrequency @184
-        new Span<byte>(dm, 220).Clear();
-        *(ushort*)(dm + 68) = 220;
-        if (!EnumDisplaySettingsW(output.DeviceName, -1, dm)) return 60;
-        int hz = (int)*(uint*)(dm + 184);
-        return hz > 1 ? Math.Min(hz, 240) : 60;
+        return new CaptureTarget(best, pid, x - best.Left, y - best.Top, width, height);
     }
 }

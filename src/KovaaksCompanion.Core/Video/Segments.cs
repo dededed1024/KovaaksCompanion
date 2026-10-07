@@ -37,26 +37,3 @@ public sealed class QpcClock
     public DateTime ToUtc(long qpc) => _utc0 + TimeSpan.FromSeconds((double)(qpc - _qpc0) / System.Diagnostics.Stopwatch.Frequency);
     public long ToQpc(DateTime utc) => _qpc0 + (long)((utc.ToUniversalTime() - _utc0).TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
 }
-
-/// <summary>
-/// Wall-clock anchor of the ffmpeg stream (stream time 0). Each closed segment gives one estimate:
-/// (time its csv line arrived) - (segment end time in stream). Latency is always >= 0, so the minimum
-/// over a short window is the best estimate; the window keeps it tracking slow drift.
-/// </summary>
-public sealed class StreamAnchor
-{
-    private readonly Queue<DateTime> _estimates = new();
-    private readonly int _window;
-    public StreamAnchor(int window = 6) => _window = window;
-
-    public bool HasValue => _estimates.Count > 0;
-    public DateTime Value => _estimates.Min();
-
-    public void AddSegmentClosed(DateTime arrivalUtc, TimeSpan segmentEndInStream)
-    {
-        _estimates.Enqueue(arrivalUtc - segmentEndInStream);
-        while (_estimates.Count > _window) _estimates.Dequeue();
-    }
-
-    public DateTime ToUtc(TimeSpan streamTime) => Value + streamTime;
-}

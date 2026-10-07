@@ -22,6 +22,17 @@ public static class ViewProjection
         return Deg(2 * Math.Atan(tanV * aspect));
     }
 
+    /// <summary>Width / height of a "2560x1440" resolution string; null when missing or malformed.</summary>
+    public static double? ParseAspect(string? resolution)
+    {
+        var parts = resolution?.Split('x', 'X', '×');
+        if (parts is not { Length: 2 }) return null;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (!int.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Integer, ci, out var w)
+            || !int.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Integer, ci, out var h)) return null;
+        return w > 0 && h > 0 ? (double)w / h : null;
+    }
+
     static double FromVertical(double vfov, double aspect) => Deg(2 * Math.Atan(Math.Tan(Rad(vfov) / 2) * aspect));
 
     /// <summary>Projects a past view direction onto the frame seen with the camera at (current yaw, pitch).</summary>

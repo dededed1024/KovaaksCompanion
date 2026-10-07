@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using KovaaksCompanion.Core;
+using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Input;
 using KovaaksCompanion.Core.Session;
 using KovaaksCompanion.Core.Video;
@@ -20,135 +22,162 @@ public sealed class AppHost : IDisposable
     StatsWatcher? _watcher;
     SessionSaver _saver = null!;
     WinForms.NotifyIcon? _tray;
-    WinForms.ToolStripMenuItem _status = null!, _pause = null!;
-    ViewerWindow? _viewer;
-    StatsWindow? _stats;
-    bool _paused;
-    string _lastSaved = "none yet", _lastError = "";
+    System.Drawing.Icon? _trayIcon;
+    static System.Drawing.Icon LoadTrayIcon() { using var s = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")).Stream; return new System.Drawing.Icon(s, WinForms.SystemInformation.SmallIconSize); }
+    MainWindow? _main;
+    string _lastError = "";
 
-    public AppHost(Application app) => _app = app;
+    public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
+    readonly string _uiFile;
 
     public AppSettings Settings => _settings;
+    /// <summary>True while the game window is being recorded.</summary>
+    public bool GameActive => _video?.IsRecording == true;
     public string SessionsFolder => _settings.SessionsFolder;
+    /// <summary>Favorites and chart selection. Mutate on the UI thread, then call <see cref="SaveUi"/>.</summary>
+    public UiState Ui { get; }
+    /// <summary>Raised on the calling (UI) thread after <see cref="SaveUi"/>.</summary>
+    public event Action? UiChanged;
     /// <summary>Raised on a thread-pool thread after a session folder is complete.</summary>
     public event Action<SessionInfo, string>? SessionSaved;
+    /// <summary>Raised on a thread-pool thread as soon as a run's stats CSV is complete (before the session clip is saved).</summary>
+    public event Action? RunFinished;
+    /// <summary>Raised on a thread-pool thread when <see cref="GameActive"/> may have changed.</summary>
+    public event Action? GameStateChanged;
 
-    public void Start()
+    /// <summary>The embedded (extracted + verified) ffmpeg, else detection. Null when none.</summary>
+    public static string? ResolveFfmpeg() => ResolveFfmpeg(out _);
+
+    static string? ResolveFfmpeg(out string source)
     {
+        var bundled = FfmpegBundle.Ensure(() => typeof(AppHost).Assembly.GetManifestResourceStream("ffmpeg.exe"));
+        if (bundled != null) { source = "embedded"; return bundled; }
+        AppLog.Write("ffmpeg", "embedded ffmpeg unavailable, trying PathDetector");
+        var found = PathDetector.FindFfmpeg();
+        source = found != null ? "PathDetector" : "none";
+        return found;
+    }
+
+    void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
+
+    public void Start(bool showMain)
+    {
+        AppLog.Write("app", $"start: version {typeof(AppHost).Assembly.GetName().Version}, OS {System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({Environment.OSVersion.Version}), 64-bit={Environment.Is64BitProcess}");
+        var detected = _settings.WithDetectedPaths();
+        if (detected != _settings)
+        {
+            _settings = detected;
+            try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
         _anchor = ClockAnchor.Now();
-        _buffer = new MouseRingBuffer(Math.Max(600, _settings.BufferMinutes * 60.0), _anchor.Frequency, _anchor.Qpc);
+        _buffer = new MouseRingBuffer(new VideoOptions().BufferMinutes * 60.0, _anchor.Frequency, _anchor.Qpc);
         StartCapture();
 
-        _video = new VideoCaptureService(new VideoOptions
-        {
-            FfmpegPath = _settings.FfmpegPath, Fps = _settings.Fps, BufferMinutes = _settings.BufferMinutes, BufferDir = _settings.BufferFolder,
-        });
-        _video.Error += m => _lastError = "video: " + m;
-        try { _video.Start(); } catch (Exception e) { _lastError = "video: " + e.Message; }
+        var ffmpeg = ResolveFfmpeg(out var ffmpegSource);
+        AppLog.Write("ffmpeg", $"resolved: {ffmpeg ?? "(none)"} source={ffmpegSource}");
+        if (ffmpeg != null) StartVideo(ffmpeg);
+        else SetError("ffmpeg missing (video disabled)");
 
-        _saver = new SessionSaver(_settings.SessionsFolder, _buffer, _anchor, (s, e, p) => _video.ExtractClipAsync(s, e, p));
-        _saver.Error += m => _lastError = m;
+        _saver = new SessionSaver(_settings.SessionsFolder, _buffer, ClockAnchor.Now,
+            (s, e, p) => _video?.ExtractClipAsync(s, e, p) ?? Task.FromResult<ClipResult?>(null));
+        _saver.Error += SetError;
         _saver.Saved += (info, folder) =>
         {
-            _lastSaved = $"{info.Scenario} {info.Start:HH:mm:ss}{(info.Partial ? " (partial)" : "")}";
+            AppLog.Write("session", $"saved {folder}");
             SessionSaved?.Invoke(info, folder);
         };
 
         _watcher = new StatsWatcher(_settings.StatsFolder, DateTime.Now);
-        _watcher.RunFinished += (run, csv) => { if (!_paused) _ = _saver.Enqueue(run, csv); };
-        try { _watcher.Start(); } catch (Exception e) { _lastError = "stats folder: " + e.Message; }
+        _watcher.RunFinished += (run, csv) => { AppLog.Write("session", $"run finished: {csv}"); RunFinished?.Invoke(); _ = _saver.Enqueue(run, csv); };
+        try { _watcher.Start(); } catch (Exception e) { SetError("stats folder: " + e.Message); }
 
         BuildTray();
+        Autostart.Refresh(_settings.StartWithWindows);
+        if (showMain) ShowMain("Stats");
+    }
+
+
+    void StartVideo(string ffmpegPath)
+    {
+        if (_video != null) return;
+        _video = new VideoCaptureService(new VideoOptions
+        {
+            FfmpegPath = ffmpegPath, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(),
+        });
+        _video.Error += m => SetError("video: " + m);
+        _video.StateChanged += () => GameStateChanged?.Invoke();
+        try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }
     }
 
     void StartCapture()
     {
         try { _capture = new RawInputCapture(_buffer.Add); _capture.Start(); }
-        catch (Exception e) { _capture = null; _lastError = "mouse: " + e.Message; }
+        catch (Exception e) { _capture = null; SetError("mouse: " + e.Message); }
     }
 
     void BuildTray()
     {
         var menu = new WinForms.ContextMenuStrip { Renderer = new DarkMenuRenderer(), ShowImageMargin = false, Font = new System.Drawing.Font("Malgun Gothic", 10f) };
-        _status = new WinForms.ToolStripMenuItem("") { Enabled = false };
-        _pause = new WinForms.ToolStripMenuItem("Pause recording", null, (_, _) => TogglePause());
-        menu.Items.Add(_status);
-        menu.Items.Add(new WinForms.ToolStripSeparator());
-        menu.Items.Add("Open viewer", null, (_, _) => ShowViewer());
-        menu.Items.Add("Open stats", null, (_, _) => ShowStats());
-        menu.Items.Add(_pause);
-        menu.Items.Add("Settings...", null, (_, _) => _app.Dispatcher.Invoke(ShowSettings));
-        menu.Items.Add(new WinForms.ToolStripSeparator());
-        menu.Items.Add("Quit", null, (_, _) => _app.Dispatcher.Invoke(_app.Shutdown));
-        menu.Opening += (_, _) => _status.Text = StatusText();
+        menu.Items.Add("Open", null, (_, _) => ShowMain());
+        menu.Items.Add("Exit", null, (_, _) => _app.Dispatcher.Invoke(_app.Shutdown));
 
         _tray = new WinForms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application, Text = "KovaaK's Companion", Visible = true, ContextMenuStrip = menu,
+            Icon = _trayIcon = LoadTrayIcon(), Text = "KovaaK's Companion", Visible = true, ContextMenuStrip = menu,
         };
-        _tray.DoubleClick += (_, _) => ShowViewer();
+        _tray.MouseClick += (_, e) => { if (e.Button == WinForms.MouseButtons.Left) ShowMain(); };
+        if (_lastError.Length > 0) _tray.ShowBalloonTip(5000, "KovaaK's Companion", _lastError, WinForms.ToolTipIcon.Warning);
     }
 
-    /// <summary>APP-002 status line: game / recording / last saved session.</summary>
-    string StatusText()
+    public void ShowMain(string? page = null) => _app.Dispatcher.Invoke(() =>
     {
-        var rec = _video?.IsRecording == true;
-        var s = $"{(rec ? "Game detected, recording" : "Waiting for game")}{(_paused ? " (paused)" : "")} | last: {_lastSaved}";
-        return _lastError.Length > 0 ? s + " | " + _lastError : s;
-    }
-
-    void TogglePause()
-    {
-        _paused = !_paused;
-        if (_paused)
+        if (_main == null)
         {
-            _capture?.Dispose(); _capture = null;
-            _buffer.Pause(Stopwatch.GetTimestamp());
+            _main = new MainWindow(this);
+            _main.Closed += (_, _) => _main = null;
+            _main.Show();
         }
-        else
-        {
-            _buffer.Resume(Stopwatch.GetTimestamp());
-            StartCapture();
-        }
-        _pause.Text = _paused ? "Resume recording" : "Pause recording";
-    }
-
-    public void ShowViewer() => _app.Dispatcher.Invoke(() =>
-    {
-        if (_viewer == null)
-        {
-            _viewer = new ViewerWindow(this);
-            _viewer.Closed += (_, _) => _viewer = null;
-            _viewer.Show();
-        }
-        else { if (_viewer.WindowState == WindowState.Minimized) _viewer.WindowState = WindowState.Normal; _viewer.Activate(); }
+        else { if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal; _main.Activate(); }
+        if (page != null) _main.ShowPage(page);
     });
 
-    public void ShowStats() => _app.Dispatcher.Invoke(() =>
+    /// <summary>Opens the replay popup (scenario overview) over the main window; <paramref name="origin"/> is the clicked point in window coordinates.</summary>
+    public void ShowScenario(string scenario, Point? origin) => _app.Dispatcher.Invoke(() =>
     {
-        if (_stats == null)
-        {
-            _stats = new StatsWindow(this);
-            _stats.Closed += (_, _) => _stats = null;
-            _stats.Show();
-        }
-        else { if (_stats.WindowState == WindowState.Minimized) _stats.WindowState = WindowState.Normal; _stats.Activate(); }
+        ShowMain();
+        _main!.ShowScenario(scenario, origin);
     });
 
-    void ShowSettings()
+    /// <summary>Opens the replay popup on a play session; <paramref name="origin"/> is the clicked point in window coordinates.</summary>
+    public void ShowSession(KovaaksCompanion.Core.Library.PlaySession session, Point? origin) => _app.Dispatcher.Invoke(() =>
     {
-        var w = new SettingsWindow(_settings);
-        if (w.ShowDialog() == true)
-        {
-            _settings = w.Result;
-            _settings.Save();
-            MessageBox.Show("Settings saved. Restart the app to apply them.", "KovaaK's Companion");
-        }
+        ShowMain();
+        _main!.ShowSession(session, origin);
+    });
+
+    /// <summary>Opens the replay of a past run; false when that run was not recorded.</summary>
+    public bool ShowRun(string scenario, DateTime end) => _app.Dispatcher.Invoke(() =>
+    {
+        ShowMain();
+        return _main!.ShowRun(scenario, end);
+    });
+
+    public void SaveUi()
+    {
+        try { Ui.Save(_uiFile); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { SetError("ui state: " + e.Message); }
+        UiChanged?.Invoke();
+    }
+
+    public void ApplySettings(AppSettings s)
+    {
+        _settings = s;
+        _settings.Save();
     }
 
     public void Dispose()
     {
         _tray?.Dispose();
+        _trayIcon?.Dispose();
         _watcher?.Dispose();
         _capture?.Dispose();
         _video?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(8));
