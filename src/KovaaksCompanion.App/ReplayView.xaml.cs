@@ -887,6 +887,7 @@ public partial class ReplayView : UserControl
         BuildChart();
         SetTransport(true);
         FitScreen();
+        if (!_playing) TogglePlay();
     }
 
     void OnStageSized(object sender, SizeChangedEventArgs e) => FitScreen();
