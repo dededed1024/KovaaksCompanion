@@ -1147,6 +1147,63 @@ public partial class StatsView
         return PlaylistSection(body);
     }
 
+    readonly HashSet<string> _homeCloudInflight = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Redraws a favorite card's line with server scores for scenarios that have no local runs, like the playlist popup chart does: cached ones first, then stale or missing ones fetched and cached.</summary>
+    async Task ApplyCachedCloudAsync(ScoreChart chart, BenchmarkProgress p, Brush tier, string watermark)
+    {
+        var missing = p.Scenarios.Where(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0).Select(sc => sc.Scenario).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var claimed = new List<string>();
+        try
+        {
+            var cache = Cache;
+            var steam = _host.Settings.EffectiveSteamId;
+            var (all, user) = await Task.Run(() => (cache.LoadAllScores(), steam.Length == 0 ? null : cache.LoadUsername(steam)));
+            var cloud = new Dictionary<string, IReadOnlyList<CloudScore>>(StringComparer.OrdinalIgnoreCase);
+            var stale = new List<string>();
+            var now = DateTime.Now;
+            foreach (var n in missing)
+            {
+                if (all.TryGetValue(n, out var c)) { cloud[n] = c.Scores; if (now - c.FetchedAt > CacheTtl) stale.Add(n); }
+                else stale.Add(n);
+            }
+            void Draw()
+            {
+                IReadOnlyList<CloudScore> CloudOf(string n) => cloud.TryGetValue(n, out var l) ? l : [];
+                var history = Tier.HistoryWithCloud(p.Scenarios.Select<ScenarioProgress, (IReadOnlyList<RunRecord>, IReadOnlyList<CloudScore>, IReadOnlyList<double>)>(
+                    sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, CloudOf(sc.Scenario), sc.RankMaxes)));
+                chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark);
+            }
+            if (cloud.Count > 0) Draw();
+            stale = stale.Where(n => _homeCloudInflight.Add(n)).ToList();
+            claimed.AddRange(stale);
+            if (stale.Count == 0 || steam.Length == 0) return;
+
+            if (string.IsNullOrEmpty(user))
+            {
+                user = await _api.ResolveUsernameAsync(steam, p.Scenarios, _cts.Token);
+                if (string.IsNullOrEmpty(user)) return;
+                var name = user;
+                await Task.Run(() => cache.SaveUsername(steam, name));
+            }
+            var gate = new SemaphoreSlim(MaxParallel);
+            var fresh = new Dictionary<string, List<CloudScore>>();
+            await Task.WhenAll(stale.Select(async n =>
+            {
+                await gate.WaitAsync(_cts.Token);
+                try { var l = await _api.GetLastScoresAsync(user, n, _cts.Token); fresh[n] = l; cloud[n] = l; }
+                catch (Exception) when (!_cts.IsCancellationRequested) { }
+                finally { gate.Release(); }
+            }));
+            if (fresh.Count == 0) return;
+            var batch = new Dictionary<string, List<CloudScore>>(fresh);
+            _ = Task.Run(() => { try { cache.SaveScoresBatch(batch); } catch (System.IO.IOException) { } });
+            Draw();
+        }
+        catch (Exception) { } // keep what is shown
+        finally { foreach (var n in claimed) _homeCloudInflight.Remove(n); }
+    }
+
     /// <summary>Favorite playlist card, sized like the playlist popup's activity card: name and difficulty on the left, the tier progress line on the right over a card-high tier-name watermark.</summary>
     UIElement FavoriteCard(Benchmark b, Difficulty d)
     {
@@ -1170,7 +1227,9 @@ public partial class StatsView
 
         var chart = new ScoreChart { IsHitTestVisible = false };
         var history = p == null ? [] : Tier.History(p.Scenarios.Select(sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, (IReadOnlyList<double>)sc.RankMaxes)));
-        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, ranked ? TierText.Label(p!.OverallRankName) : "");
+        var watermark = ranked ? TierText.Label(p!.OverallRankName) : "";
+        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark);
+        if (p != null && p.Scenarios.Any(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0)) _ = ApplyCachedCloudAsync(chart, p, tier, watermark);
         chart.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.Transparent, 0.15), new GradientStop(Colors.White, 0.5) }, new Point(0, 0), new Point(1, 0));
 
         var overlay = new Border { CornerRadius = new CornerRadius(3), IsHitTestVisible = false, Background = new SolidColorBrush(Colors.Transparent) };
