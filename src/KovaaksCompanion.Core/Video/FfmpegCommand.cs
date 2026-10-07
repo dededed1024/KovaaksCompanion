@@ -22,8 +22,8 @@ public static class FfmpegCommand
     /// Arguments for the rolling-buffer recorder. Segment list (csv) goes to stdout; <paramref name="audioPipe"/> adds raw
     /// 48 kHz s16 stereo PCM read from that named pipe. With a window <paramref name="target"/> (Hwnd set) the source is gfxcapture
     /// (only that window, no overlays); otherwise ddagrab of the whole output (or its crop region). Video/audio pts are wall-clock
-    /// seconds since <paramref name="epochUnixUs"/> (UTC µs since Unix epoch, chosen by the caller): gfxcapture's own capture-time
-    /// pts relative to its first frame, anchored at that frame's wall clock (ddagrab: per-frame RTCTIME), so segment csv start
+    /// seconds since <paramref name="epochUnixUs"/> (UTC µs since Unix epoch, chosen by the caller): per-frame RTCTIME for both
+    /// sources, the same wall clock the mouse timeline is anchored to, so the video cannot drift against it. Segment csv start
     /// times are seconds since that epoch (the first segment of a run reports 0 regardless).
     /// </summary>
     public static List<string> BuildRecord(VideoOptions o, string encoder, int outputIdx, int adapterIdx, string bufferDir, long epochUnixUs,
@@ -36,9 +36,8 @@ public static class FfmpegCommand
         bool window = target is { Hwnd: not 0 };
         string src;
         if (window)
-            // quoted: the expression has commas. First frame -> wall clock of its capture, later frames keep the capture-time spacing.
             src = $"gfxcapture=hwnd={target!.Hwnd.ToString(inv)}:max_framerate={fps.ToString(inv)}:capture_cursor=0:width=-2:height=-2," +
-                  $"setpts='PTS-STARTPTS+if(eq(N,0),st(0,(RTCTIME-{e})/(TB*1000000)),ld(0))'";
+                  $"setpts=(RTCTIME-{e})/(TB*1000000)";
         else
         {
             src = $"ddagrab=output_idx={outputIdx.ToString(inv)}:framerate={fps.ToString(inv)}:draw_mouse=0";
