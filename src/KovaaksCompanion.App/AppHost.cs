@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using KovaaksCompanion.Core;
@@ -31,7 +31,7 @@ public sealed class AppHost : IDisposable
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     readonly List<(string Scenario, DateTime End)> _pending = [];
 
-    public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
+    public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = App.Demo ? StatsView.DemoUi() : UiState.Load(_uiFile); }
     readonly string _uiFile;
 
     public AppSettings Settings => _settings;
@@ -122,7 +122,7 @@ public sealed class AppHost : IDisposable
         try { _watcher.Start(); } catch (Exception e) { SetError("stats folder: " + e.Message); }
 
         BuildTray();
-        Autostart.Refresh(_settings.StartWithWindows);
+        if (!App.Demo) Autostart.Refresh(_settings.StartWithWindows);
         if (showMain) ShowMain("Stats");
         _ = CheckForUpdate();
     }
@@ -219,7 +219,7 @@ public sealed class AppHost : IDisposable
 
     public void SaveUi()
     {
-        try { Ui.Save(_uiFile); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { SetError("ui state: " + e.Message); }
+        if (!App.Demo) try { Ui.Save(_uiFile); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { SetError("ui state: " + e.Message); }
         UiChanged?.Invoke();
     }
 

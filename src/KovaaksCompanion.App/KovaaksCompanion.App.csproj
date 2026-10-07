@@ -15,6 +15,11 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- dotnet publish -p:DemoBuild=true: filming build that opens with fixed fake data and touches no user data. -->
+  <PropertyGroup Condition="'$(DemoBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);DEMO</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <Resource Include="Fonts\*.otf" />
     <Resource Include="Assets\app.ico" />

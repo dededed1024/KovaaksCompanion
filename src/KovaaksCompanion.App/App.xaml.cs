@@ -1,4 +1,4 @@
-using System.IO.MemoryMappedFiles;
+﻿using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -8,9 +8,18 @@ namespace KovaaksCompanion.App;
 
 public partial class App : Application
 {
-    const string ShowEventName = @"Local\KovaaksCompanion.ShowMain";
-    const string QuitEventName = @"Local\KovaaksCompanion.Quit";
-    const string VersionMapName = @"Local\KovaaksCompanion.Version";
+    /// <summary>True in the filming build (<c>-p:DemoBuild=true</c>): fixed fake data, own single-instance names, no user data written.</summary>
+    public static bool Demo { get; } =
+#if DEMO
+        true;
+#else
+        false;
+#endif
+
+    static readonly string Suffix = Demo ? ".Demo" : "";
+    static readonly string ShowEventName = @"Local\KovaaksCompanion.ShowMain" + Suffix;
+    static readonly string QuitEventName = @"Local\KovaaksCompanion.Quit" + Suffix;
+    static readonly string VersionMapName = @"Local\KovaaksCompanion.Version" + Suffix;
 
     /// <summary>This build's version (assembly informational version).</summary>
     public static Version CurrentVersion { get; } = UpdateCheck.ParseVersion(typeof(App).Assembly
@@ -31,7 +40,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         MiddleScroll.Register();
-        _single =new Mutex(true, @"Local\KovaaksCompanion.SingleInstance", out var first);
+        _single =new Mutex(true, @"Local\KovaaksCompanion.SingleInstance" + Suffix, out var first);
         if (!first)
         {
             var replace = UpdateCheck.ShouldReplace(CurrentVersion, RunningVersion());

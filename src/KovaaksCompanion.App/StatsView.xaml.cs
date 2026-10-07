@@ -1,4 +1,4 @@
-using System.Net.Http;
+﻿using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -44,7 +44,7 @@ public partial class StatsView : UserControl
     {
         InitializeComponent();
         _host = host;
-        _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
+        _index = new PlaylistIndex(App.Demo ? DemoIndexFile : host.Settings.PlaylistIndexFile);
         Heading.Text = "Loading…";
         host.SessionSaved += OnSessionSaved;
         host.RunFinished += OnRunFinished;
@@ -277,6 +277,7 @@ public partial class StatsView : UserControl
 
     async void Reload()
     {
+        if (App.Demo) { LoadDemo(); return; }
         var folder = _host.Settings.StatsFolder;
         var sessionsFolder = _host.SessionsFolder;
         var cache = Cache;
@@ -516,7 +517,7 @@ public partial class StatsView : UserControl
         SetSummary("");
 
         var steam = _host.Settings.EffectiveSteamId;
-        if (steam.Length == 0)
+        if (steam.Length == 0 && !App.Demo)
         {
             SetSummary("No Steam ID\n" + Structure(d));
             return;
