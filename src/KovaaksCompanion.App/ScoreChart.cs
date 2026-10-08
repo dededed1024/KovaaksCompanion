@@ -30,6 +30,11 @@ public sealed class ScoreChart : FrameworkElement
         InvalidateVisual();
     }
 
+    double _miniTextCap = 200, _miniStackAbove = double.PositiveInfinity;
+    /// <summary>Card mode: the watermark is sized from at most this card height.</summary>
+    public double MiniTextCap { get => _miniTextCap; set { if (Math.Abs(_miniTextCap - value) < 0.01) return; _miniTextCap = value; InvalidateVisual(); } }
+    /// <summary>Card mode: above this card height the watermark repeats upward to fill the card.</summary>
+    public double MiniStackAbove { get => _miniStackAbove; set { if (_miniStackAbove.Equals(value)) return; _miniStackAbove = value; InvalidateVisual(); } }
     Brush? _miniBrush;
     string _watermark = "";
     bool _complete;
@@ -49,11 +54,19 @@ public sealed class ScoreChart : FrameworkElement
         {
             var face = new Typeface(new FontFamily("Segoe UI Black, Arial Black, Segoe UI"), FontStyles.Normal, FontWeights.Black, FontStretches.Normal);
             var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 100, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            var size = 100 * Math.Min(h * 1.7 / probe.Height, w * 1.1 / probe.Width);
+            var he = Math.Min(h, MiniTextCap);
+            var size = 100 * he * 1.7 / probe.Height;
             var mark = new SolidColorBrush(Color.FromArgb(0x80, c.R, c.G, c.B));
             mark.Freeze();
             var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, mark, VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, h - ft.Baseline));
+            // A card taller than the threshold repeats the name upward, the top row cut off by the card edge.
+            if (h > MiniStackAbove)
+            {
+                var pitch = he * 0.95;
+                for (var y = h - pitch; y > -pitch; y -= pitch)
+                    dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, y - ft.Baseline));
+            }
             if (_complete)
             {
                 var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();

@@ -116,7 +116,7 @@ public partial class StatsView
     void RefitProfile() { foreach (var f in _profileFits) f(); }
 
     /// <summary>Lays <paramref name="content"/> out at the column width, and when it is taller than the column shrinks it uniformly to fit, so the column never scrolls.</summary>
-    Grid FitHeight(FrameworkElement content, bool sizePic = false)
+    Grid FitHeight(FrameworkElement content, bool sizePic = false, Action<double>? pre = null)
     {
         var host = new Grid { ClipToBounds = true };
         var st = new ScaleTransform(1, 1);
@@ -132,6 +132,7 @@ public partial class StatsView
         {
             double w = host.ActualWidth, h = host.ActualHeight;
             if (w <= 0 || h <= 0) return;
+            pre?.Invoke(h);
             double sc = 1;
             for (var i = 0; i < 6; i++)
             {
@@ -317,12 +318,14 @@ public partial class StatsView
             .OrderByDescending(x => _host.Ui.FavoriteIndex($"{x.D.KovaaksBenchmarkId}")).ToList();
         var right = new StackPanel();
         if (favs.Count == 0) right.Children.Add(Text("No favorites", 13, ProfileDim, null, new Thickness(6, 0, 0, 0)));
+        var favCards = new List<FrameworkElement>();
         foreach (var (b, d) in favs)
         {
             // Opaque underlay with its own tier tint: the card's own wash is faint and translucent, and would otherwise pick up the popup tint.
             var card = FavoriteCard(b, d);
             ((FrameworkElement)card).Margin = new Thickness(0);
             ((FrameworkElement)card).LayoutTransform = new ScaleTransform(1.875, 1.875);
+            favCards.Add((FrameworkElement)card);
             if (card is Border cb) cb.BorderThickness = new Thickness(0);
             Brush under = Solid("#CC34343A"), edge = Brushes.Transparent;
             if (_progress.TryGetValue(d.KovaaksBenchmarkId, out var pr) && pr.OverallRankName.Length > 0 && RankBrush(d, pr.OverallRankName) is SolidColorBrush tb)
@@ -334,7 +337,24 @@ public partial class StatsView
             right.Children.Add(new Border { Background = under, BorderBrush = edge, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0), Margin = new Thickness(0, 0, 0, 4), IsHitTestVisible = false, Child = card });
         }
         // No gap to the line and none to the card edge: the column reaches out over the host's right margin.
-        var rightHost = FitHeight(right);
+        // The cards share the column height equally, whatever their number. Only the text scale is capped (1.875); the card height stretches to fill.
+        var rightHost = FitHeight(right, false, h =>
+        {
+            if (favCards.Count == 0) return;
+            var slot = Math.Max(20, (h - 4 * favCards.Count) / favCards.Count);
+            var s = Math.Min(1.875, slot / 100);
+            foreach (var c in favCards)
+            {
+                c.LayoutTransform = new ScaleTransform(s, s);
+                c.Height = slot / s;
+                // Tier name: sized from at most 1/3.7 of the popup height; with 3 cards or fewer the name repeats upward.
+                if (c is Border { Child: Grid g } && g.Children.OfType<ScoreChart>().FirstOrDefault() is { } sch)
+                {
+                    sch.MiniTextCap = ProfileHost.ActualHeight / 3.7 / s;
+                    sch.MiniStackAbove = favCards.Count <= 3 ? 0 : double.PositiveInfinity;
+                }
+            }
+        });
         rightHost.Margin = new Thickness(0, 0, -ProfileHost.Margin.Right, 0);
         Col(rightHost, 2);
 
