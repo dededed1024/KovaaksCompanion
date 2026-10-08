@@ -279,7 +279,8 @@ public partial class ReplayView : UserControl
         if (!_open || _d is null) return;
         var statsFolder = _host.Settings.StatsFolder;
         var tok = _tok;
-        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder));
+        var infos = Infos();
+        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder).Verified(infos));
         if (!_open || tok != _tok || _d is null) return;
         _d = _d with { Lib = lib };
         BuildAll();

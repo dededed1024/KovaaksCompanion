@@ -1,4 +1,5 @@
 using KovaaksCompanion.Core.Perf;
+using KovaaksCompanion.Core.Session;
 using KovaaksCompanion.Core.Stats;
 
 namespace KovaaksCompanion.Core.Library;
@@ -21,6 +22,13 @@ public sealed class RunLibrary
     /// <summary>Runs of one scenario, oldest first. Empty when never played.</summary>
     public IReadOnlyList<RunRecord> Runs(string scenario) =>
         _byScenario.TryGetValue(scenario, out var l) ? l : [];
+
+    /// <summary>
+    /// Drops runs whose score differs from the signed score of their session (matched by <see cref="SessionStore.FindRun"/>):
+    /// the stats CSV was edited. Runs without a session cannot be checked and stay.
+    /// </summary>
+    public RunLibrary Verified(IReadOnlyList<SessionInfo> sessions) => new(AllRuns.Where(r =>
+        SessionStore.FindRun(sessions, r.Scenario, r.End) is var i && (i < 0 || Math.Abs(sessions[i].Score - r.Score) < 1e-6)));
 
     /// <summary>Summary of the run's .perf, or null when it is missing or unreadable (older runs may have none).</summary>
     static PerfSummary? ReadPerf(string statsCsv)

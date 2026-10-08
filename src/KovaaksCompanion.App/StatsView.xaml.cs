@@ -284,7 +284,10 @@ public partial class StatsView : UserControl
         var folder = _host.Settings.StatsFolder;
         var sessionsFolder = _host.SessionsFolder;
         var cache = Cache;
-        var (lib, sessions, cached) = await Task.Run(() => (RunLibrary.Scan(folder), SessionStore.List(sessionsFolder).Select(s => s.Info).ToList(), LoadCachedProgress(cache, _host.Settings.EffectiveSteamId)));
+        var (lib, sessions, cached) = await Task.Run(() => {
+            var infos = SessionStore.List(sessionsFolder).Select(s => s.Info).ToList();
+            return (RunLibrary.Scan(folder).Verified(infos), infos, LoadCachedProgress(cache, _host.Settings.EffectiveSteamId));
+        });
         (_lib, _sessions) = (lib, sessions);
         foreach (var c in cached)
         {
