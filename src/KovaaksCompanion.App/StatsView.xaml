@@ -127,7 +127,7 @@
                 </Grid.RowDefinitions>
                 <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
                 <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="686" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="#F2232326"
-                        BorderBrush="#1FFFFFFF" BorderThickness="15" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                        BorderBrush="#1FFFFFFF" BorderThickness="0" Opacity="0" RenderTransformOrigin="0.5,0.5">
                     <Border.RenderTransform><ScaleTransform x:Name="ProfileScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                     <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
                     <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>

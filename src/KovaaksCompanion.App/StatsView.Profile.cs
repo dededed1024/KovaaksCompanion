@@ -327,7 +327,7 @@ public partial class StatsView
             ((FrameworkElement)card).Margin = new Thickness(0);
             ((FrameworkElement)card).LayoutTransform = new ScaleTransform(1.875, 1.875);
             favCards.Add((FrameworkElement)card);
-            if (card is Border cb) cb.BorderThickness = new Thickness(0);
+            if (card is Border cb) { cb.BorderThickness = new Thickness(0); cb.CornerRadius = new CornerRadius(0); }
             Brush under = Solid("#CC34343A"), edge = Brushes.Transparent;
             if (_progress.TryGetValue(d.KovaaksBenchmarkId, out var pr) && pr.OverallRankName.Length > 0 && RankBrush(d, pr.OverallRankName) is SolidColorBrush tb)
             {
