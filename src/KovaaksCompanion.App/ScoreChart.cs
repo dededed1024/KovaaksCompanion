@@ -70,7 +70,9 @@ public sealed class ScoreChart : FrameworkElement
             if (_complete)
             {
                 var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
-                var tag = new FormattedText("COMPLETE", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size / 4.5, tagBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                // Scales with the card height, up to twice the watermark's height cap.
+                var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
+                var tag = new FormattedText("COMPLETE", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, tagSize, tagBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
                 dc.DrawText(tag, new Point(w - tag.Width - 8, h - tag.Baseline - 6));
             }
         }
