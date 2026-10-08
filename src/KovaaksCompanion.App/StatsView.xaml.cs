@@ -63,6 +63,7 @@ public partial class StatsView : UserControl
         }
         MiddleScroll.Started += _ => StopEase();
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
+        PlaylistScroll.IsVisibleChanged += (_, _) => CopyImage.Visibility = PlaylistScroll.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); };
         HomeScroll.ScrollChanged += (_, _) => UpdateLivePill();
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
@@ -71,6 +72,9 @@ public partial class StatsView : UserControl
             var scrollbar = HomeScroll.Template?.FindName("PART_VerticalScrollBar", HomeScroll) as ScrollBar;
             if (scrollbar != null) scrollbar.Margin = new Thickness(0, 48, 0, 0);
         };
+        // The profile card has a fixed 21:9 design size inside a Viewbox, so the window size only scales it.
+        ProfileHost.SizeChanged += (_, _) => RefitProfile();
+        ProfileCard.SizeChanged += (_, _) => RefitProfile();
         SessionPopup.SizeChanged += (_, _) =>
         {
             if (SessionPopup.ActualWidth > 0 && SessionPopup.ActualHeight > 0)
@@ -363,6 +367,7 @@ public partial class StatsView : UserControl
     {
         if (_searchOpen) { CloseSearch(); return true; }
         if (_sessionOpen) { CloseSession(); return true; }
+        if (_profileOpen) { CloseProfile(); return true; }
         if (!_popupOpen) return false;
         ClosePopup();
         return true;
@@ -387,6 +392,7 @@ public partial class StatsView : UserControl
     /// <summary>Opens a playlist (at <paramref name="d"/> when given, else the remembered difficulty) in the popup.</summary>
     void OpenPlaylist(Benchmark b, Difficulty? d = null)
     {
+        CloseProfile(true);
         if (d != null) _diffChoice[b.BenchmarkName] = d.KovaaksBenchmarkId;
         _popupItem = MakeItem(b);
         OpenPopup();
@@ -421,7 +427,7 @@ public partial class StatsView : UserControl
             if (tok != _popTok) return;
             Popup.Visibility = Visibility.Collapsed;
             PageHost.Children.Clear();
-            _ctx = null; _bal = null; _bench = null;
+            _ctx = null; _bal = null; _bench = null; _hero = null; _tiles = null;
         });
     }
 

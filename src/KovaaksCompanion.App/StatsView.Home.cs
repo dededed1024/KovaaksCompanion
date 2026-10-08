@@ -1,4 +1,6 @@
 ﻿using System.Windows.Threading;
+using System.IO;
+using System.Windows.Media.Imaging;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -241,8 +243,8 @@ public partial class StatsView
         return page;
     }
 
-    /// <summary>One row above the calendar: days played, longest daily streak, total scenario time and playlists with every scenario at its top tier (one unplayed scenario makes it incomplete).</summary>
-    UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays)
+    /// <summary>One row above the calendar: days played, longest daily streak, total scenario time, total personal bests and playlists with every scenario at its top tier (one unplayed scenario makes it incomplete).</summary>
+    UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays, double valueSize = 32, double labelSize = 16, FontWeight? valueWeight = null, Brush? ink = null)
     {
         var days = plays.Keys.Order().ToList();
         int best = 0, run = 0;
@@ -254,15 +256,16 @@ public partial class StatsView
         var time = TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks));
         var done = AllDifficulties().Select(x => x.D.KovaaksBenchmarkId).Distinct()
             .Count(id => _progress.TryGetValue(id, out var p) && p.IsComplete);
-        var cells = new (string Label, string Value)[]
+        var cells = new List<(string Label, string Value)>
         {
             ("Days", $"{days.Count}"),
             ("Streak", $"{best}"),
             ("Time", time.TotalHours > 1 ? $"{(int)time.TotalHours}h" : Dur(time)),
-            ("Complete", $"{done}")
         };
+        cells.Add(("PB", $"{PlaySession.Group(_lib.AllRuns, all: _lib.AllRuns).Sum(x => x.PersonalBests)}"));
+        cells.Add(("Complete", $"{done}"));
         var grid = new Grid { Margin = new Thickness(16, 12, 16, 12) };
-        for (var i = 0; i < cells.Length; i++)
+        for (var i = 0; i < cells.Count; i++)
         {
             if (i > 0)
             {
@@ -273,8 +276,8 @@ public partial class StatsView
             }
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-            cell.Children.Add(Text(cells[i].Value, 32, FgB, FontWeights.SemiBold));
-            cell.Children.Add(Text(cells[i].Label, 16, i < 2 ? FgB : DimB, null, new Thickness(0, 2, 0, 0)));
+            cell.Children.Add(Text(cells[i].Value, valueSize, ink ?? FgB, valueWeight ?? FontWeights.SemiBold));
+            cell.Children.Add(Text(cells[i].Label, labelSize, ink ?? FgB, null, new Thickness(0, 2, 0, 0)));
             ((TextBlock)cell.Children[0]).HorizontalAlignment = HorizontalAlignment.Center;
             ((TextBlock)cell.Children[1]).HorizontalAlignment = HorizontalAlignment.Center;
             Grid.SetColumn(cell, grid.ColumnDefinitions.Count - 1);
@@ -752,7 +755,7 @@ public partial class StatsView
             {
                 var green = (Brush)FindResource("Green");
                 var badge = new Grid { Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-                badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.18 });
+                badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.35 });
                 badge.Children.Add(new TextBlock { Text = pbCount >= 2 ? $"PB ×{pbCount}" : "PB", Foreground = green, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 3, 10, 3) });
                 Grid.SetColumn(badge, 1);
                 g.Children.Add(badge);
@@ -773,11 +776,39 @@ public partial class StatsView
     static string DayLabel(DateTime day) =>
         day == DateTime.Today ? "Today" : day == DateTime.Today.AddDays(-1) ? "Yesterday" : day.ToString("ddd, MMM d", CultureInfo.InvariantCulture);
 
-    UIElement SessionCard(PlaySession s, HashSet<object> pbs, bool live, bool expanded = false)
+    /// <summary>Renders the whole session (every run, not just the visible ones) to the clipboard and a png in the captures folder.</summary>
+    void CopySessionImage(FrameworkElement source, PlaySession s, HashSet<object> pbs)
+    {
+        try
+        {
+            const double width = 960;
+            var card = SessionCard(s, pbs, false, expanded: true, capture: true);
+            var holder = new Border { Background = Solid("#FF101114"), Padding = new Thickness(8), Child = card, Width = width };
+            holder.Resources.MergedDictionaries.Add(Resources);
+            holder.Measure(new Size(width, double.PositiveInfinity));
+            holder.Arrange(new Rect(0, 0, width, holder.DesiredSize.Height));
+            holder.UpdateLayout();
+            var dpi = VisualTreeHelper.GetDpi(source);
+            var rtb = new RenderTargetBitmap((int)Math.Ceiling(width * dpi.DpiScaleX), (int)Math.Ceiling(holder.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            rtb.Render(holder);
+            rtb.Freeze();
+            Clipboard.SetImage(rtb);
+            var dir = System.IO.Path.Combine(KovaaksCompanion.Core.AppSettings.DefaultDataFolder, "captures");
+            Directory.CreateDirectory(dir);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using var fs = File.Create(System.IO.Path.Combine(dir, $"session_{s.Number}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
+            enc.Save(fs);
+        }
+        catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); }
+    }
+
+    UIElement SessionCard(PlaySession s, HashSet<object> pbs, bool live, bool expanded = false, bool capture = false)
     {
         var pbCount = s.Runs.Count(pbs.Contains);
         var head = new Grid { Margin = new Thickness(24, 3, 24, 3) };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var title = new TextBlock();
@@ -812,6 +843,24 @@ public partial class StatsView
         var tiles = new ItemsControl { Style = (Style)FindResource("StatTiles"), ItemsSource = stats, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(tiles, 1);
         head.Children.Add(tiles);
+        if (!capture && s.Runs.Count > 0)
+        {
+            var copy = new Button
+            {
+                Content = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0),
+                Margin = new Thickness(6, 0, 0, 0), MinHeight = 36, MinWidth = 36, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Copy session as image",
+            };
+            copy.Click += async (_, _) =>
+            {
+                CopySessionImage(copy, s, pbs);
+                var icon = copy.Content;
+                copy.Content = "";
+                await Task.Delay(1200);
+                copy.Content = icon;
+            };
+            Grid.SetColumn(copy, 2);
+            head.Children.Add(copy);
+        }
 
         var headHit = new Border { Background = Brushes.Transparent, Child = head, CornerRadius = new CornerRadius(14, 14, 0, 0) };
         var rows = new StackPanel { Margin = new Thickness(20, 0, 20, 0) };
@@ -992,7 +1041,7 @@ public partial class StatsView
     UIElement BuildHomePlaylists()
     {
         var items = AllDifficulties().Select(x => (x.B, x.D, Fav: _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}"), Last: LastPlayed(x.D.KovaaksBenchmarkId))).ToList();
-        var favs = items.Where(i => i.Fav).OrderByDescending(i => i.Last ?? DateTime.MinValue).ToList();
+        var favs = items.Where(i => i.Fav).OrderByDescending(i => _host.Ui.FavoriteIndex($"{i.D.KovaaksBenchmarkId}")).ToList();
         var rest = items.Where(i => !i.Fav).OrderByDescending(i => i.Last ?? DateTime.MinValue).ToList();
         var canExpand = rest.Count > 0;
 
@@ -1247,12 +1296,12 @@ public partial class StatsView
         cell.Children.Add(chart);
         cell.Children.Add(info);
 
-        var card = new Border { CornerRadius = new CornerRadius(4), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Margin = new Thickness(TileGap / 2, TileGap / 2, TileGap / 2, TileGap / 2 + 10), Height = 120, Cursor = Cursors.Hand, Child = cell };
+        var card = new Border { CornerRadius = new CornerRadius(4), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Margin = new Thickness(TileGap / 2, TileGap / 2, TileGap / 2, TileGap / 2), Height = 100, Cursor = Cursors.Hand, Child = cell };
         cell.SizeChanged += (_, e) => cell.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 3, 3);
         if (tier is SolidColorBrush rb && ranked)
         {
             var c = rb.Color;
-            var gradBrush = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Color.FromArgb(0x30, c.R, c.G, c.B), 0), new GradientStop(Color.FromArgb(0x08, c.R, c.G, c.B), 1) }, new Point(0, 0), new Point(1, 1));
+            var gradBrush = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Color.FromArgb(0x9D, (byte)(c.R * 0.18), (byte)(c.G * 0.18), (byte)(c.B * 0.18)), 0), new GradientStop(Color.FromArgb(0x00, c.R, c.G, c.B), 1) }, new Point(0, 0), new Point(1, 1));
             gradBrush.Freeze();
             card.Background = gradBrush;
             var dur = TimeSpan.FromMilliseconds(120);

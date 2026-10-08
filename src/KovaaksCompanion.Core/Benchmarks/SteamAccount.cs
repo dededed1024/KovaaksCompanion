@@ -26,6 +26,28 @@ public static partial class SteamAccount
         return best;
     }
 
+    /// <summary>Steam display name of <paramref name="steamId"/> from loginusers.vdf, and Steam's cached avatar file (config/avatarcache). Either is null when unknown.</summary>
+    public static (string? Name, string? AvatarPath) Profile(string kovaaksPath, string steamId)
+    {
+        try
+        {
+            var root = new DirectoryInfo(kovaaksPath).Parent?.Parent?.Parent?.FullName;
+            if (root == null || steamId.Length == 0) return (null, null);
+            string? name = null;
+            var vdf = Path.Combine(root, "config", "loginusers.vdf");
+            if (File.Exists(vdf))
+                foreach (Match m in UserBlock().Matches(File.ReadAllText(vdf)))
+                    if (m.Groups["id"].Value == steamId)
+                    {
+                        var kv = Pair().Matches(m.Groups["body"].Value).ToDictionary(x => x.Groups["key"].Value, x => x.Groups["value"].Value);
+                        name = kv.GetValueOrDefault("PersonaName");
+                    }
+            var avatar = Path.Combine(root, "config", "avatarcache", steamId + ".png");
+            return (string.IsNullOrWhiteSpace(name) ? null : name, File.Exists(avatar) ? avatar : null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (null, null); }
+    }
+
     /// <summary>Steam root derived from the KovaaK's folder (…\Steam\steamapps\common\FPSAimTrainer).</summary>
     public static string? Detect(string kovaaksPath)
     {

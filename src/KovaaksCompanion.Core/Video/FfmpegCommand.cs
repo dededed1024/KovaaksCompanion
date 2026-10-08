@@ -29,7 +29,7 @@ public static class FfmpegCommand
         CaptureTarget? target = null, string? audioPipe = null)
     {
         var inv = CultureInfo.InvariantCulture;
-        int fps = VideoOptions.Fps;
+        int fps = Math.Max(1, o.Fps);
         bool hwFrames = encoder is "h264_nvenc" or "h264_amf" or "hevc_nvenc";
         var e = epochUnixUs.ToString(inv);
         bool window = target is { Hwnd: not 0 };
@@ -66,13 +66,125 @@ public static class FfmpegCommand
         return a;
     }
 
-    private static IEnumerable<string> EncoderArgs(string enc, int q) => enc switch
+    public static IEnumerable<string> EncoderArgs(string enc, int q) => enc switch
     {
         "h264_nvenc" or "hevc_nvenc" => ["-preset", "p4", "-tune", "ll", "-rc", "vbr", "-cq", q.ToString(), "-b:v", "0", "-maxrate", "150M", "-bf", "0", "-forced-idr", "1"],
         "h264_amf" => ["-quality", "speed", "-rc", "cqp", "-qp_i", q.ToString(), "-qp_p", q.ToString(), "-bf", "0"],
         "h264_qsv" => ["-preset", "veryfast", "-global_quality", q.ToString(), "-bf", "0"],
         _ => ["-pix_fmt", "yuv420p"],
     };
+
+    /// <summary>
+    /// Hand-cam recorder: DirectShow video device -> HW H.264 -> 2 s rolling segments. Pts are wall-clock seconds since <paramref name="epochUnixUs"/>
+    /// (per-frame RTCTIME, the same clock as <see cref="BuildRecord"/>). <paramref name="forceMode"/> asks the device for 1280x720@30 first.
+    /// <paramref name="targetWidth"/> &gt; 0 downscales to that width (the size the composite will show it at), so the always-on encode stays small.
+    /// </summary>
+    public static List<string> BuildHandCamRecord(string device, int deviceNumber, string encoder, int quality, string dir, long epochUnixUs, int slots, bool forceMode, int targetWidth = 0)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var a = new List<string> { "-hide_banner", "-loglevel", "warning", "-nostats", "-copyts", "-f", "dshow", "-rtbufsize", "256M" };
+        if (forceMode) a.AddRange(["-video_size", "1280x720", "-framerate", HandCamRecorder.Fps.ToString(inv)]);
+        if (deviceNumber > 0) a.AddRange(["-video_device_number", deviceNumber.ToString(inv)]);
+        a.AddRange(["-i", "video=" + device,
+            "-vf", $"setpts=(RTCTIME-{epochUnixUs.ToString(inv)})/(TB*1000000)" + (targetWidth > 0 ? $",scale={targetWidth.ToString(inv)}:-2" : "") + ",format=yuv420p",
+            "-c:v", encoder, "-fps_mode:v", "passthrough"]);
+        a.AddRange(EncoderArgs(encoder, quality));
+        a.AddRange(["-g", HandCamRecorder.Fps.ToString(inv), "-keyint_min", HandCamRecorder.Fps.ToString(inv),
+            "-f", "segment", "-segment_time", HandCamRecorder.SegmentSeconds.ToString(inv),
+            "-segment_wrap", slots.ToString(inv), "-reset_timestamps", "1",
+            "-segment_list", "pipe:1", "-segment_list_type", "csv", "-segment_list_flags", "live",
+            "-segment_format", "mp4", Path.Combine(dir, HandCamRecorder.SegmentFilePattern)]);
+        return a;
+    }
+
+    /// <summary>Keyframe interval (frames) for re-encoded clips; without it NVENC leaves one GOP for the whole clip and seeking/playback stutters.</summary>
+    const int ReencodeGop = 60;
+
+    static readonly string[] GopArgs = ["-g", ReencodeGop.ToString(), "-keyint_min", ReencodeGop.ToString()];
+
+    /// <summary>One cam clip to overlay: its wall-clock start minus the game clip's start (positive delays it, negative trims its head) and its place.</summary>
+    public sealed record CamInput(string Clip, double ShiftSec, HandCamLayout Layout);
+
+    /// <summary>
+    /// Overlays each cam clip onto the game clip in order (audio copied, video re-encoded). The last frame of a cam stays until its next one arrives.
+    /// </summary>
+    public static List<string> BuildComposite(string gameClip, IReadOnlyList<CamInput> cams, string encoder, int quality, string output)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        var cur = "0:v";
+        for (int i = 0; i < cams.Count; i++)
+        {
+            var c = cams[i];
+            int size = Math.Clamp(c.Layout.SizePercent, 5, 60);
+            double right = Math.Clamp(c.Layout.RightPercent, 0, 100) / 100.0, top = Math.Clamp(c.Layout.TopPercent, 0, 100) / 100.0;
+            var shift = c.ShiftSec >= 0
+                ? $"setpts=PTS-STARTPTS+{c.ShiftSec.ToString("0.######", inv)}/TB"
+                : $"trim=start={(-c.ShiftSec).ToString("0.######", inv)},setpts=PTS-STARTPTS";
+            var n = i + 1;
+            // cam width = size% of the game width (even), height keeps the cam aspect; position is clamped inside the frame
+            sb.Append($"[{n}:v]{shift}[c{n}a];");
+            sb.Append($"[c{n}a][{cur}]scale2ref=w='trunc(ref_w*{size.ToString(inv)}/100/2)*2':h='trunc(ow/a/2)*2'[c{n}][g{n}];");
+            sb.Append($"[g{n}][c{n}]overlay=x='max(0,min(main_w-overlay_w,main_w-overlay_w-main_w*{right.ToString("0.####", inv)}))':y='max(0,min(main_h-overlay_h,main_h*{top.ToString("0.####", inv)}))':eof_action=pass:repeatlast=1[o{n}];");
+            cur = $"o{n}";
+        }
+        sb.Append($"[{cur}]format=yuv420p[v]");
+        var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-hwaccel", "d3d11va", "-i", gameClip };
+        foreach (var c in cams) a.AddRange(["-hwaccel", "d3d11va", "-i", c.Clip]);
+        a.AddRange(["-filter_complex", sb.ToString(), "-map", "[v]", "-map", "0:a?", "-c:a", "copy", "-c:v", encoder, "-fps_mode:v", "passthrough"]);
+        a.AddRange(EncoderArgs(encoder, quality));
+        a.AddRange(GopArgs);
+        a.AddRange(["-movflags", "+faststart", output]);
+        return a;
+    }
+
+    /// <summary>
+    /// <see cref="BuildComposite"/> kept on the GPU (NVIDIA only): CUDA decode, scale_cuda + overlay_cuda, NVENC. Frames never reach system memory.
+    /// scale_cuda has no "scale to a reference" variant, so the cam width comes from <paramref name="gameWidth"/> (the game clip's width).
+    /// TODO: same for AMD (h264_amf) and Intel (h264_qsv) so they do not fall back to the CPU path.
+    /// </summary>
+    public static List<string> BuildCompositeCuda(string gameClip, int gameWidth, IReadOnlyList<CamInput> cams, int quality, string output)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        var cur = "0:v";
+        for (int i = 0; i < cams.Count; i++)
+        {
+            var c = cams[i];
+            int size = Math.Clamp(c.Layout.SizePercent, 5, 60);
+            double right = Math.Clamp(c.Layout.RightPercent, 0, 100) / 100.0, top = Math.Clamp(c.Layout.TopPercent, 0, 100) / 100.0;
+            var shift = c.ShiftSec >= 0
+                ? $"setpts=PTS-STARTPTS+{c.ShiftSec.ToString("0.######", inv)}/TB"
+                : $"trim=start={(-c.ShiftSec).ToString("0.######", inv)},setpts=PTS-STARTPTS";
+            var n = i + 1;
+            int camW = Math.Max(2, gameWidth * size / 100 / 2 * 2);
+            sb.Append($"[{n}:v]{shift},scale_cuda=w={camW.ToString(inv)}:h=-2[c{n}];");
+            sb.Append($"[{cur}][c{n}]overlay_cuda=x='max(0,min(main_w-overlay_w,main_w-overlay_w-main_w*{right.ToString("0.####", inv)}))':y='max(0,min(main_h-overlay_h,main_h*{top.ToString("0.####", inv)}))':eof_action=pass:repeatlast=1[o{n}]{(i + 1 < cams.Count ? ";" : "")}");
+            cur = $"o{n}";
+        }
+        var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-i", gameClip };
+        foreach (var c in cams) a.AddRange(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-i", c.Clip]);
+        a.AddRange(["-filter_complex", sb.ToString(), "-map", $"[{cur}]", "-map", "0:a?", "-c:a", "copy", "-c:v", "h264_nvenc", "-fps_mode:v", "passthrough"]);
+        a.AddRange(EncoderArgs("h264_nvenc", quality));
+        a.AddRange(GopArgs);
+        a.AddRange(["-movflags", "+faststart", output]);
+        return a;
+    }
+
+    /// <summary>Re-times the cam clip onto the game clip's timeline (same start, <paramref name="durationSec"/> long): head trimmed when the cam started earlier, first frame held when later.</summary>
+    public static List<string> BuildCamAlign(string camClip, double camShiftSec, double durationSec, string encoder, int quality, string output)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var vf = camShiftSec >= 0
+            ? $"tpad=start_duration={camShiftSec.ToString("0.######", inv)}:start_mode=clone"
+            : $"trim=start={(-camShiftSec).ToString("0.######", inv)},setpts=PTS-STARTPTS";
+        var a = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-hwaccel", "d3d11va", "-i", camClip, "-vf", vf + ",format=yuv420p",
+            "-t", durationSec.ToString("0.######", inv), "-c:v", encoder, "-fps_mode:v", "passthrough" };
+        a.AddRange(EncoderArgs(encoder, quality));
+        a.AddRange(GopArgs);
+        a.AddRange(["-movflags", "+faststart", output]);
+        return a;
+    }
 
     /// <summary>Concat-demuxer list file contents (forward slashes, quoted).</summary>
     public static string BuildConcatList(IEnumerable<string> files)

@@ -157,7 +157,8 @@ public sealed class AppHost : IDisposable
         _video = new VideoCaptureService(new VideoOptions
         {
             FfmpegPath = ffmpegPath, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(),
-        });
+            Fps = _settings.VideoFps,
+        }, () => HandCamConfig.From(_settings));
         _video.Error += m => SetError("video: " + m);
         _video.StateChanged += () => GameStateChanged?.Invoke();
         try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }

@@ -14,6 +14,14 @@ public sealed record AppSettings
     public string SteamId { get; init; } = "";
     public bool StartWithWindows { get; init; }
     public Video.VideoQuality VideoQuality { get; init; } = Video.VideoQuality.High;
+    /// <summary>Maximum recording frame rate.</summary>
+    public int VideoFps { get; init; } = Video.VideoOptions.DefaultFps;
+
+    public bool HandCamEnabled { get; init; }
+    [JsonConverter(typeof(Video.HandCamSaveConverter))]
+    public Video.HandCamSave HandCamSave { get; init; } = Video.HandCamSave.Composite;
+    /// <summary>Up to <see cref="Video.HandCamSlot.Max"/> hand-cams recorded alongside the game.</summary>
+    public Video.HandCamSlots HandCams { get; init; } = [];
 
     public static string DefaultDataFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KovaaksCompanion");

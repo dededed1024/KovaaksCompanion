@@ -77,6 +77,8 @@
                                 <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
                                         MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Favorite" Click="OnStarClick" Visibility="Collapsed"/>
+                                <Button x:Name="CopyImage" Content="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Copy scenarios as image" Click="OnCopyImageClick" Visibility="Collapsed"/>
                                 <Button x:Name="Pin" Content="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
                                         MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Show tier on Home" Click="OnPinClick" Visibility="Collapsed"/>
                                 <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
@@ -111,6 +113,27 @@
                                   CanContentScroll="False" Visibility="Collapsed" Margin="0,0,0,10"/>
                 </StackPanel>
             </Border>
+        </Grid>
+
+        <!-- Profile popup: scrim + card below the title bar -->
+        <Grid x:Name="ProfilePopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnProfileKey">
+            <Border x:Name="ProfileScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnProfileScrim"/>
+            <!-- The card is laid out at one fixed design size (23:9); the Viewbox scales everything in it together like a single image. -->
+            <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="48,40,48,48">
+            <Grid Width="1753">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
+                <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="686" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="6" Background="#F2232326"
+                        BorderBrush="#1FFFFFFF" BorderThickness="15" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                    <Border.RenderTransform><ScaleTransform x:Name="ProfileScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+                    <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                    <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
+                </Border>
+            </Grid>
+            </Viewbox>
         </Grid>
 
         <!-- Session popup: scrim + card centered on screen -->

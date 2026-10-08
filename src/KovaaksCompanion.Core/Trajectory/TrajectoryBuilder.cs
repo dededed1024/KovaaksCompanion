@@ -8,7 +8,7 @@ public sealed record BuiltTrajectory(TrajectoryData? Trajectory, IReadOnlyList<C
 
 public static class TrajectoryBuilder
 {
-    public const double DefaultRateHz = Video.VideoOptions.Fps;
+    public const double DefaultRateHz = 120;
 
     /// <summary>
     /// Cuts the run window [Start, End] out of the ring buffer. Time 0 = run Start. Kill events come from the CSV.

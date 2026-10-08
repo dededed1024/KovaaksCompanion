@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -5,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 
@@ -37,6 +39,7 @@ public partial class StatsView
     const string Icons = "Segoe Fluent Icons, Segoe MDL2 Assets";
     PlaylistCtx? _ctx;
     BenchmarkTable? _bench;
+    FrameworkElement? _hero, _tiles, _activity;
     BalanceUi? _bal;
     TextBlock? _noteBlock;
 
@@ -52,6 +55,113 @@ public partial class StatsView
         _codeTok++;
         CodeText.Text = code;
         CodeChip.Visibility = PlayList.Visibility = code.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Renders the overall header, category tiles and the full scenario table (not just the visible part) to a bitmap on the clipboard.</summary>
+    async void OnCopyImageClick(object sender, RoutedEventArgs e)
+    {
+        if (_bench is not { } t || t.ActualWidth <= 0 || t.ActualHeight <= 0) return;
+        var heroAlign = HorizontalAlignment.Stretch;
+        List<(FrameworkElement, HorizontalAlignment)> heroLines = [];
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(t);
+            var body = new List<FrameworkElement>();
+            if (_tiles is { ActualHeight: > 0 } tiles) body.Add(tiles);
+            if (_activity is { ActualHeight: > 0 } activity) body.Add(activity);
+            body.Add(t);
+            var title = new FormattedText(Heading.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize, Heading.Foreground, dpi.PixelsPerDip);
+            // Header row: dot, name and difficulty on the left, then the overall tier.
+            const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28;
+            var pill = HeadPill.Visibility == Visibility.Visible && HeadPill.ActualWidth > 0 ? HeadPill : null;
+            var diffName = DiffTrack.Visibility == Visibility.Visible ? DiffBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string : null;
+            var diff = string.IsNullOrEmpty(diffName) ? null : new FormattedText(diffName, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface(Heading.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 20, DimB, dpi.PixelsPerDip);
+            var hero = _hero is { ActualHeight: > 0 } ? _hero : null;
+            // Shrink the hero to its text and right-align its lines for the capture; restored in finally.
+            if (hero != null)
+            {
+                heroAlign = hero.HorizontalAlignment;
+                heroLines = (hero as Panel)?.Children.OfType<FrameworkElement>().Select(l => (l, l.HorizontalAlignment)).ToList() ?? [];
+                hero.HorizontalAlignment = HorizontalAlignment.Right;
+                foreach (var (l, _) in heroLines) l.HorizontalAlignment = HorizontalAlignment.Right;
+                hero.UpdateLayout();
+            }
+            var heroW = hero?.ActualWidth ?? 0;
+            var leftW = (pill != null ? dot + dotGap : 0) + title.Width + (diff != null ? diffGap + diff.Width : 0);
+            var headH = Math.Max(Math.Max(title.Height, diff?.Height ?? 0), hero?.ActualHeight ?? 0);
+            var width = Math.Max(body.Max(x => x.ActualWidth), leftW + (hero != null ? tierGap + heroW : 0));
+            var height = headH + CardGap + body.Sum(x => x.ActualHeight) + CardGap * (body.Count - 1);
+            var w = (int)Math.Ceiling(width * dpi.DpiScaleX);
+            var h = (int)Math.Ceiling(height * dpi.DpiScaleY);
+            var rtb = new RenderTargetBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                // The brush maps the element's own space, which starts at its layout offset (margin), so the viewbox must start there too.
+                void Draw(FrameworkElement el, double x, double y, double ew)
+                {
+                    var off = VisualTreeHelper.GetOffset(el);
+                    var rect = new Rect(x, y, ew, el.ActualHeight);
+                    dc.DrawRectangle(new VisualBrush(el)
+                    {
+                        Stretch = Stretch.None,
+                        AlignmentX = AlignmentX.Left,
+                        AlignmentY = AlignmentY.Top,
+                        ViewboxUnits = BrushMappingMode.Absolute,
+                        Viewbox = new Rect(off.X, off.Y, ew, el.ActualHeight),
+                        ViewportUnits = BrushMappingMode.Absolute,
+                        Viewport = rect,
+                    }, null, rect);
+                }
+                dc.DrawRectangle(Solid("#FF101114"), null, new Rect(0, 0, width, height));
+                var x = 0.0;
+                if (pill != null)
+                {
+                    dc.DrawEllipse(pill.Background, null, new Point(dot / 2, headH / 2), dot / 2, dot / 2);
+                    x = dot + dotGap;
+                }
+                dc.DrawText(title, new Point(x, (headH - title.Height) / 2));
+                x += title.Width;
+                if (diff != null)
+                {
+                    x += diffGap;
+                    dc.DrawText(diff, new Point(x, (headH - diff.Height) / 2));
+                    x += diff.Width;
+                }
+                if (hero != null) Draw(hero, width - heroW, (headH - hero.ActualHeight) / 2, heroW);
+                var y = headH + CardGap;
+                foreach (var part in body)
+                {
+                    Draw(part, 0, y, part.ActualWidth);
+                    y += part.ActualHeight + CardGap;
+                }
+            }
+            rtb.Render(dv);
+            rtb.Freeze();
+            Clipboard.SetImage(rtb);
+            var dir = Path.Combine(KovaaksCompanion.Core.AppSettings.DefaultDataFolder, "captures");
+            Directory.CreateDirectory(dir);
+            var name = string.Concat(Heading.Text.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using var fs = File.Create(Path.Combine(dir, $"{(name.Length == 0 ? "playlist" : name)}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
+            enc.Save(fs);
+        }
+        catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); return; }
+        finally
+        {
+            if (_hero is { } h0)
+            {
+                h0.HorizontalAlignment = heroAlign;
+                foreach (var (l, a) in heroLines) l.HorizontalAlignment = a;
+            }
+        }
+        var icon = CopyImage.Content;
+        CopyImage.Content = "";
+        await Task.Delay(1200);
+        CopyImage.Content = icon;
     }
 
     async void OnCodeClick(object sender, MouseButtonEventArgs e)
@@ -145,7 +255,7 @@ public partial class StatsView
     }
 
     /// <summary>Rank name big, the points on the same baseline, and a meta line.</summary>
-    UIElement Hero(string rank, Brush? rankBrush, string tail, string meta)
+    FrameworkElement Hero(string rank, Brush? rankBrush, string tail, string meta)
     {
         var sp = new StackPanel { Margin = new Thickness(4, 0, 0, CardGap) };
         var line = new TextBlock();
@@ -173,8 +283,9 @@ public partial class StatsView
         var p = c.P;
         var r = c.Report;
         var ranked = p.OverallRank > 0;
-        page.Children.Add(Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.PlayedProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
-            $"{r.PlayedCount} of {r.ScenarioCount} scenarios played · {r.TotalPlays} plays · {Dur(r.TimePlayed)}"));
+        _hero = Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.PlayedProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
+            $"{r.PlayedCount} of {r.ScenarioCount} scenarios played · {r.TotalPlays} plays · {Dur(r.TimePlayed)}");
+        page.Children.Add(_hero);
 
         var tiers = c.Names.Count;
         var cats = CatInfos(c);
@@ -215,6 +326,7 @@ public partial class StatsView
         };
         grid.Margin = new Thickness(0, 0, 0, CardGap - TileGap);
         page.Children.Add(grid);
+        _tiles = grid;
 
         page.Children.Add(BuildActivity(c));
 
@@ -259,7 +371,12 @@ public partial class StatsView
     }
 
     /// <summary>Activity calendar (left) and progress chart (right) in one card; stacked when narrower than 820px.</summary>
-    UIElement BuildActivity(PlaylistCtx c) => ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), c.Note);
+    UIElement BuildActivity(PlaylistCtx c)
+    {
+        var card = ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), c.Note);
+        _activity = card as FrameworkElement;
+        return card;
+    }
 
     UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, string? note = null, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0, double maxCell = 16, int maxWeeks = 53)
     {

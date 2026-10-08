@@ -6,8 +6,9 @@ public sealed record VideoOptions
     public string GameProcessName { get; init; } = "FPSAimTrainer-Win64-Shipping";
     /// <summary>Folder holding the rolling segments.</summary>
     public string BufferDir { get; init; } = Path.Combine(Path.GetTempPath(), "KovaaksCompanion", "buffer");
-    /// <summary>Capture frame rate; fixed, matches TrajectoryBuilder.DefaultRateHz.</summary>
-    public const int Fps = 120;
+    public const int DefaultFps = 120;
+    /// <summary>Capture frame rate (upper limit for window capture).</summary>
+    public int Fps { get; init; } = DefaultFps;
     public int SegmentSeconds { get; init; } = 10;
     public int BufferMinutes { get; init; } = 10;
     /// <summary>Constant-quality target (nvenc -cq / amf+qsv quality).</summary>

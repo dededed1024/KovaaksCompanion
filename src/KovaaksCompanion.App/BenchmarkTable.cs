@@ -164,7 +164,6 @@ public sealed class BenchmarkTable : UserControl
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
             H(Cell(stat.Rank >= tiers ? "Max" : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
-            H(Cell($"{stat.Played}/{stat.Total} played", 11.5, dim, HorizontalAlignment.Right), 5);
             Put(g, head, hr, 0, cols);
         }
 

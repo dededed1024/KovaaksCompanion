@@ -38,10 +38,18 @@ public partial class SettingsView : UserControl
     {
         _loading = true;
         var s = _host.Settings;
-        Kovaaks.Text = s.KovaaksPath; Data.Text = s.DataRoot; Steam.Text = s.SteamId;
+        Kovaaks.Text = s.KovaaksPath; Data.Text = s.DataRoot; Steam.Text = s.EffectiveSteamId;
         foreach (RadioButton r in QualityBar.Children) r.IsChecked = (string)r.Tag == s.VideoQuality.ToString();
+        FpsBox.Text = s.VideoFps.ToString();
         AutoStart.IsChecked = Autostart.IsOn();
+        CamOn.IsChecked = s.HandCamEnabled;
+        CamPanel.Visibility = s.HandCamEnabled ? Visibility.Visible : Visibility.Collapsed;
+        foreach (RadioButton r in CamSaveBar.Children) r.IsChecked = (string)r.Tag == s.HandCamSave.ToString();
+        CamCards.Children.Clear(); CamCanvas.Children.Clear(); _cards.Clear();
+        foreach (var slot in s.HandCams) AddCamCard(slot);
+        UpdateCamUi();
         _loading = false;
+        if (s.HandCamEnabled) _ = RefreshCamDevices();
         Validate(null, null);
         if (Kovaaks.Text.Length == 0 && PathDetector.FindKovaaks() is { } found) { Kovaaks.Text = found; Save(); }
     }
@@ -52,7 +60,15 @@ public partial class SettingsView : UserControl
         return steam.Length == 0 || steam.Length == 17 && steam.All(char.IsAsciiDigit);
     }
 
-    void Validate(object? sender, RoutedEventArgs? e) => Check(Steam, SteamError, SteamValid(), "Must be 17 digits");
+    bool FpsValid(out int fps) => int.TryParse(FpsBox.Text, out fps) && fps is >= 30 and <= 1000;
+
+    void Validate(object? sender, RoutedEventArgs? e)
+    {
+        Check(Steam, SteamError, SteamValid(), "Must be 17 digits");
+        Check(FpsBox, FpsError, FpsValid(out _), "Enter 30–1000");
+    }
+
+    void OnDigits(object sender, TextCompositionEventArgs e) => e.Handled = !e.Text.All(char.IsAsciiDigit);
 
     bool Check(TextBox box, TextBlock error, bool valid, string message)
     {
@@ -69,10 +85,15 @@ public partial class SettingsView : UserControl
         var cur = _host.Settings;
         var next = cur with
         {
-            KovaaksPath = Kovaaks.Text.Trim(), DataFolder = Data.Text.Trim() == cur.DataRoot ? cur.DataFolder : Data.Text.Trim(), SteamId = SteamValid() ? Steam.Text.Trim() : cur.SteamId,
+            KovaaksPath = Kovaaks.Text.Trim(), DataFolder = Data.Text.Trim() == cur.DataRoot ? cur.DataFolder : Data.Text.Trim(), SteamId = !SteamValid() || Steam.Text.Trim() == cur.EffectiveSteamId ? cur.SteamId : Steam.Text.Trim(),
             StartWithWindows = AutoStart.IsChecked == true,
             VideoQuality = QualityBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string t
                 && Enum.TryParse<VideoQuality>(t, out var q) ? q : cur.VideoQuality,
+            VideoFps = FpsValid(out var fps) ? fps : cur.VideoFps,
+            HandCamEnabled = CamOn.IsChecked == true,
+            HandCamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
+                && Enum.TryParse<HandCamSave>(cs, out var hs) ? hs : cur.HandCamSave,
+            HandCams = CamSlots(cur.HandCams),
         };
         if (next == cur) return;
         _host.ApplySettings(next);
@@ -86,6 +107,151 @@ public partial class SettingsView : UserControl
     }
 
     void OnQuality(object sender, RoutedEventArgs e) => Save();
+
+    void OnCamLabel(object sender, MouseButtonEventArgs e) => CamOn.IsChecked = CamOn.IsChecked != true;
+
+    void OnCamToggle(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var on = CamOn.IsChecked == true;
+        CamPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (on)
+        {
+            if (_cards.Count == 0) AddCamCard(new HandCamSlot());
+            UpdateCamUi();
+            _ = RefreshCamDevices();
+        }
+        Save();
+    }
+
+    void OnCamSave(object sender, RoutedEventArgs e) => Save();
+
+    void OnCamAdd(object sender, RoutedEventArgs e)
+    {
+        if (_cards.Count >= HandCamSlot.Max) return;
+        AddCamCard(new HandCamSlot(Top: Math.Min(80, 20 + 25 * _cards.Count)));
+        UpdateCamUi();
+        Save();
+    }
+
+    sealed class CamCard
+    {
+        public required StackPanel Root;
+        public required TextBlock Title;
+        public required ComboBox Devices;
+        public required Slider Size, Right, Top;
+        public required TextBlock SizeText, RightText, TopText;
+        public required Border Marker;
+    }
+
+    readonly List<CamCard> _cards = [];
+    List<HandCamDevice> _devices = [];
+    static readonly string[] CamColors = ["AccentFill", "Green", "Orange"];
+
+    HandCamSlots CamSlots(HandCamSlots cur)
+    {
+        var next = _cards.Select(c => c.Devices.SelectedItem is HandCamDevice d
+            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value)
+            : new HandCamSlot("", 0, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value));
+        var list = new HandCamSlots(); list.AddRange(next);
+        return list.Equals(cur) ? cur : list;
+    }
+
+    void AddCamCard(HandCamSlot slot)
+    {
+        var root = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition());
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new TextBlock { Foreground = (Brush)FindResource("Fg"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+        var remove = new Button { Content = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = (Brush)FindResource("Red"), ToolTip = "Remove", Style = (Style)FindResource("SheetClose"), Width = 34, Height = 30 };
+        Grid.SetColumn(remove, 1);
+        head.Children.Add(title); head.Children.Add(remove);
+        var devices = new ComboBox { Margin = new Thickness(0, 6, 0, 0) };
+        var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+        Slider Row(int r, string label, double min, double max, double val, out TextBlock text)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var margin = new Thickness(0, r == 0 ? 0 : 8, 0, 0);
+            var l = new TextBlock { Text = label, Foreground = (Brush)FindResource("Fg"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, margin.Top, 0, 0) };
+            var sl = new Slider { Minimum = min, Maximum = max, Value = val, SmallChange = 1, LargeChange = 5, IsSnapToTickEnabled = true, TickFrequency = 1, Margin = margin, VerticalAlignment = VerticalAlignment.Center };
+            text = new TextBlock { Style = (Style)FindResource("Caption"), Margin = margin, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetRow(l, r); Grid.SetRow(sl, r); Grid.SetRow(text, r);
+            Grid.SetColumn(sl, 1); Grid.SetColumn(text, 2);
+            grid.Children.Add(l); grid.Children.Add(sl); grid.Children.Add(text);
+            return sl;
+        }
+        var size = Row(0, "Size", 10, 50, slot.Size, out var st);
+        var right = Row(1, "From right", 0, 100, slot.Right, out var rt);
+        var top = Row(2, "From top", 0, 100, slot.Top, out var tt);
+        root.Children.Add(head); root.Children.Add(devices); root.Children.Add(grid);
+
+        var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85 };
+        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, Right = right, Top = top, SizeText = st, RightText = rt, TopText = tt, Marker = marker };
+        _cards.Add(card);
+        CamCanvas.Children.Add(marker);
+        CamCards.Children.Add(root);
+
+        var items = new List<HandCamDevice>(_devices);
+        var saved = slot.Device.Length > 0 ? new HandCamDevice(slot.Device, slot.Number) : null;
+        if (saved != null && !items.Contains(saved)) items.Insert(0, saved);
+        devices.ItemsSource = items;
+        devices.SelectedItem = saved;
+        if (saved == null) devices.SelectedItem = items.FirstOrDefault(d => !_cards.Any(c => c != card && Equals(c.Devices.SelectedItem, d)));
+
+        void Changed(object? s, RoutedPropertyChangedEventArgs<double> e) { UpdateCamUi(); Save(); }
+        size.ValueChanged += Changed; right.ValueChanged += Changed; top.ValueChanged += Changed;
+        devices.SelectionChanged += (_, _) => Save();
+        remove.Click += (_, _) =>
+        {
+            _cards.Remove(card);
+            CamCards.Children.Remove(root);
+            CamCanvas.Children.Remove(marker);
+            UpdateCamUi();
+            Save();
+        };
+    }
+
+    /// <summary>Titles, slider readouts, preview boxes and the Add button after any card or slider change.</summary>
+    void UpdateCamUi()
+    {
+        const double W = 240, H = 135;
+        for (int i = 0; i < _cards.Count; i++)
+        {
+            var c = _cards[i];
+            c.Title.Text = $"Webcam {i + 1}";
+            c.SizeText.Text = $"{(int)c.Size.Value}%"; c.RightText.Text = $"{(int)c.Right.Value}%"; c.TopText.Text = $"{(int)c.Top.Value}%";
+            var w = W * c.Size.Value / 100; var h = w * 9 / 16;
+            c.Marker.Width = w; c.Marker.Height = h;
+            c.Marker.Background = (Brush)FindResource(CamColors[i % CamColors.Length]);
+            Canvas.SetLeft(c.Marker, Math.Max(0, Math.Min(W - w, W - w - W * c.Right.Value / 100)));
+            Canvas.SetTop(c.Marker, Math.Max(0, Math.Min(H - h, H * c.Top.Value / 100)));
+        }
+        CamAdd.Visibility = _cards.Count >= HandCamSlot.Max ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    async Task RefreshCamDevices()
+    {
+        var ffmpeg = AppHost.ResolveFfmpeg();
+        if (ffmpeg is null) return;
+        _devices = await HandCamDeviceList.ListAsync(ffmpeg);
+        var was = _loading; _loading = true;
+        foreach (var c in _cards)
+        {
+            var sel = c.Devices.SelectedItem as HandCamDevice;
+            var items = new List<HandCamDevice>(_devices);
+            if (sel != null && !items.Contains(sel)) items.Insert(0, sel);
+            c.Devices.ItemsSource = items;
+            c.Devices.SelectedItem = sel;
+        }
+        foreach (var c in _cards.Where(c => c.Devices.SelectedItem == null))
+            c.Devices.SelectedItem = _devices.FirstOrDefault(d => !_cards.Any(o => Equals(o.Devices.SelectedItem, d)));
+        _loading = was;
+        Save();
+    }
 
     void OnAutoStart(object sender, RoutedEventArgs e)
     {
@@ -160,6 +326,7 @@ public partial class SettingsView : UserControl
         Scale.ScaleX = Scale.ScaleY = 0.94;
         Visibility = Visibility.Visible;
         UpdateLayout();
+        PageScroll.ScrollToTop();
         Animate(true, tok);
     }
 

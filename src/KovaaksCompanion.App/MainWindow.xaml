@@ -81,9 +81,14 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button x:Name="GearBtn" Grid.Column="3" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Settings" Click="OnGear">
-                <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
-            </Button>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="ProfileBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,4,0" ToolTip="Profile" Click="OnProfile">
+                    <TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
+                </Button>
+                <Button x:Name="GearBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" ToolTip="Settings" Click="OnGear">
+                    <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
+                </Button>
+            </StackPanel>
             <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top">
                 <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize"/>
                 <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize"/>

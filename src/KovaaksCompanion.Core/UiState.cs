@@ -11,8 +11,9 @@ public sealed class UiState
 
     public static string DefaultFile => Path.Combine(AppSettings.DefaultDataFolder, "ui.json");
 
-    readonly HashSet<string> _favs = new(StringComparer.OrdinalIgnoreCase);
-    public IReadOnlyCollection<string> FavoritePlaylists => _favs;
+    readonly List<string> _favs = [];
+    /// <summary>Favorites in the order they were added (oldest first).</summary>
+    public IReadOnlyList<string> FavoritePlaylists => _favs;
     public IReadOnlyList<string> VisibleSeries { get; set; } = DefaultSeries;
     public bool ShowTrail { get; set; } = true;
     /// <summary>Playlist chart view: "Progress" or "Radar".</summary>
@@ -27,7 +28,18 @@ public sealed class UiState
     /// <summary>Playlists (KovaaksBenchmarkId as text) whose tiers the Home hero shows, in pin order.</summary>
     public IReadOnlyList<string> TierPlaylists => _tiers;
 
-    public bool IsFavorite(string playlist) => _favs.Contains(playlist);
+    /// <summary>Profile name chosen by the user; empty = the Steam name.</summary>
+    public string ProfileName { get; set; } = "";
+    /// <summary>Profile picture file chosen by the user; empty = the Steam avatar.</summary>
+    public string ProfileImage { get; set; } = "";
+
+    /// <summary>Profile popup accent as #RRGGBB; empty = the app accent.</summary>
+    public string ProfileAccent { get; set; } = "";
+
+    public bool IsFavorite(string playlist) => _favs.Contains(playlist, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Stack position of a favorite: higher = favorited later; -1 when not a favorite. Show the highest first.</summary>
+    public int FavoriteIndex(string playlist) => _favs.FindIndex(f => string.Equals(f, playlist, StringComparison.OrdinalIgnoreCase));
 
     public bool IsPinned(string playlist) => _tiers.Contains(playlist, StringComparer.OrdinalIgnoreCase);
 
@@ -42,12 +54,12 @@ public sealed class UiState
     /// <summary>Flips the favorite flag and returns the new state.</summary>
     public bool ToggleFavorite(string playlist)
     {
-        if (_favs.Remove(playlist)) return false;
+        if (_favs.RemoveAll(f => string.Equals(f, playlist, StringComparison.OrdinalIgnoreCase)) > 0) return false;
         _favs.Add(playlist);
         return true;
     }
 
-    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null);
+    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null, string? ProfileName = null, string? ProfileImage = null, string? ProfileAccent = null);
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
@@ -60,7 +72,7 @@ public sealed class UiState
             var d = JsonSerializer.Deserialize<Dto>(File.ReadAllText(path ?? DefaultFile), Options);
             if (d?.FavoritePlaylists is { } f)
             {
-                foreach (var n in f) s._favs.Add(n);
+                foreach (var n in f) if (!s.IsFavorite(n)) s._favs.Add(n);
             }
             else
             {
@@ -72,6 +84,9 @@ public sealed class UiState
             if (d?.StatsChart is { } sc) s.StatsChart = sc;
             if (d?.RadarAxes is { } ra) s.RadarAxes = ra;
             if (d?.RadarCompare is { } rc) s.RadarCompare = rc;
+            if (d?.ProfileName is { } pn) s.ProfileName = pn;
+            if (d?.ProfileImage is { } pi) s.ProfileImage = pi;
+            if (d?.ProfileAccent is { } pa) s.ProfileAccent = pa;
             if (d?.TierPlaylists is { } tl) s._tiers = tl.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             else if (d?.TierPlaylist is { Length: > 0 } tp && !s.IsPinned(tp)) s._tiers.Add(tp);
         }
@@ -87,6 +102,6 @@ public sealed class UiState
     {
         path ??= DefaultFile;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.Order(StringComparer.OrdinalIgnoreCase).ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray()), Options));
+        File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent), Options));
     }
 }

@@ -3,6 +3,28 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Visibility="Collapsed" SizeChanged="OnSized">
     <UserControl.Resources>
+        <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="4,14,0,-4"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Setter Property="OpacityMask">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="White" Offset="0.2"/>
+                        <GradientStop Color="Transparent" Offset="0.95"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SectionCard" TargetType="Border">
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Background" Value="#0DFFFFFF"/>
+            <Setter Property="BorderBrush" Value="#12FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
         <Style x:Key="SheetClose" TargetType="Button">
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
@@ -24,25 +46,17 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" Width="520" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
+        <Border x:Name="Card" Width="640" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
                 BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
             <Border x:Name="Clipper" CornerRadius="17" SizeChanged="OnCardSized">
-                <Grid Margin="28,24,28,28">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Grid Margin="2,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Style="{StaticResource Title}" FontSize="22" Text="Settings" VerticalAlignment="Center"/>
-                    </Grid>
-                    <ScrollViewer Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel>
+                <Grid Margin="28,24,10,28">
+                    <ScrollViewer x:Name="PageScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="0,0,18,0">
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="General"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
                             <TextBlock Style="{StaticResource Caption}" Text="KovaaK's folder"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -52,7 +66,7 @@
                                 <TextBox x:Name="Kovaaks" LostFocus="OnCommit" KeyDown="OnTextKey"/>
                                 <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowseKovaaks"/>
                             </Grid>
-                            <TextBlock Style="{StaticResource Caption}" Margin="0,16,0,0" Text="Data folder"/>
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,16,0,0" Text="Output folder"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -65,7 +79,21 @@
                             <TextBox x:Name="Steam" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey"/>
                             <TextBlock x:Name="SteamError" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
 
-                            <Grid Margin="0,20,0,0">
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Start with Windows" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnAutoStartLabel"/>
+                                <CheckBox Grid.Column="1" x:Name="AutoStart" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
+                            </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="Recording"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -86,11 +114,46 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Start with Windows" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnAutoStartLabel"/>
-                                <CheckBox Grid.Column="1" x:Name="AutoStart" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnAutoStart" Unchecked="OnAutoStart"/>
+                                <TextBlock Text="Max FPS" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                <TextBox Grid.Column="1" x:Name="FpsBox" Width="100" MaxLength="4" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
+                            </Grid>
+                            <TextBlock x:Name="FpsError" Foreground="{StaticResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="Webcam"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Webcam" Foreground="{StaticResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnCamLabel"/>
+                                <CheckBox Grid.Column="1" x:Name="CamOn" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCamToggle" Unchecked="OnCamToggle"/>
                             </Grid>
 
-                            <Grid Margin="0,14,0,0">
+                            <TextBlock Text="Webcam changes apply the next time KovaaK's is launched." Foreground="{StaticResource Dim}" TextWrapping="Wrap" Margin="4,8,0,0"/>
+
+                            <StackPanel x:Name="CamPanel" Visibility="Collapsed">
+                                <TextBlock Text="Video save" Foreground="{StaticResource Fg}" Margin="4,12,0,4"/>
+                                <StackPanel x:Name="CamSaveBar" Margin="4,0,0,16">
+                                    <RadioButton Style="{StaticResource Radio}" Content="One video (game + webcam)" Tag="Composite" Checked="OnCamSave"/>
+                                    <RadioButton Style="{StaticResource Radio}" Content="Separate videos (game and webcam)" Tag="Separate" Checked="OnCamSave"/>                                </StackPanel>
+
+                                <Border Width="240" Height="135" Margin="0,16,0,0" HorizontalAlignment="Center" CornerRadius="6" Background="{StaticResource Panel}" ClipToBounds="True">
+                                    <Canvas x:Name="CamCanvas"/>
+                                </Border>
+                                <StackPanel x:Name="CamCards"/>
+                                <Button x:Name="CamAdd" Content="Add webcam" Margin="0,14,0,0" HorizontalAlignment="right" Click="OnCamAdd"/>
+                            </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="About"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -106,6 +169,8 @@
                                 <LineBreak/>
                                 <Run Text="Video by "/><Hyperlink NavigateUri="https://ffmpeg.org" RequestNavigate="OnLink">FFmpeg</Hyperlink><Run Text=" (LGPL v3, "/><Hyperlink NavigateUri="https://github.com/dededed1024/KovaaksCompanion/blob/main/THIRD-PARTY-NOTICES.md" RequestNavigate="OnLink">source and notices</Hyperlink><Run Text=")."/>
                             </TextBlock>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

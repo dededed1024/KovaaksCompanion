@@ -57,12 +57,22 @@ public partial class MainWindow : Window
     {
         _settings.Close();
         _replay.Close();
+        _stats.CloseProfile();
         _stats.OpenSearch();
+    }
+
+    void OnProfile(object sender, RoutedEventArgs e)
+    {
+        _stats.CloseSearch();
+        _settings.Close();
+        _replay.Close();
+        _stats.OpenProfile();
     }
 
     void OnGear(object sender, RoutedEventArgs e)
     {
         _stats.CloseSearch();
+        _stats.CloseProfile();
         _replay.Close();
         _settings.Open();
     }

@@ -24,6 +24,17 @@ public sealed class ActivityCalendar : FrameworkElement
     /// <summary>When set, always shows exactly this many weeks; the cells (and so the height and the label sizes) scale with the width, keeping the aspect ratio.</summary>
     public int? FixedWeeks { get; set; }
 
+    bool _light;
+    /// <summary>On a light background: dark labels and outlines, dark-tinted empty cells.</summary>
+    public bool Light
+    {
+        get => _light;
+        set { _light = value; InvalidateVisual(); }
+    }
+
+    static readonly Brush LightFg = Argb(0xFF, 0x1C, 0x1C, 0x1E), LightDim = Argb(0xFF, 0x5A, 0x5A, 0x60);
+    Brush EmptyCell => _light ? Argb(0x1C, 0, 0, 0) : Argb(0x12, 255, 255, 255);
+
     IReadOnlySet<DateTime> _pbDays = new HashSet<DateTime>();
     /// <summary>Days with a personal best; their cells get a green dot.</summary>
     public IReadOnlySet<DateTime> PbDays
@@ -88,7 +99,7 @@ public sealed class ActivityCalendar : FrameworkElement
     /// <summary>Alpha per level 1..4 from the quartiles of the non-zero counts.</summary>
     Brush LevelBrush(int n, int[] q)
     {
-        if (n <= 0) return Argb(0x12, 255, 255, 255);
+        if (n <= 0) return EmptyCell;
         var level = n <= q[0] ? 0 : n <= q[1] ? 1 : n <= q[2] ? 2 : 3;
         return Alpha(_tone, new[] { 0.30, 0.50, 0.75, 1.0 }[level]);
     }
@@ -115,8 +126,8 @@ public sealed class ActivityCalendar : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
-        var dim = Res("Dim");
-        var fg = Res("Fg");
+        var dim = _light ? LightDim : Res("Dim");
+        var fg = _light ? LightFg : Res("Fg");
         var weeks = Weeks;
         var first = FirstDay;
         var today = DateTime.Today;
@@ -187,7 +198,7 @@ public sealed class ActivityCalendar : FrameworkElement
         for (var i = 4; i >= 0; i--)
         {
             x0 -= sw;
-            dc.DrawRoundedRectangle(i == 0 ? Argb(0x12, 255, 255, 255) : Alpha(_tone, new[] { 0, 0.30, 0.50, 0.75, 1.0 }[i]), null, new Rect(x0, y, sw, sw), 3, 3);
+            dc.DrawRoundedRectangle(i == 0 ? EmptyCell : Alpha(_tone, new[] { 0, 0.30, 0.50, 0.75, 1.0 }[i]), null, new Rect(x0, y, sw, sw), 3, 3);
             x0 -= 3;
         }
         x0 -= 1;
@@ -211,8 +222,8 @@ public sealed class ActivityCalendar : FrameworkElement
         {
             var day = first.AddDays(hv.Week * 7 + hv.Row);
             var cr = CellRect(hv.Week, hv.Row);
-            var t1 = Text($"{CountOf(day)} plays", 13 * sc, fg, true);
-            var t2 = Text(day.ToString("ddd, yyyy-MM-dd", CultureInfo.InvariantCulture), 10 * sc, dim);
+            var t1 = Text($"{CountOf(day)} plays", 13 * sc, Res("Fg"), true);
+            var t2 = Text(day.ToString("ddd, yyyy-MM-dd", CultureInfo.InvariantCulture), 10 * sc, Res("Dim"));
             double bw = Math.Max(t1.Width, t2.Width) + 16, bh = t1.Height + t2.Height + 12;
             var bx = Math.Clamp(cr.X + Cell / 2 - bw / 2, 2, Math.Max(2, w - bw - 2));
             var by = cr.Y - bh - 6;
