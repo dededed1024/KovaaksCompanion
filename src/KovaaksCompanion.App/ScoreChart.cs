@@ -32,11 +32,12 @@ public sealed class ScoreChart : FrameworkElement
 
     Brush? _miniBrush;
     string _watermark = "";
+    bool _complete;
 
     /// <summary>Card mode: only the line over a gradient (tier colour at the bottom, transparent on top), with the tier name as a card-high watermark behind it. No axes, bands, labels or hover.</summary>
-    public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName)
+    public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName, bool complete = false)
     {
-        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _hover = -1;
+        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _hover = -1;
         IsHitTestVisible = false;
         InvalidateVisual();
     }
@@ -53,6 +54,12 @@ public sealed class ScoreChart : FrameworkElement
             mark.Freeze();
             var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, mark, VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, h - ft.Baseline));
+            if (_complete)
+            {
+                var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
+                var tag = new FormattedText("COMPLETE", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size / 4.5, tagBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                dc.DrawText(tag, new Point(w - tag.Width - 8, h - tag.Baseline - 6));
+            }
         }
         if (_points.Count < 2) return;
         var lo = _points.Min(p => p.Value);

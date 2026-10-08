@@ -1158,7 +1158,7 @@ public partial class StatsView
     readonly HashSet<string> _homeCloudInflight = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Redraws a favorite card's line with server scores for scenarios that have no local runs, like the playlist popup chart does: cached ones first, then stale or missing ones fetched and cached.</summary>
-    async Task ApplyCachedCloudAsync(ScoreChart chart, BenchmarkProgress p, Brush tier, string watermark)
+    async Task ApplyCachedCloudAsync(ScoreChart chart, BenchmarkProgress p, Brush tier, string watermark, bool complete)
     {
         var missing = p.Scenarios.Where(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0).Select(sc => sc.Scenario).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var claimed = new List<string>();
@@ -1180,7 +1180,7 @@ public partial class StatsView
                 IReadOnlyList<CloudScore> CloudOf(string n) => cloud.TryGetValue(n, out var l) ? l : [];
                 var history = Tier.HistoryWithCloud(p.Scenarios.Select<ScenarioProgress, (IReadOnlyList<RunRecord>, IReadOnlyList<CloudScore>, IReadOnlyList<double>)>(
                     sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, CloudOf(sc.Scenario), sc.RankMaxes)));
-                chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark);
+                chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete);
             }
             if (cloud.Count > 0) Draw();
             stale = stale.Where(n => _homeCloudInflight.Add(n)).ToList();
@@ -1236,8 +1236,9 @@ public partial class StatsView
         var chart = new ScoreChart { IsHitTestVisible = false };
         var history = p == null ? [] : Tier.History(p.Scenarios.Select(sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, (IReadOnlyList<double>)sc.RankMaxes)));
         var watermark = ranked ? TierText.Label(p!.OverallRankName) : "";
-        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark);
-        if (p != null && p.Scenarios.Any(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0)) _ = ApplyCachedCloudAsync(chart, p, tier, watermark);
+        var complete = p is { IsComplete: true };
+        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete);
+        if (p != null && p.Scenarios.Any(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0)) _ = ApplyCachedCloudAsync(chart, p, tier, watermark, complete);
         chart.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.Transparent, 0.15), new GradientStop(Colors.White, 0.5) }, new Point(0, 0), new Point(1, 0));
 
         var overlay = new Border { CornerRadius = new CornerRadius(3), IsHitTestVisible = false, Background = new SolidColorBrush(Colors.Transparent) };
