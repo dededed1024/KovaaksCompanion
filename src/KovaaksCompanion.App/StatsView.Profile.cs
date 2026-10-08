@@ -52,7 +52,7 @@ public partial class StatsView
         else Animate(false, Done, ProfileScrim, ProfileCard, ProfileScale);
     }
 
-    static readonly string[] ProfileColors = ["#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#BF5AF2", "#FF375F", "#000000", "#FFFFFF"];
+    static readonly string[] ProfileColors = ["#FF375F", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#BF5AF2", "#000000", "#FFFFFF"];
 
     /// <summary>A near-white accent makes the card background light, so text and the calendar switch to dark ink.</summary>
     bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb && sb.Color.R + sb.Color.G + sb.Color.B > 720;
@@ -77,15 +77,24 @@ public partial class StatsView
     (Color C1, Color C2) ProfileBgColors()
     {
         var b = Color.FromRgb(0x23, 0x23, 0x26);
-        Color c1 = Color.FromRgb(0x2C, 0x2C, 0x31), c2 = Color.FromRgb(0x1D, 0x1D, 0x20);
+        Color c1 = Color.FromRgb(0x38, 0x38, 0x3E), c2 = Color.FromRgb(0x18, 0x18, 0x1B);
         if (_host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb)
         {
             var light = ProfileLight;
             var black = sb.Color.R + sb.Color.G + sb.Color.B < 60;
-            c1 = light ? sb.Color : MixColor(b, sb.Color, black ? 1 : 0.34);
-            c2 = MixColor(Color.FromRgb(0x1A, 0x1A, 0x1D), sb.Color, light ? 0.7 : black ? 1 : 0.07);
+            c1 = light ? sb.Color : MixColor(b, sb.Color, black ? 1 : 0.6);
+            c2 = MixColor(Color.FromRgb(0x10, 0x10, 0x12), sb.Color, light ? 0.4 : black ? 1 : 0.0);
+            if (!light && !black) { c1 = Saturate(c1, 1.6); c2 = Saturate(c2, 1.6); }
         }
         return (c1, c2);
+    }
+
+    /// <summary>Pushes the color away from its own gray by <paramref name="k"/>; brightness stays about the same.</summary>
+    static Color Saturate(Color c, double k)
+    {
+        var y = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B;
+        byte Ch(byte v) => (byte)Math.Clamp(Math.Round(y + (v - y) * k), 0, 255);
+        return Color.FromRgb(Ch(c.R), Ch(c.G), Ch(c.B));
     }
 
     /// <summary>The card background: a diagonal gradient from the accent-tinted dark base (top left) to near the plain base (bottom right). Dark enough everywhere for white text.</summary>
@@ -175,7 +184,6 @@ public partial class StatsView
             var g = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
             g.Children.Add(ring);
             g.Children.Add(inner);
-            if (hex.Length == 0) g.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 8, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false });
             g.MouseEnter += (_, _) => { if (!on) ring.Stroke = Solid("#66FFFFFF"); };
             g.MouseLeave += (_, _) => { if (!on) ring.Stroke = Brushes.Transparent; };
             g.MouseLeftButtonUp += (_, _) =>
@@ -188,8 +196,11 @@ public partial class StatsView
             };
             ProfileTools.Children.Add(g);
         }
-        Dot("");
-        foreach (var c in ProfileColors) Dot(c);
+        foreach (var c in ProfileColors)
+        {
+            if (c == "#FFFFFF") Dot("");
+            Dot(c);
+        }
 
         var copy = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         copy.Click += async (_, _) =>
