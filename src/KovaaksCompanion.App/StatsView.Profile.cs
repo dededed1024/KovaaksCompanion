@@ -81,8 +81,9 @@ public partial class StatsView
         if (_host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb)
         {
             var light = ProfileLight;
-            c1 = light ? sb.Color : MixColor(b, sb.Color, 0.34);
-            c2 = MixColor(Color.FromRgb(0x1A, 0x1A, 0x1D), sb.Color, light ? 0.7 : 0.07);
+            var black = sb.Color.R + sb.Color.G + sb.Color.B < 60;
+            c1 = light ? sb.Color : MixColor(b, sb.Color, black ? 1 : 0.34);
+            c2 = MixColor(Color.FromRgb(0x1A, 0x1A, 0x1D), sb.Color, light ? 0.7 : black ? 1 : 0.07);
         }
         return (c1, c2);
     }
