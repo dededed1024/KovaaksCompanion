@@ -250,7 +250,7 @@ public partial class StatsView : UserControl
         var fav = _host.Ui.IsFavorite(key);
         Star.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
         Star.Foreground = (System.Windows.Media.Brush)FindResource(fav ? "Orange" : "Dim");
-        Star.ToolTip = fav ? "Remove from favorites" : "Add to favorites";
+        Star.ToolTip = fav ? "Remove from favorites" : _host.Ui.FavoritesFull ? "Up to 6 favorites" : "Add to favorites";
         Star.Visibility = Visibility.Visible;
     }
 

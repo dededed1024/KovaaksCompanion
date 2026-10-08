@@ -51,10 +51,15 @@ public sealed class UiState
         return true;
     }
 
-    /// <summary>Flips the favorite flag and returns the new state.</summary>
+    public const int MaxFavorites = 6;
+
+    public bool FavoritesFull => _favs.Count >= MaxFavorites;
+
+    /// <summary>Flips the favorite flag and returns the new state. Adding past <see cref="MaxFavorites"/> does nothing and returns false.</summary>
     public bool ToggleFavorite(string playlist)
     {
         if (_favs.RemoveAll(f => string.Equals(f, playlist, StringComparison.OrdinalIgnoreCase)) > 0) return false;
+        if (FavoritesFull) return false;
         _favs.Add(playlist);
         return true;
     }
@@ -72,7 +77,7 @@ public sealed class UiState
             var d = JsonSerializer.Deserialize<Dto>(File.ReadAllText(path ?? DefaultFile), Options);
             if (d?.FavoritePlaylists is { } f)
             {
-                foreach (var n in f) if (!s.IsFavorite(n)) s._favs.Add(n);
+                foreach (var n in f) if (!s.IsFavorite(n) && !s.FavoritesFull) s._favs.Add(n);
             }
             else
             {
