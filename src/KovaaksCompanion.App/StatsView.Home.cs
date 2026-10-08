@@ -1011,9 +1011,8 @@ public partial class StatsView
         }
         else if (_host.IsPending(name, end))
         {
-            var spinner = Spinner.Create((Brush)FindResource("Accent"), 13);
-            Put(spinner, 6, new Thickness(0));
-            RowClick.Attach(row, p => _host.ShowScenario(name, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
+            Put(ProgressRing.Create(_host, name, end, (Brush)FindResource("Accent"), 16), 6, new Thickness(0), HorizontalAlignment.Center);
+            RowClick.Attach(row, p => _host.ShowRun(name, end), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
         }
         else
         {

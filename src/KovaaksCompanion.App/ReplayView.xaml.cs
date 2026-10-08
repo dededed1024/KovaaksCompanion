@@ -174,7 +174,7 @@ public partial class ReplayView : UserControl
     /// <summary>Opens the popup with the run that ended at <paramref name="end"/> selected; false when it has no recording.</summary>
     public bool ShowRun(ScenarioData data, string scenario, DateTime end)
     {
-        if (SessionStore.FindRun(Infos(), scenario, end) < 0) return false;
+        if (SessionStore.FindRun(Infos(), scenario, end) < 0 && !_host.IsPending(scenario, end)) return false;
         Open(data, scenario, end, null);
         return true;
     }
@@ -288,7 +288,9 @@ public partial class ReplayView : UserControl
         {
             _runIdx = NearestRun(end);
             ApplySelection();
-            ShowRunStrip(SessionStore.FindRun(Infos(), _scenario, end));
+            var si = SessionStore.FindRun(Infos(), _scenario, end);
+            ShowRunStrip(si);
+            if (si >= 0 && (_s is null || _s.Folder != _items[si].Folder)) LoadSession(_items[si]);
         }
         else if (!_runMode) BuildOverview();
     });
@@ -423,9 +425,9 @@ public partial class ReplayView : UserControl
         }
         else if (_host.IsPending(r.Scenario, r.End))
         {
-            var spinner = Spinner.Create((Brush)FindResource("Accent"), 13);
-            spinner.HorizontalAlignment = HorizontalAlignment.Center;
-            Put(spinner, 4);
+            var ring = ProgressRing.Create(_host, r.Scenario, r.End, (Brush)FindResource("Accent"), 16);
+            ring.HorizontalAlignment = HorizontalAlignment.Center;
+            Put(ring, 4);
         }
         var row = new Border { Height = 34, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Child = g, Cursor = Cursors.Hand };
         var end = r.End;
@@ -589,7 +591,7 @@ public partial class ReplayView : UserControl
         SetMode(true);
         ShowRunStrip(si);
         ApplySelection();
-        if (si < 0) { NoRecording(); return; }
+        if (si < 0) { if (_host.IsPending(_scenario, end)) ShowEncoding(end); else NoRecording(); return; }
         var item = _items[si];
         if (_s is not null && _s.Folder == item.Folder && (_duration > 0 || Notice.Visibility == Visibility.Visible)) return;
         LoadSession(item);
@@ -626,6 +628,16 @@ public partial class ReplayView : UserControl
         ChartCard.Visibility = v; Seek.Visibility = v; TransportBar.Visibility = v;
     }
 
+    /// <summary>The run's clip is still being encoded: a progress ring takes the video's place.</summary>
+    void ShowEncoding(DateTime end)
+    {
+        UnloadMedia();
+        SetRecorded(false);
+        Notice.Visibility = Visibility.Collapsed;
+        PendingHost.Child = ProgressRing.Create(_host, _scenario, end, (Brush)FindResource("Accent"), 56, 4);
+        PendingHost.Visibility = Visibility.Visible;
+    }
+
     void NoRecording()
     {
         UnloadMedia();
@@ -643,6 +655,7 @@ public partial class ReplayView : UserControl
         _seekTimer.Stop(); _seekPending = false; _dragging = false; _resumeAfterDrag = false; _holdUntil = 0;
         Media.Close();
         Media.Source = null;
+        PendingHost.Child = null; PendingHost.Visibility = Visibility.Collapsed;
         _s = null;
         _duration = 0;
         SetTransport(false);

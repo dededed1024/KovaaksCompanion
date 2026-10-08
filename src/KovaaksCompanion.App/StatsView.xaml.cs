@@ -137,7 +137,7 @@ public partial class StatsView : UserControl
         var cur = _ws.VerticalOffset;
         var diff = _target - cur;
         if (Math.Abs(diff) < 0.5) { _lastSet = _target; _ws.ScrollToVerticalOffset(_target); StopEase(); return; }
-        _lastSet = cur + diff * (1 - Math.Exp(-dt / 0.08));
+        _lastSet = cur + diff * (1 - Math.Exp(-dt / 0.035));
         _ws.ScrollToVerticalOffset(_lastSet);
     }
 

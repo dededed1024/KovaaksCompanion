@@ -28,9 +28,15 @@ public partial class SettingsView : UserControl
         InitializeComponent();
         _host = host;
         Load();
+        host.GameStateChanged += OnGameState;
     }
 
-    public void Detach() { }
+    public void Detach() => _host.GameStateChanged -= OnGameState;
+
+    void OnGameState() => Dispatcher.InvokeAsync(UpdateCamLock);
+
+    /// <summary>Webcam settings are read when recording starts, so they are locked while a game session is live.</summary>
+    void UpdateCamLock() => CamSection.IsEnabled = !_host.GameActive;
 
     public bool IsOpen => _open;
 
@@ -48,6 +54,7 @@ public partial class SettingsView : UserControl
         CamCards.Children.Clear(); CamCanvas.Children.Clear(); _cards.Clear();
         foreach (var slot in s.HandCams) AddCamCard(slot);
         UpdateCamUi();
+        UpdateCamLock();
         _loading = false;
         if (s.HandCamEnabled) _ = RefreshCamDevices();
         Validate(null, null);
@@ -108,7 +115,10 @@ public partial class SettingsView : UserControl
 
     void OnQuality(object sender, RoutedEventArgs e) => Save();
 
-    void OnCamLabel(object sender, MouseButtonEventArgs e) => CamOn.IsChecked = CamOn.IsChecked != true;
+    void OnCamLabel(object sender, MouseButtonEventArgs e)
+    {
+        if (CamSection.IsEnabled) CamOn.IsChecked = CamOn.IsChecked != true;
+    }
 
     void OnCamToggle(object sender, RoutedEventArgs e)
     {

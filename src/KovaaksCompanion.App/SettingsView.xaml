@@ -46,7 +46,7 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" Width="640" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
+        <Border x:Name="Card" Width="800" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
                 BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -123,7 +123,7 @@
 
                             <TextBlock Style="{StaticResource SectionTitle}" Text="Webcam"/>
                             <Border Style="{StaticResource SectionCard}">
-                                <StackPanel>
+                                <StackPanel x:Name="CamSection">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>

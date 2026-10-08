@@ -29,7 +29,8 @@ public sealed class AppHost : IDisposable
     string _lastError = "";
     ReleaseInfo? _pendingUpdate;
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
-    readonly List<(string Scenario, DateTime End)> _pending = [];
+    sealed class Pending(string scenario, DateTime end) { public string Scenario = scenario; public DateTime End = end; public double Progress; }
+    readonly List<Pending> _pending = [];
 
     public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
     readonly string _uiFile;
@@ -39,13 +40,19 @@ public sealed class AppHost : IDisposable
     public bool GameActive => _video?.IsRecording == true;
     public string SessionsFolder => _settings.SessionsFolder;
     /// <summary>Checks if a run's replay is currently being saved.</summary>
-    public bool IsPending(string scenario, DateTime end)
+    public bool IsPending(string scenario, DateTime end) => PendingProgress(scenario, end) >= 0;
+
+    /// <summary>Encoding progress 0..1 of a run's clip, or -1 when it is not being saved.</summary>
+    public double PendingProgress(string scenario, DateTime end)
     {
         lock (_pending)
         {
-            return _pending.Any(p => p.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - end).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds);
+            return _pending.FirstOrDefault(p => p.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - end).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds)?.Progress ?? -1;
         }
     }
+
+    /// <summary>Raised on a thread-pool thread as a pending run's clip encodes (scenario, run end, 0..1).</summary>
+    public event Action<string, DateTime, double>? EncodeProgress;
     /// <summary>Favorites and chart selection. Mutate on the UI thread, then call <see cref="SaveUi"/>.</summary>
     public UiState Ui { get; }
     /// <summary>Raised on the calling (UI) thread after <see cref="SaveUi"/>.</summary>
@@ -91,7 +98,7 @@ public sealed class AppHost : IDisposable
         else SetError("ffmpeg missing (video disabled)");
 
         _saver = new SessionSaver(_settings.SessionsFolder, _buffer, ClockAnchor.Now,
-            (s, e, p) => _video?.ExtractClipAsync(s, e, p) ?? Task.FromResult<ClipResult?>(null));
+            (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null));
         _saver.Error += SetError;
         _saver.Saved += (info, folder) =>
         {
@@ -107,8 +114,10 @@ public sealed class AppHost : IDisposable
         _watcher.RunFinished += (run, csv) =>
         {
             AppLog.Write("session", $"run finished: {csv}");
-            lock (_pending) { _pending.Add((run.Scenario, run.End)); }
-            _ = _saver.Enqueue(run, csv).ContinueWith(_ =>
+            var item = new Pending(run.Scenario, run.End);
+            lock (_pending) { _pending.Add(item); }
+            RunFinished?.Invoke(); // the run shows now, with a progress ring until the clip is saved
+            _ = _saver.Enqueue(run, csv, f => { item.Progress = f; EncodeProgress?.Invoke(item.Scenario, item.End, f); }).ContinueWith(_ =>
             {
                 lock (_pending)
                 {
@@ -156,7 +165,7 @@ public sealed class AppHost : IDisposable
         if (_video != null) return;
         _video = new VideoCaptureService(new VideoOptions
         {
-            FfmpegPath = ffmpegPath, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(),
+            FfmpegPath = ffmpegPath, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(), MaxHeight = _settings.VideoQuality.MaxHeight(),
             Fps = _settings.VideoFps,
         }, () => HandCamConfig.From(_settings));
         _video.Error += m => SetError("video: " + m);

@@ -54,12 +54,15 @@ public sealed class VideoCaptureService : IAsyncDisposable
         StateChanged?.Invoke();
     }
 
+    /// <summary>Width of the recorded game clip (the capped output size, not the raw window width); 0 without a target.</summary>
+    private int ClipWidth(CaptureTarget? t) => t == null ? 0 : FfmpegCommand.OutputSize(t.Width, t.Height, _o.MaxHeight).Width;
+
     private async Task StartHandCamAsync(string encoder)
     {
         await DisposeCamsAsync();
         var cfg = _handCam?.Invoke();
         var cams = cfg?.Cams ?? [];
-        int gameWidth = _rec?.Target?.Width ?? 0;
+        int gameWidth = ClipWidth(_rec?.Target);
         for (int i = 0; i < cams.Count; i++)
         {
             try
@@ -94,21 +97,27 @@ public sealed class VideoCaptureService : IAsyncDisposable
     }
 
     /// <summary>Null when there is no recorder / no footage for that window. The recorder (and its segments) stays usable after the game exits. With a hand-cam the clip is the game footage with the cam composited in.</summary>
-    public async Task<ClipResult?> ExtractClipAsync(DateTime startUtc, DateTime endUtc, string outputPath)
+    public async Task<ClipResult?> ExtractClipAsync(DateTime startUtc, DateTime endUtc, string outputPath, Action<double>? progress = null)
     {
         if (_rec is null) return null;
+        progress?.Invoke(0.02);
         var clip = await _rec.ExtractClipAsync(startUtc, endUtc, outputPath);
         if (clip != null && _cams.Count > 0 && _rec.Encoder is { } enc)
         {
-            try { await ComposeAsync(clip, outputPath, enc); }
+            progress?.Invoke(0.15);
+            try { await ComposeAsync(clip, outputPath, enc, progress); }
             catch (Exception e) { AppLog.Write("handcam", "hand cam failed, keeping plain clip: " + e.Message); Error?.Invoke("hand cam not added: " + e.Message); }
         }
+        progress?.Invoke(1);
         return clip;
     }
 
     /// <summary>Per the save mode: video.mp4 = composite (Composite) or plain game (Separate); handcamN.mp4 = cam N aligned to the game clip's timeline (Separate).</summary>
-    private async Task ComposeAsync(ClipResult clip, string clipPath, string encoder)
+    private async Task ComposeAsync(ClipResult clip, string clipPath, string encoder, Action<double>? progress = null)
     {
+        var dur = clip.Duration.TotalSeconds;
+        // 0.15..0.45 cam extraction, 0.45..1 composite (the long encode)
+        void Report(double from, double to, double f) => progress?.Invoke(from + (to - from) * f);
         var cfg = _handCam!.Invoke();
         var dir = Path.GetDirectoryName(clipPath)!;
         var merged = clipPath + ".merged.mp4";
@@ -116,24 +125,35 @@ public sealed class VideoCaptureService : IAsyncDisposable
         try
         {
             var inputs = new List<FfmpegCommand.CamInput>();
-            foreach (var (slot, config, recorder) in _cams.ToList())
+            var camList = _cams.ToList();
+            var separate = cfg.Save != HandCamSave.Composite;
+            var span = cfg.Save == HandCamSave.Separate ? 0.85 : 0.30;
+            for (var ci = 0; ci < camList.Count; ci++)
             {
+                var (slot, config, recorder) = camList[ci];
+                double lo = 0.15 + span * ci / camList.Count, hi = 0.15 + span * (ci + 1) / camList.Count;
                 var raw = $"{clipPath}.cam{slot}.mp4";
                 temps.Add(raw);
                 var camStart = await recorder.ExtractAsync(clip.ClipStartUtc, clip.ClipStartUtc + clip.Duration, raw, a => RunFfmpegAsync(a));
                 if (camStart is null) { AppLog.Write("handcam", $"no footage from cam {slot + 1} for this clip"); continue; }
                 var shift = (camStart.Value - clip.ClipStartUtc).TotalSeconds;
                 inputs.Add(new FfmpegCommand.CamInput(raw, shift, config.Layout));
-                if (cfg.Save != HandCamSave.Composite)
-                    await RunFfmpegAsync(FfmpegCommand.BuildCamAlign(raw, shift, clip.Duration.TotalSeconds, encoder, _o.Quality, Path.Combine(dir, $"handcam{slot + 1}.mp4")));
+                if (separate)
+                {
+                    var mid = (lo + hi) / 2;
+                    Report(lo, mid, 1);
+                    await RunFfmpegAsync(FfmpegCommand.BuildCamAlign(raw, shift, dur, encoder, _o.Quality, Path.Combine(dir, $"handcam{slot + 1}.mp4")), dur, f => Report(mid, hi, f));
+                }
+                else Report(lo, hi, 1);
             }
             if (inputs.Count == 0 || cfg.Save == HandCamSave.Separate) return;
-            if (encoder == "h264_nvenc" && _rec?.Target is { Width: > 0 } t)
+            void Composite(double f) => Report(0.45, 1, f);
+            if (encoder == "h264_nvenc" && _rec?.Target is { Width: > 0 } t && ClipWidth(t) is var clipW)
             {
-                try { await RunFfmpegAsync(FfmpegCommand.BuildCompositeCuda(clipPath, t.Width, inputs, _o.Quality, merged)); }
-                catch (Exception e) { AppLog.Write("handcam", "GPU composite failed, using CPU overlay: " + e.Message); File.Delete(merged); await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged)); }
+                try { await RunFfmpegAsync(FfmpegCommand.BuildCompositeCuda(clipPath, clipW, inputs, _o.Quality, merged), dur, Composite); }
+                catch (Exception e) { AppLog.Write("handcam", "GPU composite failed, using CPU overlay: " + e.Message); File.Delete(merged); await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged), dur, Composite); }
             }
-            else await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged));
+            else await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged), dur, Composite);
             File.Move(merged, clipPath, true);
         }
         finally
@@ -142,12 +162,21 @@ public sealed class VideoCaptureService : IAsyncDisposable
         }
     }
 
-    private async Task RunFfmpegAsync(IEnumerable<string> args)
+    /// <param name="progress">Called with 0..1 of <paramref name="totalSec"/> of output produced (ffmpeg -progress).</param>
+    private async Task RunFfmpegAsync(IEnumerable<string> args, double totalSec = 0, Action<double>? progress = null)
     {
         var psi = new ProcessStartInfo(_o.FfmpegPath) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        var track = progress != null && totalSec > 0;
+        if (track) { psi.ArgumentList.Add("-progress"); psi.ArgumentList.Add("pipe:1"); psi.ArgumentList.Add("-nostats"); }
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
-        _ = p.StandardOutput.ReadToEndAsync();
+        _ = Task.Run(async () =>
+        {
+            string? line;
+            while ((line = await p.StandardOutput.ReadLineAsync()) != null)
+                if (track && line.StartsWith("out_time_us=", StringComparison.Ordinal) && long.TryParse(line.AsSpan(12), out var us) && us >= 0)
+                    progress!(Math.Clamp(us / 1e6 / totalSec, 0, 1));
+        });
         var err = p.StandardError.ReadToEndAsync();
         await p.WaitForExitAsync();
         if (p.ExitCode != 0)
