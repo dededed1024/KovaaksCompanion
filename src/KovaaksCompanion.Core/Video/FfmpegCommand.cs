@@ -96,16 +96,16 @@ public static class FfmpegCommand
     /// <summary>
     /// Hand-cam recorder: DirectShow video device -> HW H.264 -> 2 s rolling segments. Pts are wall-clock seconds since <paramref name="epochUnixUs"/>
     /// (per-frame RTCTIME, the same clock as <see cref="BuildRecord"/>). <paramref name="forceMode"/> asks the device for 1280x720@30 first.
-    /// <paramref name="targetWidth"/> &gt; 0 downscales to that width (the size the composite will show it at), so the always-on encode stays small.
+    /// <paramref name="targetWidth"/> x <paramref name="targetHeight"/> &gt; 0 scales to cover that box and crops the center (the size the composite will show it at), so the always-on encode stays small.
     /// </summary>
-    public static List<string> BuildHandCamRecord(string device, int deviceNumber, string encoder, int quality, string dir, long epochUnixUs, int slots, bool forceMode, int targetWidth = 0)
+    public static List<string> BuildHandCamRecord(string device, int deviceNumber, string encoder, int quality, string dir, long epochUnixUs, int slots, bool forceMode, int targetWidth = 0, int targetHeight = 0)
     {
         var inv = CultureInfo.InvariantCulture;
         var a = new List<string> { "-hide_banner", "-loglevel", "warning", "-nostats", "-copyts", "-f", "dshow", "-rtbufsize", "256M" };
         if (forceMode) a.AddRange(["-video_size", "1280x720", "-framerate", HandCamRecorder.Fps.ToString(inv)]);
         if (deviceNumber > 0) a.AddRange(["-video_device_number", deviceNumber.ToString(inv)]);
         a.AddRange(["-i", "video=" + device,
-            "-vf", $"setpts=(RTCTIME-{epochUnixUs.ToString(inv)})/(TB*1000000)" + (targetWidth > 0 ? $",scale={targetWidth.ToString(inv)}:-2" : "") + ",format=yuv420p",
+            "-vf", $"setpts=(RTCTIME-{epochUnixUs.ToString(inv)})/(TB*1000000)" + (targetWidth > 0 && targetHeight > 0 ? $",{CoverFilter(targetWidth, targetHeight)}" : "") + ",format=yuv420p",
             "-c:v", encoder, "-fps_mode:v", "passthrough"]);
         a.AddRange(EncoderArgs(encoder, quality));
         a.AddRange(["-g", HandCamRecorder.Fps.ToString(inv), "-keyint_min", HandCamRecorder.Fps.ToString(inv),
@@ -114,6 +114,17 @@ public static class FfmpegCommand
             "-segment_list", "pipe:1", "-segment_list_type", "csv", "-segment_list_flags", "live",
             "-segment_format", "mp4", Path.Combine(dir, HandCamRecorder.SegmentFilePattern)]);
         return a;
+    }
+
+    /// <summary>Box the cam occupies in a game video of the given size: width / height percent of the video, even pixels.</summary>
+    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l)
+        => (Math.Max(16, gameWidth * Math.Clamp(l.SizePercent, 5, 60) / 100 / 2 * 2), Math.Max(16, gameHeight * Math.Clamp(l.HeightPercent, 5, 60) / 100 / 2 * 2));
+
+    /// <summary>Scales to fill w x h (overflow cropped around the center).</summary>
+    static string CoverFilter(int w, int h)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        return $"scale={w.ToString(inv)}:{h.ToString(inv)}:force_original_aspect_ratio=increase,crop={w.ToString(inv)}:{h.ToString(inv)}";
     }
 
     /// <summary>Keyframe interval (frames) for re-encoded clips; without it NVENC leaves one GOP for the whole clip and seeking/playback stutters.</summary>
@@ -127,7 +138,7 @@ public static class FfmpegCommand
     /// <summary>
     /// Overlays each cam clip onto the game clip in order (audio copied, video re-encoded). The last frame of a cam stays until its next one arrives.
     /// </summary>
-    public static List<string> BuildComposite(string gameClip, IReadOnlyList<CamInput> cams, string encoder, int quality, string output)
+    public static List<string> BuildComposite(string gameClip, int gameWidth, int gameHeight, IReadOnlyList<CamInput> cams, string encoder, int quality, string output)
     {
         var inv = CultureInfo.InvariantCulture;
         var sb = new System.Text.StringBuilder();
@@ -135,16 +146,15 @@ public static class FfmpegCommand
         for (int i = 0; i < cams.Count; i++)
         {
             var c = cams[i];
-            int size = Math.Clamp(c.Layout.SizePercent, 5, 60);
+            var (camW, camH) = CamBox(gameWidth, gameHeight, c.Layout);
             double right = Math.Clamp(c.Layout.RightPercent, 0, 100) / 100.0, top = Math.Clamp(c.Layout.TopPercent, 0, 100) / 100.0;
             var shift = c.ShiftSec >= 0
                 ? $"setpts=PTS-STARTPTS+{c.ShiftSec.ToString("0.######", inv)}/TB"
                 : $"trim=start={(-c.ShiftSec).ToString("0.######", inv)},setpts=PTS-STARTPTS";
             var n = i + 1;
-            // cam width = size% of the game width (even), height keeps the cam aspect; position is clamped inside the frame
-            sb.Append($"[{n}:v]{shift}[c{n}a];");
-            sb.Append($"[c{n}a][{cur}]scale2ref=w='trunc(ref_w*{size.ToString(inv)}/100/2)*2':h='trunc(ow/a/2)*2'[c{n}][g{n}];");
-            sb.Append($"[g{n}][c{n}]overlay=x='max(0,min(main_w-overlay_w,main_w-overlay_w-main_w*{right.ToString("0.####", inv)}))':y='max(0,min(main_h-overlay_h,main_h*{top.ToString("0.####", inv)}))':eof_action=pass:repeatlast=1[o{n}];");
+            // cam fills a width% x height% box of the game frame (cover, centered crop); position is clamped inside the frame
+            sb.Append($"[{n}:v]{shift},{CoverFilter(camW, camH)}[c{n}];");
+            sb.Append($"[{cur}][c{n}]overlay=x='max(0,min(main_w-overlay_w,main_w-overlay_w-main_w*{right.ToString("0.####", inv)}))':y='max(0,min(main_h-overlay_h,main_h*{top.ToString("0.####", inv)}))':eof_action=pass:repeatlast=1[o{n}];");
             cur = $"o{n}";
         }
         sb.Append($"[{cur}]format=yuv420p[v]");
@@ -159,10 +169,10 @@ public static class FfmpegCommand
 
     /// <summary>
     /// <see cref="BuildComposite"/> kept on the GPU (NVIDIA only): CUDA decode, scale_cuda + overlay_cuda, NVENC. Frames never reach system memory.
-    /// scale_cuda has no "scale to a reference" variant, so the cam width comes from <paramref name="gameWidth"/> (the game clip's width).
+    /// scale_cuda has no "scale to a reference" variant and no crop, so the box comes from <paramref name="gameWidth"/> x <paramref name="gameHeight"/> (the game clip's size) and the cam must already be cropped to it by the recorder.
     /// TODO: same for AMD (h264_amf) and Intel (h264_qsv) so they do not fall back to the CPU path.
     /// </summary>
-    public static List<string> BuildCompositeCuda(string gameClip, int gameWidth, IReadOnlyList<CamInput> cams, int quality, string output)
+    public static List<string> BuildCompositeCuda(string gameClip, int gameWidth, int gameHeight, IReadOnlyList<CamInput> cams, int quality, string output)
     {
         var inv = CultureInfo.InvariantCulture;
         var sb = new System.Text.StringBuilder();
@@ -170,14 +180,14 @@ public static class FfmpegCommand
         for (int i = 0; i < cams.Count; i++)
         {
             var c = cams[i];
-            int size = Math.Clamp(c.Layout.SizePercent, 5, 60);
+            var (camW, camH) = CamBox(gameWidth, gameHeight, c.Layout);
             double right = Math.Clamp(c.Layout.RightPercent, 0, 100) / 100.0, top = Math.Clamp(c.Layout.TopPercent, 0, 100) / 100.0;
             var shift = c.ShiftSec >= 0
                 ? $"setpts=PTS-STARTPTS+{c.ShiftSec.ToString("0.######", inv)}/TB"
                 : $"trim=start={(-c.ShiftSec).ToString("0.######", inv)},setpts=PTS-STARTPTS";
             var n = i + 1;
-            int camW = Math.Max(2, gameWidth * size / 100 / 2 * 2);
-            sb.Append($"[{n}:v]{shift},scale_cuda=w={camW.ToString(inv)}:h=-2[c{n}];");
+            // the recorder already cropped the cam to this box, so this only guards a size mismatch
+            sb.Append($"[{n}:v]{shift},scale_cuda=w={camW.ToString(inv)}:h={camH.ToString(inv)}[c{n}];");
             sb.Append($"[{cur}][c{n}]overlay_cuda=x='max(0,min(main_w-overlay_w,main_w-overlay_w-main_w*{right.ToString("0.####", inv)}))':y='max(0,min(main_h-overlay_h,main_h*{top.ToString("0.####", inv)}))':eof_action=pass:repeatlast=1[o{n}]{(i + 1 < cams.Count ? ";" : "")}");
             cur = $"o{n}";
         }

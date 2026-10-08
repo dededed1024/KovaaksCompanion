@@ -54,22 +54,22 @@ public sealed class VideoCaptureService : IAsyncDisposable
         StateChanged?.Invoke();
     }
 
-    /// <summary>Width of the recorded game clip (the capped output size, not the raw window width); 0 without a target.</summary>
-    private int ClipWidth(CaptureTarget? t) => t == null ? 0 : FfmpegCommand.OutputSize(t.Width, t.Height, _o.MaxHeight).Width;
+    /// <summary>Size of the recorded game clip (the capped output size, not the raw window size); 0x0 without a target.</summary>
+    private (int Width, int Height) ClipSize(CaptureTarget? t) => t == null ? (0, 0) : FfmpegCommand.OutputSize(t.Width, t.Height, _o.MaxHeight);
 
     private async Task StartHandCamAsync(string encoder)
     {
         await DisposeCamsAsync();
         var cfg = _handCam?.Invoke();
         var cams = cfg?.Cams ?? [];
-        int gameWidth = ClipWidth(_rec?.Target);
+        var (gameWidth, gameHeight) = ClipSize(_rec?.Target);
         for (int i = 0; i < cams.Count; i++)
         {
             try
             {
-                // Composite only shows the cam at size% of the game width, so record it at that size (Separate keeps the cam's own resolution)
-                int width = cfg!.Save == HandCamSave.Composite && gameWidth > 0 ? Math.Max(160, gameWidth * Math.Clamp(cams[i].Size, 5, 60) / 100 / 2 * 2) : 0;
-                var cam = new HandCamRecorder(_o.FfmpegPath, cams[i], i, _o.BufferDir, encoder, _o.Quality, _o.BufferMinutes, width);
+                // Composite only shows the cam in its box, so record it cropped to that size (Separate keeps the cam's own resolution)
+                var (width, height) = cfg!.Save == HandCamSave.Composite && gameWidth > 0 ? FfmpegCommand.CamBox(gameWidth, gameHeight, cams[i].Layout) : (0, 0);
+                var cam = new HandCamRecorder(_o.FfmpegPath, cams[i], i, _o.BufferDir, encoder, _o.Quality, _o.BufferMinutes, width, height);
                 if (await cam.StartAsync()) _cams.Add((i, cams[i], cam));
                 else { Error?.Invoke($"hand cam {i + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
             }
@@ -148,12 +148,14 @@ public sealed class VideoCaptureService : IAsyncDisposable
             }
             if (inputs.Count == 0 || cfg.Save == HandCamSave.Separate) return;
             void Composite(double f) => Report(0.45, 1, f);
-            if (encoder == "h264_nvenc" && _rec?.Target is { Width: > 0 } t && ClipWidth(t) is var clipW)
+            var (clipW, clipH) = ClipSize(_rec?.Target);
+            if (clipW == 0) (clipW, clipH) = (1920, 1080);
+            if (encoder == "h264_nvenc" && _rec?.Target is { Width: > 0 })
             {
-                try { await RunFfmpegAsync(FfmpegCommand.BuildCompositeCuda(clipPath, clipW, inputs, _o.Quality, merged), dur, Composite); }
-                catch (Exception e) { AppLog.Write("handcam", "GPU composite failed, using CPU overlay: " + e.Message); File.Delete(merged); await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged), dur, Composite); }
+                try { await RunFfmpegAsync(FfmpegCommand.BuildCompositeCuda(clipPath, clipW, clipH, inputs, _o.Quality, merged), dur, Composite); }
+                catch (Exception e) { AppLog.Write("handcam", "GPU composite failed, using CPU overlay: " + e.Message); File.Delete(merged); await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, clipW, clipH, inputs, encoder, _o.Quality, merged), dur, Composite); }
             }
-            else await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, inputs, encoder, _o.Quality, merged), dur, Composite);
+            else await RunFfmpegAsync(FfmpegCommand.BuildComposite(clipPath, clipW, clipH, inputs, encoder, _o.Quality, merged), dur, Composite);
             File.Move(merged, clipPath, true);
         }
         finally

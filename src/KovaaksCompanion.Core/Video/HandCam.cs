@@ -5,14 +5,14 @@ using KovaaksCompanion.Core.Diagnostics;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: size of the video width; gaps from the right / top edge of the video.</summary>
-public sealed record HandCamLayout(int SizePercent = 25, int RightPercent = 0, int TopPercent = 20);
+/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width, height of the video height; gaps from the right / top edge of the video. The cam image fills the box (cover, centered crop).</summary>
+public sealed record HandCamLayout(int SizePercent = 25, int RightPercent = 0, int TopPercent = 20, int HeightPercent = 14);
 
 /// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, and its place in the video.</summary>
-public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int Right = 0, int Top = 20)
+public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int Right = 0, int Top = 20, int Height = 14)
 {
     public const int Max = 3;
-    public HandCamLayout Layout => new(Size, Right, Top);
+    public HandCamLayout Layout => new(Size, Right, Top, Height);
 }
 
 /// <summary>The configured cams as a list with value equality, so <see cref="AppSettings"/> still compares by content.</summary>
@@ -89,7 +89,7 @@ public sealed class HandCamRecorder : IAsyncDisposable
     public const string SegmentFilePattern = "cam_%03d.mp4";
 
     readonly string _ffmpeg, _device, _dir, _encoder;
-    readonly int _quality, _slots, _number, _targetWidth;
+    readonly int _quality, _slots, _number, _targetWidth, _targetHeight;
     readonly object _lock = new();
     readonly List<(string File, TimeSpan Start, TimeSpan End)> _raw = [];
     readonly List<SegmentInfo> _segments = [];
@@ -98,9 +98,9 @@ public sealed class HandCamRecorder : IAsyncDisposable
     Task? _read;
 
     /// <param name="index">Position in the cam list; names the buffer folder (cam0, cam1, ...).</param>
-    public HandCamRecorder(string ffmpegPath, HandCamSlot slot, int index, string bufferDir, string encoder, int quality, int bufferMinutes, int targetWidth = 0)
+    public HandCamRecorder(string ffmpegPath, HandCamSlot slot, int index, string bufferDir, string encoder, int quality, int bufferMinutes, int targetWidth = 0, int targetHeight = 0)
     {
-        (_ffmpeg, _device, _number, _dir, _encoder, _quality, _targetWidth) = (ffmpegPath, slot.Device, slot.Number, Path.Combine(bufferDir, "cam" + index), encoder, quality, targetWidth);
+        (_ffmpeg, _device, _number, _dir, _encoder, _quality, _targetWidth, _targetHeight) = (ffmpegPath, slot.Device, slot.Number, Path.Combine(bufferDir, "cam" + index), encoder, quality, targetWidth, targetHeight);
         _slots = Math.Max(3, bufferMinutes * 60 / SegmentSeconds) + 2;
     }
 
@@ -122,7 +122,7 @@ public sealed class HandCamRecorder : IAsyncDisposable
         _epochUtc = DateTime.UtcNow;
         var psi = new ProcessStartInfo(_ffmpeg)
         { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true, StandardErrorEncoding = System.Text.Encoding.UTF8 };
-        foreach (var a in FfmpegCommand.BuildHandCamRecord(_device, _number, _encoder, _quality, _dir, (_epochUtc - DateTime.UnixEpoch).Ticks / 10, _slots, forceMode, _targetWidth)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegCommand.BuildHandCamRecord(_device, _number, _encoder, _quality, _dir, (_epochUtc - DateTime.UnixEpoch).Ticks / 10, _slots, forceMode, _targetWidth, _targetHeight)) psi.ArgumentList.Add(a);
         AppLog.Write("handcam", $"start: {string.Join(' ', psi.ArgumentList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
         var p = Process.Start(psi) ?? throw new InvalidOperationException("ffmpeg did not start");
         _proc = p;

@@ -149,8 +149,8 @@ public partial class SettingsView : UserControl
         public required StackPanel Root;
         public required TextBlock Title;
         public required ComboBox Devices;
-        public required Slider Size, Right, Top;
-        public required TextBlock SizeText, RightText, TopText;
+        public required Slider Size, Height, Right, Top;
+        public required TextBlock SizeText, HeightText, RightText, TopText;
         public required Border Marker;
     }
 
@@ -161,8 +161,8 @@ public partial class SettingsView : UserControl
     HandCamSlots CamSlots(HandCamSlots cur)
     {
         var next = _cards.Select(c => c.Devices.SelectedItem is HandCamDevice d
-            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value)
-            : new HandCamSlot("", 0, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value));
+            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value, (int)c.Height.Value)
+            : new HandCamSlot("", 0, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value, (int)c.Height.Value));
         var list = new HandCamSlots(); list.AddRange(next);
         return list.Equals(cur) ? cur : list;
     }
@@ -194,13 +194,14 @@ public partial class SettingsView : UserControl
             grid.Children.Add(l); grid.Children.Add(sl); grid.Children.Add(text);
             return sl;
         }
-        var size = Row(0, "Size", 10, 50, slot.Size, out var st);
-        var right = Row(1, "From right", 0, 100, slot.Right, out var rt);
-        var top = Row(2, "From top", 0, 100, slot.Top, out var tt);
+        var size = Row(0, "Width", 10, 50, slot.Size, out var st);
+        var height = Row(1, "Height", 5, 60, slot.Height, out var ht);
+        var right = Row(2, "From right", 0, 100, slot.Right, out var rt);
+        var top = Row(3, "From top", 0, 100, slot.Top, out var tt);
         root.Children.Add(head); root.Children.Add(devices); root.Children.Add(grid);
 
         var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85 };
-        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, Right = right, Top = top, SizeText = st, RightText = rt, TopText = tt, Marker = marker };
+        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, Height = height, Right = right, Top = top, SizeText = st, HeightText = ht, RightText = rt, TopText = tt, Marker = marker };
         _cards.Add(card);
         CamCanvas.Children.Add(marker);
         CamCards.Children.Add(root);
@@ -213,7 +214,7 @@ public partial class SettingsView : UserControl
         if (saved == null) devices.SelectedItem = items.FirstOrDefault(d => !_cards.Any(c => c != card && Equals(c.Devices.SelectedItem, d)));
 
         void Changed(object? s, RoutedPropertyChangedEventArgs<double> e) { UpdateCamUi(); Save(); }
-        size.ValueChanged += Changed; right.ValueChanged += Changed; top.ValueChanged += Changed;
+        size.ValueChanged += Changed; height.ValueChanged += Changed; right.ValueChanged += Changed; top.ValueChanged += Changed;
         devices.SelectionChanged += (_, _) => Save();
         remove.Click += (_, _) =>
         {
@@ -233,8 +234,8 @@ public partial class SettingsView : UserControl
         {
             var c = _cards[i];
             c.Title.Text = $"Webcam {i + 1}";
-            c.SizeText.Text = $"{(int)c.Size.Value}%"; c.RightText.Text = $"{(int)c.Right.Value}%"; c.TopText.Text = $"{(int)c.Top.Value}%";
-            var w = W * c.Size.Value / 100; var h = w * 9 / 16;
+            c.SizeText.Text = $"{(int)c.Size.Value}%"; c.HeightText.Text = $"{(int)c.Height.Value}%"; c.RightText.Text = $"{(int)c.Right.Value}%"; c.TopText.Text = $"{(int)c.Top.Value}%";
+            var w = W * c.Size.Value / 100; var h = H * c.Height.Value / 100;
             c.Marker.Width = w; c.Marker.Height = h;
             c.Marker.Background = (Brush)FindResource(CamColors[i % CamColors.Length]);
             Canvas.SetLeft(c.Marker, Math.Max(0, Math.Min(W - w, W - w - W * c.Right.Value / 100)));

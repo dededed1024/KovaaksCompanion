@@ -133,7 +133,7 @@
                                 <CheckBox Grid.Column="1" x:Name="CamOn" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCamToggle" Unchecked="OnCamToggle"/>
                             </Grid>
 
-                            <TextBlock Text="Webcam changes apply the next time KovaaK's is launched." Foreground="{StaticResource Dim}" TextWrapping="Wrap" Margin="4,8,0,0"/>
+                            <TextBlock Text="KovaaK's must be closed to change webcam settings" Foreground="{StaticResource Dim}" TextWrapping="Wrap" Margin="4,8,0,0"/>
 
                             <StackPanel x:Name="CamPanel" Visibility="Collapsed">
                                 <TextBlock Text="Video save" Foreground="{StaticResource Fg}" Margin="4,12,0,4"/>
