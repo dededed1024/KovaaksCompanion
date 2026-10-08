@@ -459,12 +459,12 @@ public partial class StatsView
         catch (Exception) { return null; }
     }
 
-    /// <summary>With a chosen picture: a full-width banner (click to change, X to remove) and the name under it. Without: the round Steam avatar (click to choose a picture) beside the name.</summary>
+    /// <summary>A 16:9 picture (click to change; X to remove a chosen one) and the name under it. Without a chosen picture it shows the Steam avatar, or a placeholder when Steam has none cached.</summary>
     UIElement ProfileHeader()
     {
         var steam = _host.Settings.EffectiveSteamId;
         var ui = _host.Ui;
-        var (persona, _) = SteamAccount.Profile(_host.Settings.KovaaksPath, steam);
+        var (persona, steamAvatar) = SteamAccount.Profile(_host.Settings.KovaaksPath, steam);
         string DefaultName() => persona ?? (steam.Length == 0 ? null : Cache.LoadUsername(steam)) ?? (steam.Length == 0 ? "Profile" : steam);
 
         void Pick()
@@ -486,7 +486,8 @@ public partial class StatsView
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("profile", ex.Message); }
         }
 
-        var banner = LoadAvatar(ui.ProfileImage.Length > 0 ? ui.ProfileImage : null, 1200);
+        var custom = LoadAvatar(ui.ProfileImage.Length > 0 ? ui.ProfileImage : null, 1200);
+        var banner = custom ?? LoadAvatar(steamAvatar, 1200);
         var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 0, 0, 6) };
         _profileFit = null;
         _profileAddBox = null;
@@ -508,10 +509,10 @@ public partial class StatsView
             _profileFit = FitPic;
             var wash = new Border { CornerRadius = new CornerRadius(4), Background = Solid("#66000000"), Opacity = 0, IsHitTestVisible = false };
             var cam = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 28, Foreground = Brushes.White, Opacity = 0, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-            var xbg = new Border { Margin = new Thickness(0, 10, 10, 0), Width = 32, Height = 32, CornerRadius = new CornerRadius(0), Background = Solid("#99000000"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Opacity = 0 };
+            var xbg = new Border { Margin = new Thickness(10, 10, 0, 0), Width = 32, Height = 32, CornerRadius = new CornerRadius(0), Background = Solid("#99000000"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Opacity = 0 };
             var x = new Button
             {
-                Style = (Style)FindResource("PopupClose"), Width = 32, Height = 32, Margin = new Thickness(0, 10, 10, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Opacity = 0,
+                Style = (Style)FindResource("PopupClose"), Width = 32, Height = 32, Margin = new Thickness(10, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Opacity = 0,
                 Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             x.Click += (_, _) =>
@@ -524,8 +525,11 @@ public partial class StatsView
             holder.Children.Add(pic);
             holder.Children.Add(wash);
             holder.Children.Add(cam);
-            holder.Children.Add(xbg);
-            holder.Children.Add(x);
+            if (custom != null)
+            {
+                holder.Children.Add(xbg);
+                holder.Children.Add(x);
+            }
             holder.MouseEnter += (_, _) => { wash.Opacity = cam.Opacity = x.Opacity = xbg.Opacity = 1; };
             holder.MouseLeave += (_, _) => { wash.Opacity = cam.Opacity = x.Opacity = xbg.Opacity = 0; };
             pic.MouseLeftButtonUp += (_, _) => Pick();
