@@ -793,7 +793,7 @@ public partial class StatsView
             rtb.Render(holder);
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = System.IO.Path.Combine(KovaaksCompanion.Core.AppSettings.DefaultDataFolder, "captures");
+            var dir = _host.Settings.CapturesFolder;
             Directory.CreateDirectory(dir);
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));

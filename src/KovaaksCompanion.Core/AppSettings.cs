@@ -44,6 +44,7 @@ public sealed record AppSettings
     [JsonIgnore] public string UiFile => Path.Combine(DataRoot, "ui.json");
     [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DataRoot, "playlist-scenarios.dat");
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
+    [JsonIgnore] public string CapturesFolder => Path.Combine(DataRoot, "captures");
 
     /// <summary>Fills KovaaksPath from detection when it is empty or missing; unchanged when nothing is found.</summary>
     public AppSettings WithDetectedPaths(Func<string?>? findKovaaks = null, Func<string, bool>? dirExists = null)

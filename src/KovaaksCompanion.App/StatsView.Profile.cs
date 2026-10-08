@@ -218,7 +218,7 @@ public partial class StatsView
                 shot.Freeze();
                 Clipboard.SetImage(shot);
                 // Encoding and writing the PNG happen off the UI thread.
-                var file = Path.Combine(KovaaksCompanion.Core.AppSettings.DefaultDataFolder, "captures", $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                var file = Path.Combine(_host.Settings.CapturesFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.png");
                 _ = Task.Run(() =>
                 {
                     try
