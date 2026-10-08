@@ -144,13 +144,17 @@ public sealed class AppHost : IDisposable
             var latest = await UpdateCheck.Fetch(Http);
             if (!UpdateCheck.IsNewer(latest, App.CurrentVersion)) return;
             _pendingUpdate = latest;
+            UpdateAvailable = true;
             _app.Dispatcher.Invoke(OfferUpdate);
         }
         catch (Exception e) { AppLog.Write("update", "check failed: " + e.Message); }
     }
 
     /// <summary>Opens the update popup for a release found by a manual check.</summary>
-    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) => _app.Dispatcher.Invoke(() => _main?.ShowUpdate(release));
+    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) => _app.Dispatcher.Invoke(() => { UpdateAvailable = true; _main?.ShowUpdate(release); });
+
+    /// <summary>A newer release than the running one was found this run.</summary>
+    public bool UpdateAvailable { get; private set; }
 
     void OfferUpdate()
     {

@@ -337,6 +337,13 @@ public partial class SettingsView : UserControl
         Visibility = Visibility.Visible;
         UpdateLayout();
         PageScroll.ScrollToTop();
+        if (_host.UpdateAvailable)
+        {
+            CheckBtn.SetResourceReference(BackgroundProperty, "Red");
+            CheckBtn.Foreground = Brushes.White;
+            CheckBtn.BringIntoView();
+        }
+        else { CheckBtn.ClearValue(BackgroundProperty); CheckBtn.ClearValue(ForegroundProperty); }
         Animate(true, tok);
     }
 

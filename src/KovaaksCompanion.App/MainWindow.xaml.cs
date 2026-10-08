@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         PreviewMouseDown += (_, e) => { if (e.ChangedButton == MouseButton.XButton1) { e.Handled = true; GoBack(); } };
         Closed += (_, _) => { _stats.Detach(); _replay.Detach(); _settings.Detach(); };
         StateChanged += (_, _) => SyncCaption();
+        if (host.UpdateAvailable) MarkUpdate();
     }
 
     // A chrome window overshoots the screen by the resize border when maximized; pad it back in.
@@ -78,7 +79,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Opens the update popup above everything else.</summary>
-    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) => _update.Open(release);
+    public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) { MarkUpdate(); _update.Open(release); }
+
+    /// <summary>Tints the settings button red: a newer release exists.</summary>
+    public void MarkUpdate() => GearBtn.SetResourceReference(Control.ForegroundProperty, "Red");
 
     public void ShowPage(string page)
     {
