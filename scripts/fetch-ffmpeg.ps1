@@ -1,11 +1,11 @@
-# Fetches the pinned gyan.dev ffmpeg 9.0.2 essentials build (zip + exe SHA-256 verified) and extracts bin/ffmpeg.exe
+# Fetches the pinned BtbN ffmpeg n9.0.2 LGPL build (no GPL/nonfree libs, no libx264) (zip + exe SHA-256 verified) and extracts bin/ffmpeg.exe
 # to src/KovaaksCompanion.App/ffmpeg/ffmpeg.exe, where the App csproj embeds it. No-op when the file exists and matches.
 param([switch]$Force)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$url = 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip'
-$zipSha = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
-$exeSha = '3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec'
+$url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-07-13-07/ffmpeg-n9.0.2-22-g46d8f462ee-win64-lgpl-9.0.zip'
+$zipSha = '3aa4a8161a29866fba8f8c87f07dc0a57c4c9bab42c0db84510b046ca80d41cd'
+$exeSha = 'c43e397fdf3303d04172122f5402cac66bdbb24e6727184f22c2070e2dbee7d0'
 $dest = Join-Path $PSScriptRoot '..\src\KovaaksCompanion.App\ffmpeg'
 $exe = Join-Path $dest 'ffmpeg.exe'
 if ((Test-Path $exe) -and -not $Force) {

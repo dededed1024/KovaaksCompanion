@@ -65,6 +65,7 @@ public sealed class VideoRecorder : IAsyncDisposable
         AppLog.Write("video", $"encoder probe: {probe.Length} chars, candidates [{string.Join(", ", encoders)}] (requested '{_o.Encoder}')");
         foreach (var enc in encoders)
             if (await TryLaunchAsync(enc, outIdx, adapter)) { Encoder = enc; AppLog.Write("video", "recording with encoder " + enc); return true; }
+        if (encoders.Count == 0) LastError = "no hardware H.264 encoder (NVENC/AMF/QSV) found";
         AppLog.Write("video", "no encoder worked: " + LastError);
         return false;
     }

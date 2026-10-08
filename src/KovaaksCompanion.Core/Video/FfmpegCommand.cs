@@ -5,14 +5,13 @@ namespace KovaaksCompanion.Core.Video;
 /// <summary>Pure builders for ffmpeg command lines and encoder choice.</summary>
 public static class FfmpegCommand
 {
-    public static readonly string[] EncoderChain = ["h264_nvenc", "h264_amf", "h264_qsv", "libx264"];
+    public static readonly string[] EncoderChain = ["h264_nvenc", "h264_amf", "h264_qsv"];
 
-    /// <summary>Chain order filtered by what `ffmpeg -encoders` lists; libx264 as last resort when nothing matches.</summary>
+    /// <summary>Chain order filtered by what `ffmpeg -encoders` lists. Hardware encoders only (no software fallback); empty when none is listed.</summary>
     public static IReadOnlyList<string> ChooseEncoders(string ffmpegEncodersOutput, string? forced = null)
     {
         if (!string.IsNullOrWhiteSpace(forced)) return [forced];
         var list = EncoderChain.Where(e => ffmpegEncodersOutput.Contains(" " + e + " ", StringComparison.Ordinal)).ToList();
-        if (list.Count == 0) list.Add("libx264");
         return list;
     }
 
@@ -72,7 +71,7 @@ public static class FfmpegCommand
         "h264_nvenc" or "hevc_nvenc" => ["-preset", "p4", "-tune", "ll", "-rc", "vbr", "-cq", q.ToString(), "-b:v", "0", "-maxrate", "150M", "-bf", "0", "-forced-idr", "1"],
         "h264_amf" => ["-quality", "speed", "-rc", "cqp", "-qp_i", q.ToString(), "-qp_p", q.ToString(), "-bf", "0"],
         "h264_qsv" => ["-preset", "veryfast", "-global_quality", q.ToString(), "-bf", "0"],
-        _ => ["-preset", "ultrafast", "-crf", q.ToString(), "-pix_fmt", "yuv420p"],
+        _ => ["-pix_fmt", "yuv420p"],
     };
 
     /// <summary>Concat-demuxer list file contents (forward slashes, quoted).</summary>

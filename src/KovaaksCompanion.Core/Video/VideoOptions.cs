@@ -10,7 +10,7 @@ public sealed record VideoOptions
     public const int Fps = 120;
     public int SegmentSeconds { get; init; } = 10;
     public int BufferMinutes { get; init; } = 10;
-    /// <summary>Constant-quality target (nvenc -cq / amf+qsv quality / x264 crf).</summary>
+    /// <summary>Constant-quality target (nvenc -cq / amf+qsv quality).</summary>
     public int Quality { get; init; } = 18;
     /// <summary>True = capture only the game window's client area at native size; false = whole monitor.</summary>
     public bool CaptureWindow { get; init; } = true;
