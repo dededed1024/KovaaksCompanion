@@ -7,7 +7,8 @@ Windows companion app for KovaaK's. It tracks your benchmark progress and record
 ## Features
 
 - **Stats page:** benchmark playlists with per-scenario scores, tiers and progress, favorites, a pinned current-tier view, an activity calendar and recent sessions. Local history comes from the game's `* Stats.csv` files; benchmark progress and leaderboard ranks come from your KovaaK's account.
-- **Run recording:** while the game is running, only the game window (and only its audio) is captured into a rolling buffer. When a run ends, the clip around it is saved without re-encoding.
+- **Run recording:** while the game is running, only the game window (and only its audio) is captured into a rolling buffer. When a run ends, the clip around it is saved without re-encoding. Optional hand cam overlay; clips still encoding show a progress ring.
+- **Profile page:** favorite benchmarks as tier cards next to your overall stats, exportable as a PNG image (saved in the `captures` folder under the data folder).
 - **Replay:** playback with speed, scrubbing and frame step, plus the mouse trajectory (recorded via Raw Input) over the video and a chart of accuracy and other run stats under it. A manual sync nudge corrects drift.
 - **Tray app:** starts minimized, one instance, optional start with Windows, update check from GitHub Releases.
 
