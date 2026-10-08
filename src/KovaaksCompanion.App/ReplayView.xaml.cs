@@ -81,7 +81,6 @@ public partial class ReplayView : UserControl
     double[] _killTimes = [];
     IReadOnlyDictionary<float, ShotOutcome> _outcomes = new Dictionary<float, ShotOutcome>();
     HeldAccuracy? _held;
-    double _killOffset;
     double _speed = 1;
     bool _playing, _dragging, _seekPending;
     double _dragPos;
@@ -685,7 +684,6 @@ public partial class ReplayView : UserControl
         var notes = new List<string>();
         if (_s.Info.Partial) notes.Add("Partial: mouse or video does not cover the whole run");
         if (!_s.Info.DegreesAvailable) notes.Add("Unknown sens scale: no trail");
-        if (ShotSummary() is { Length: > 0 } shots) notes.Add(shots);
         RunNote.Text = string.Join(" · ", notes);
         RunNote.Visibility = notes.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -708,18 +706,7 @@ public partial class ReplayView : UserControl
     {
         if (_s?.Trajectory is not { } traj || _s.Stats is not { } st) return new Dictionary<float, ShotOutcome>();
         var kills = st.KillEvents.Select((k, i) => new KillShots(_killTimes[i], k.Shots, k.Hits)).ToList();
-        var outcomes = ShotClassifier.Classify(traj.Events, kills, _s.Perf, out var offset);
-        _killOffset = offset;
-        return outcomes;
-    }
-
-    string ShotSummary()
-    {
-        if (_outcomes.Count == 0) return "";
-        int hit = 0, miss = 0;
-        foreach (var o in _outcomes.Values) { if (o == ShotOutcome.Hit) hit++; else if (o == ShotOutcome.Miss) miss++; }
-        return $"Shots: {hit} hit (green), {miss} miss (red), {_outcomes.Count - hit - miss} unknown (grey)"
-            + (Math.Abs(_killOffset) >= 0.001 ? $" · mouse/CSV offset {_killOffset * 1000:+0;-0} ms" : "");
+        return ShotClassifier.Classify(traj.Events, kills, _s.Perf, out _);
     }
 
     // ---- player ------------------------------------------------------------------------------------------------
