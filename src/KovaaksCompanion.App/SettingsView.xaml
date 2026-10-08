@@ -98,6 +98,14 @@
                                 <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="4,0,0,0"/>
                                 <Button Grid.Column="1" x:Name="CheckBtn" Content="Check for updates" Click="OnCheckUpdate"/>
                             </Grid>
+
+                            <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,14,0,0">
+                                <Run Text="Unofficial. Not affiliated with KovaaK Games."/>
+                                <LineBreak/>
+                                <Run Text="Playlists from "/><Hyperlink NavigateUri="https://evxl.app" RequestNavigate="OnLink">evxl.app</Hyperlink><Run Text=" (EviL)."/>
+                                <LineBreak/>
+                                <Run Text="Video by "/><Hyperlink NavigateUri="https://ffmpeg.org" RequestNavigate="OnLink">FFmpeg</Hyperlink><Run Text=" (LGPL v3, "/><Hyperlink NavigateUri="https://github.com/dededed1024/KovaaksCompanion/blob/main/THIRD-PARTY-NOTICES.md" RequestNavigate="OnLink">source and notices</Hyperlink><Run Text=")."/>
+                            </TextBlock>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

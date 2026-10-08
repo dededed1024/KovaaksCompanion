@@ -139,6 +139,12 @@ public partial class SettingsView : UserControl
     void OnScrim(object sender, MouseButtonEventArgs e) => Close();
     void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
+    void OnLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+        e.Handled = true;
+    }
+
     /// <summary>Opens the popup with the saved values (values are saved as they change).</summary>
     public void Open()
     {
