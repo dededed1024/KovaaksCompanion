@@ -86,7 +86,8 @@
                     <TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
                 </Button>
                 <Button x:Name="GearBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" ToolTip="Settings" Click="OnGear">
-                    <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
+                    <TextBlock x:Name="GearGlyph" Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
             </StackPanel>
             <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top">

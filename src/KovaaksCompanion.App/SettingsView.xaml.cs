@@ -294,8 +294,8 @@ public partial class SettingsView : UserControl
         if (tok != _tok) return;
         if (latest != null && UpdateCheck.IsNewer(latest, Current))
         {
-            ResetCheck();
             _host.ShowUpdate(latest);
+            ResetCheck();
             return;
         }
         CheckBtn.Content = latest == null ? "Could not check" : "Up to date";
@@ -303,7 +303,17 @@ public partial class SettingsView : UserControl
         if (tok == _tok) ResetCheck();
     }
 
-    void ResetCheck() { CheckBtn.Content = CheckText; CheckBtn.IsEnabled = true; }
+    void ResetCheck()
+    {
+        CheckBtn.IsEnabled = true;
+        if (_host.UpdateAvailable)
+        {
+            CheckBtn.Content = "Update";
+            CheckBtn.SetResourceReference(BackgroundProperty, "Red");
+            CheckBtn.Foreground = Brushes.White;
+        }
+        else { CheckBtn.Content = CheckText; CheckBtn.ClearValue(BackgroundProperty); CheckBtn.ClearValue(ForegroundProperty); }
+    }
 
     // ---- popup shell -------------------------------------------------------------------------------------------
 
@@ -337,13 +347,7 @@ public partial class SettingsView : UserControl
         Visibility = Visibility.Visible;
         UpdateLayout();
         PageScroll.ScrollToTop();
-        if (_host.UpdateAvailable)
-        {
-            CheckBtn.SetResourceReference(BackgroundProperty, "Red");
-            CheckBtn.Foreground = Brushes.White;
-            CheckBtn.BringIntoView();
-        }
-        else { CheckBtn.ClearValue(BackgroundProperty); CheckBtn.ClearValue(ForegroundProperty); }
+        if (_host.UpdateAvailable) PageScroll.ScrollToBottom();
         Animate(true, tok);
     }
 
