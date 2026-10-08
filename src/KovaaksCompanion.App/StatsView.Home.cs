@@ -274,7 +274,7 @@ public partial class StatsView
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             cell.Children.Add(Text(cells[i].Value, 32, FgB, FontWeights.SemiBold));
-            cell.Children.Add(Text(cells[i].Label, 16, DimB, null, new Thickness(0, 2, 0, 0)));
+            cell.Children.Add(Text(cells[i].Label, 16, i < 2 ? FgB : DimB, null, new Thickness(0, 2, 0, 0)));
             ((TextBlock)cell.Children[0]).HorizontalAlignment = HorizontalAlignment.Center;
             ((TextBlock)cell.Children[1]).HorizontalAlignment = HorizontalAlignment.Center;
             Grid.SetColumn(cell, grid.ColumnDefinitions.Count - 1);
