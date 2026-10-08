@@ -73,7 +73,7 @@ public partial class StatsView
             var title = new FormattedText(Heading.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize, Heading.Foreground, dpi.PixelsPerDip);
             // Header row: dot, name and difficulty on the left, then the overall tier.
-            const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28;
+            const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28, pad = 15, dotInset = 18, heroInset = 18;
             var pill = HeadPill.Visibility == Visibility.Visible && HeadPill.ActualWidth > 0 ? HeadPill : null;
             var diffName = DiffTrack.Visibility == Visibility.Visible ? DiffBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string : null;
             var diff = string.IsNullOrEmpty(diffName) ? null : new FormattedText(diffName, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
@@ -89,10 +89,10 @@ public partial class StatsView
                 hero.UpdateLayout();
             }
             var heroW = hero?.ActualWidth ?? 0;
-            var leftW = (pill != null ? dot + dotGap : 0) + title.Width + (diff != null ? diffGap + diff.Width : 0);
+            var leftW = (pill != null ? dotInset + dot + dotGap : 0) + title.Width + (diff != null ? diffGap + diff.Width : 0);
             var headH = Math.Max(Math.Max(title.Height, diff?.Height ?? 0), hero?.ActualHeight ?? 0);
-            var width = Math.Max(body.Max(x => x.ActualWidth), leftW + (hero != null ? tierGap + heroW : 0));
-            var height = headH + CardGap + body.Sum(x => x.ActualHeight) + CardGap * (body.Count - 1);
+            var width = Math.Max(body.Max(x => x.ActualWidth), leftW + (hero != null ? tierGap + heroW + heroInset : 0)) + pad * 2;
+            var height = headH + CardGap + body.Sum(x => x.ActualHeight) + CardGap * (body.Count - 1) + pad * 2;
             var w = (int)Math.Ceiling(width * dpi.DpiScaleX);
             var h = (int)Math.Ceiling(height * dpi.DpiScaleY);
             var rtb = new RenderTargetBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
@@ -116,32 +116,32 @@ public partial class StatsView
                     }, null, rect);
                 }
                 dc.DrawRectangle(Solid("#FF101114"), null, new Rect(0, 0, width, height));
-                var x = 0.0;
+                var x = pad;
                 if (pill != null)
                 {
-                    dc.DrawEllipse(pill.Background, null, new Point(dot / 2, headH / 2), dot / 2, dot / 2);
-                    x = dot + dotGap;
+                    dc.DrawEllipse(pill.Background, null, new Point(pad + dotInset + dot / 2, pad + headH / 2), dot / 2, dot / 2);
+                    x = pad + dotInset + dot + dotGap;
                 }
-                dc.DrawText(title, new Point(x, (headH - title.Height) / 2));
+                dc.DrawText(title, new Point(x, pad + (headH - title.Height) / 2));
                 x += title.Width;
                 if (diff != null)
                 {
                     x += diffGap;
-                    dc.DrawText(diff, new Point(x, (headH - diff.Height) / 2));
+                    dc.DrawText(diff, new Point(x, pad + (headH - diff.Height) / 2));
                     x += diff.Width;
                 }
-                if (hero != null) Draw(hero, width - heroW, (headH - hero.ActualHeight) / 2, heroW);
-                var y = headH + CardGap;
+                if (hero != null) Draw(hero, width - pad - heroInset - heroW, pad + (headH - hero.ActualHeight) / 2, heroW);
+                var y = pad + headH + CardGap;
                 foreach (var part in body)
                 {
-                    Draw(part, 0, y, part.ActualWidth);
+                    Draw(part, pad, y, part.ActualWidth);
                     y += part.ActualHeight + CardGap;
                 }
             }
             rtb.Render(dv);
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = Path.Combine(KovaaksCompanion.Core.AppSettings.DefaultDataFolder, "captures");
+            var dir = _host.Settings.CapturesFolder;
             Directory.CreateDirectory(dir);
             var name = string.Concat(Heading.Text.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
             var enc = new PngBitmapEncoder();
