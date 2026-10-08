@@ -35,8 +35,17 @@ public static class FfmpegCommand
         bool window = target is { Hwnd: not 0 };
         string src;
         if (window)
-            src = $"gfxcapture=hwnd={target!.Hwnd.ToString(inv)}:max_framerate={fps.ToString(inv)}:capture_cursor=0:width=-2:height=-2," +
+        {
+            // scale (not crop) to the capped size; without a cap the window's own size is kept
+            string size = "width=-2:height=-2";
+            if (o.MaxHeight is int cap && target!.Height > cap)
+            {
+                var (w, h) = OutputSize(target.Width, target.Height, cap);
+                size = $"width={w.ToString(inv)}:height={h.ToString(inv)}:resize_mode=scale";
+            }
+            src = $"gfxcapture=hwnd={target!.Hwnd.ToString(inv)}:max_framerate={fps.ToString(inv)}:capture_cursor=0:{size}," +
                   $"setpts=(RTCTIME-{e})/(TB*1000000)";
+        }
         else
         {
             src = $"ddagrab=output_idx={outputIdx.ToString(inv)}:framerate={fps.ToString(inv)}:draw_mouse=0";
@@ -64,6 +73,16 @@ public static class FfmpegCommand
             "-segment_format", "mp4",
             Path.Combine(bufferDir, SegmentFilePattern)]);
         return a;
+    }
+
+    /// <summary>Even output size for a <paramref name="srcWidth"/>x<paramref name="srcHeight"/> source capped to <paramref name="maxHeight"/> (aspect kept, never upscaled).</summary>
+    public static (int Width, int Height) OutputSize(int srcWidth, int srcHeight, int? maxHeight)
+    {
+        if (maxHeight is not int cap || srcHeight <= cap)
+            return (Math.Max(2, srcWidth & ~1), Math.Max(2, srcHeight & ~1));
+        int h = Math.Max(2, cap & ~1);
+        int w = (int)Math.Round((long)srcWidth * h / (double)srcHeight);
+        return (Math.Max(2, w & ~1), h);
     }
 
     public static IEnumerable<string> EncoderArgs(string enc, int q) => enc switch

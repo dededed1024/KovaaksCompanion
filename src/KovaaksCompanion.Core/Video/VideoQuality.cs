@@ -17,6 +17,14 @@ public static class VideoQualityExtensions
         VideoQuality.Ultra => 14,
         _ => 18,
     };
+
+    /// <summary>Output height cap for window capture (null = source resolution).</summary>
+    public static int? MaxHeight(this VideoQuality q) => q switch
+    {
+        VideoQuality.Low => 720,
+        VideoQuality.Medium or VideoQuality.High => 1080,
+        _ => null,
+    };
 }
 
 /// <summary>Writes the preset name; unknown or non-string values read as High so one bad field never resets the settings file.</summary>

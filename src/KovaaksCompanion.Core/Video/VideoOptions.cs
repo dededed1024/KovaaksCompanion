@@ -15,6 +15,8 @@ public sealed record VideoOptions
     public int Quality { get; init; } = 18;
     /// <summary>True = capture only the game window's client area at native size; false = whole monitor.</summary>
     public bool CaptureWindow { get; init; } = true;
+    /// <summary>Caps the output height of window capture (aspect kept, never upscales); null = native size.</summary>
+    public int? MaxHeight { get; init; }
     /// <summary>Record only the game process's audio (WASAPI process loopback).</summary>
     public bool CaptureAudio { get; init; } = true;
     /// <summary>Whole-monitor mode only. Null = primary monitor resolved through DXGI.</summary>
