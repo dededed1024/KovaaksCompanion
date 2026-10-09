@@ -11,13 +11,15 @@ public static class ViewProjection
     /// <summary>
     /// Horizontal FOV at the actual aspect ratio. KovaaK's FOV is Hor+ for "Overwatch" (the value is the horizontal
     /// FOV at 16:9, vertical FOV stays fixed for other aspects). "CS:GO"/"Source" use 4:3 as the reference.
-    /// "Vertical" means the value is the vertical FOV. Anything unknown is treated as Overwatch.
+    /// "Vertical" (also Rainbow 6, Diabotical, The FINALS) means the value is the vertical FOV; "Clamped Horizontal" (also Batallion, UE4) is used as is. Apex, Counter-Strike and Reflex Arena use 4:3 like Source. Anything unknown is treated as Overwatch.
     /// </summary>
     public static double HorizontalFovDeg(double fov, string fovScale, double aspect)
     {
         var scale = fovScale.Trim().ToLowerInvariant();
-        if (scale.Contains("vertical")) return FromVertical(fov, aspect);
-        var refAspect = scale.Contains("cs") || scale.Contains("source") || scale.Contains("4:3") ? 4.0 / 3 : 16.0 / 9;
+        if (scale.Contains("clamped") || scale.Contains("batallion") || scale.Contains("ue4")) return fov;
+        if (scale.Contains("vertical") || scale.Contains("rainbow") || scale.Contains("diabotical") || scale.Contains("finals")) return FromVertical(fov, aspect);
+        var refAspect = scale.Contains("cs") || scale.Contains("source") || scale.Contains("4:3")
+            || scale.Contains("apex") || scale.Contains("counter-strike") || scale.Contains("reflex") ? 4.0 / 3 : 16.0 / 9;
         var tanV = Math.Tan(Rad(fov) / 2) / refAspect;
         return Deg(2 * Math.Atan(tanV * aspect));
     }
