@@ -50,7 +50,7 @@ public partial class UpdateView : UserControl
 
     void OnUpdate(object sender, RoutedEventArgs e)
     {
-        Process.Start(new ProcessStartInfo(_release?.Url ?? UpdateCheck.LatestPage) { UseShellExecute = true })?.Dispose();
+        Process.Start(new ProcessStartInfo(UpdateCheck.LatestDownload) { UseShellExecute = true })?.Dispose();
         Close();
     }
 

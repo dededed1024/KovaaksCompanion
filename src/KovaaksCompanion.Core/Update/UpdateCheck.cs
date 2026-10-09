@@ -10,6 +10,8 @@ public static class UpdateCheck
 {
     public const string Repo = "dededed1024/KovaaksCompanion";
     public const string LatestPage = "https://github.com/" + Repo + "/releases/latest";
+    /// <summary>Always resolves to the exe attached to the newest release, so the browser starts the download directly.</summary>
+    public const string LatestDownload = "https://github.com/" + Repo + "/releases/latest/download/KovaaksCompanion.exe";
     const string Api = "https://api.github.com/repos/" + Repo + "/releases/latest";
 
     /// <summary>Parses a releases/latest response; null when the tag or URL is missing or not a version.</summary>
