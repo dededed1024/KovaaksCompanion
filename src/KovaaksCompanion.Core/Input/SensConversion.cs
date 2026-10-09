@@ -29,6 +29,13 @@ public static class SensConversion
             pitchPerCount = 360.0 / (s.VertSens / 2.54 * s.Dpi);
             return true;
         }
+        if (scale.Contains("in/360") || scale.Contains("in per 360") || scale.Contains("inches/360"))
+        {
+            if (s.Dpi <= 0) return false;
+            yawPerCount = 360.0 / (s.HorizSens * s.Dpi);
+            pitchPerCount = 360.0 / (s.VertSens * s.Dpi);
+            return true;
+        }
         foreach (var (key, yaw) in Table)
         {
             if (!scale.Contains(key)) continue;
