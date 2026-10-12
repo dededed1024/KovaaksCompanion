@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -41,7 +41,7 @@ public partial class MainWindow : Window
     {
         var s = Math.Clamp(percent, AppSettings.MinUiScale, AppSettings.MaxUiScale) / 100.0;
         Root.LayoutTransform = new ScaleTransform(s, s);
-        MinWidth = 960 * s; MinHeight = 540 * s;
+        MinWidth = 1280 * s; MinHeight = 720 * s;
         WindowChrome.GetWindowChrome(this).CaptionHeight = 48 * s;
     }
 
@@ -115,10 +115,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Opens the replay popup with the run ending at <paramref name="end"/> selected; false when it was not recorded.</summary>
-    public bool ShowRun(string scenario, DateTime end)
+    public bool ShowRun(string scenario, DateTime end, bool withoutRecording = false)
     {
         _settings.Close();
-        return _replay.ShowRun(_stats.SheetData(), scenario, end);
+        return _replay.ShowRun(_stats.SheetData(), scenario, end, withoutRecording);
     }
 
     /// <summary>Opens the most recent recorded session's run; false (window only) when nothing was recorded.</summary>
