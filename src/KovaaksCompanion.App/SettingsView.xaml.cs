@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using KovaaksCompanion.Core;
+using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Update;
 using KovaaksCompanion.Core.Video;
 
@@ -33,10 +34,15 @@ public partial class SettingsView : UserControl
 
     public void Detach() => _host.GameStateChanged -= OnGameState;
 
-    void OnGameState() => Dispatcher.InvokeAsync(UpdateCamLock);
+    void OnGameState() => Dispatcher.InvokeAsync(UpdateLock);
 
-    /// <summary>Webcam settings are read when recording starts, so they are locked while a game session is live.</summary>
-    void UpdateCamLock() => CamSection.IsEnabled = !_host.GameActive;
+    /// <summary>Recording is configured when it starts, so every setting is locked while a game session is live.</summary>
+    void UpdateLock()
+    {
+        var free = !_host.GameActive;
+        GeneralSection.IsEnabled = RecordingSection.IsEnabled = StorageSection.IsEnabled = CamSection.IsEnabled = free;
+        LockNote.Visibility = free ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     public bool IsOpen => _open;
 
@@ -44,21 +50,69 @@ public partial class SettingsView : UserControl
     {
         _loading = true;
         var s = _host.Settings;
+        LoadAppearance(s);
         Kovaaks.Text = s.KovaaksPath; Data.Text = s.DataRoot; Steam.Text = s.EffectiveSteamId;
         foreach (RadioButton r in QualityBar.Children) r.IsChecked = (string)r.Tag == s.VideoQuality.ToString();
         FpsBox.Text = s.VideoFps.ToString();
+        StorageBox.Text = s.StorageLimitGb + GbSuffix;
+        DeleteBeaten.IsChecked = s.DeleteBeatenRuns;
+        KeepPb.IsChecked = s.KeepPersonalBests;
         AutoStart.IsChecked = Autostart.IsOn();
+        ErrorReports.IsChecked = s.SendErrorReports;
         CamOn.IsChecked = s.HandCamEnabled;
-        CamPanel.Visibility = s.HandCamEnabled ? Visibility.Visible : Visibility.Collapsed;
+        ShowCamPanels(s.HandCamEnabled);
         foreach (RadioButton r in CamSaveBar.Children) r.IsChecked = (string)r.Tag == s.HandCamSave.ToString();
         CamCards.Children.Clear(); CamCanvas.Children.Clear(); _cards.Clear();
         foreach (var slot in s.HandCams) AddCamCard(slot);
         UpdateCamUi();
-        UpdateCamLock();
+        UpdateLock();
         _loading = false;
         if (s.HandCamEnabled) _ = RefreshCamDevices();
         Validate(null, null);
         if (Kovaaks.Text.Length == 0 && PathDetector.FindKovaaks() is { } found) { Kovaaks.Text = found; Save(); }
+    }
+
+    void LoadAppearance(AppSettings s)
+    {
+        LanguageBar.Children.Clear();
+        foreach (var (code, name) in L.Languages)
+            LanguageBar.Children.Add(new RadioButton { Style = (Style)FindResource("Segment"), Content = name, Tag = code, IsChecked = code == L.Code });
+        foreach (RadioButton r in LanguageBar.Children) r.Checked += OnAppearance;
+        var scale = Math.Clamp(s.UiScale, AppSettings.MinUiScale, AppSettings.MaxUiScale).ToString();
+        foreach (RadioButton r in ScaleBar.Children) r.IsChecked = (string)r.Tag == scale;
+        ThemeBar.Children.Clear();
+        var theme = Theme.Normalize(s.Theme);
+        foreach (var name in Theme.Names)
+        {
+            var on = name == theme;
+            var (bg, accent) = Theme.Swatch(name);
+            var chip = new Border
+            {
+                Width = 44, Height = 44, Margin = new Thickness(0, 0, 10, 10), CornerRadius = new CornerRadius(10), Cursor = Cursors.Hand,
+                Background = new SolidColorBrush(bg), BorderThickness = new Thickness(2), ToolTip = L.T(name),
+                BorderBrush = on ? (Brush)FindResource("Accent") : (Brush)FindResource("EdgeFaint"),
+                Child = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            };
+            chip.MouseLeftButtonUp += (_, _) => { if (!on) SaveAppearance(name); };
+            ThemeBar.Children.Add(chip);
+        }
+    }
+
+    void OnAppearance(object sender, RoutedEventArgs e) { if (!_loading) SaveAppearance(); }
+
+    /// <summary>Applies language, theme and size. Allowed while the game runs: it changes only how the app looks.</summary>
+    void SaveAppearance(string? theme = null)
+    {
+        var cur = _host.Settings;
+        string Tag(Panel bar, string fallback) => bar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? fallback;
+        var next = cur with
+        {
+            Language = Tag(LanguageBar, cur.Language),
+            Theme = theme ?? cur.Theme,
+            UiScale = int.TryParse(Tag(ScaleBar, ""), out var sc) ? sc : cur.UiScale,
+        };
+        if (next == cur) return;
+        _host.ApplySettings(next);
     }
 
     bool SteamValid()
@@ -69,10 +123,28 @@ public partial class SettingsView : UserControl
 
     bool FpsValid(out int fps) => int.TryParse(FpsBox.Text, out fps) && fps is >= 30 and <= 1000;
 
+    const string GbSuffix = " GB";
+
+    bool StorageValid(out int gb) => int.TryParse(StorageBox.Text.Replace(GbSuffix, "").Trim(), out gb) && gb >= 0;
+
+    /// <summary>Shows " GB" after the number once the box loses focus; edits start from the bare number.</summary>
+    void OnStorageFocus(object sender, RoutedEventArgs e)
+    {
+        if (StorageBox.Text.EndsWith(GbSuffix)) StorageBox.Text = StorageBox.Text[..^GbSuffix.Length];
+        StorageBox.CaretIndex = StorageBox.Text.Length;
+    }
+
+    void OnStorageLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (StorageValid(out var gb)) StorageBox.Text = gb + GbSuffix;
+        OnCommit(sender, e);
+    }
+
     void Validate(object? sender, RoutedEventArgs? e)
     {
-        Check(Steam, SteamError, SteamValid(), "Must be 17 digits");
-        Check(FpsBox, FpsError, FpsValid(out _), "Enter 30–1000");
+        Check(StorageBox, StorageError, StorageValid(out _), L.T("Enter 0 or more"));
+        Check(Steam, SteamError, SteamValid(), L.T("Must be 17 digits"));
+        Check(FpsBox, FpsError, FpsValid(out _), L.T("Enter 30–1000"));
     }
 
     void OnDigits(object sender, TextCompositionEventArgs e) => e.Handled = !e.Text.All(char.IsAsciiDigit);
@@ -88,15 +160,19 @@ public partial class SettingsView : UserControl
     /// <summary>Persists the current control values; an invalid Steam ID keeps the saved one. No-op when nothing changed.</summary>
     void Save()
     {
-        if (_loading) return;
+        if (_loading || _host.GameActive) return;
         var cur = _host.Settings;
         var next = cur with
         {
             KovaaksPath = Kovaaks.Text.Trim(), DataFolder = Data.Text.Trim() == cur.DataRoot ? cur.DataFolder : Data.Text.Trim(), SteamId = !SteamValid() || Steam.Text.Trim() == cur.EffectiveSteamId ? cur.SteamId : Steam.Text.Trim(),
             StartWithWindows = AutoStart.IsChecked == true,
+            SendErrorReports = ErrorReports.IsChecked == true,
             VideoQuality = QualityBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string t
                 && Enum.TryParse<VideoQuality>(t, out var q) ? q : cur.VideoQuality,
             VideoFps = FpsValid(out var fps) ? fps : cur.VideoFps,
+            StorageLimitGb = StorageValid(out var gb) ? gb : cur.StorageLimitGb,
+            DeleteBeatenRuns = DeleteBeaten.IsChecked == true,
+            KeepPersonalBests = KeepPb.IsChecked == true,
             HandCamEnabled = CamOn.IsChecked == true,
             HandCamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
                 && Enum.TryParse<HandCamSave>(cs, out var hs) ? hs : cur.HandCamSave,
@@ -124,21 +200,26 @@ public partial class SettingsView : UserControl
     {
         if (_loading) return;
         var on = CamOn.IsChecked == true;
-        CamPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        ShowCamPanels(on);
         if (on)
         {
-            if (_cards.Count == 0) AddCamCard(new HandCamSlot());
             UpdateCamUi();
             _ = RefreshCamDevices();
         }
         Save();
     }
 
+    void ShowCamPanels(bool on)
+    {
+        var v = on ? Visibility.Visible : Visibility.Collapsed;
+        CamPanel.Visibility = CamLeft.Visibility = CamDivider.Visibility = v;
+    }
+
     void OnCamSave(object sender, RoutedEventArgs e) => Save();
 
     void OnCamAdd(object sender, RoutedEventArgs e)
     {
-        if (_cards.Count >= HandCamSlot.Max) return;
+        if (!CamAdd.IsEnabled) return;
         AddCamCard(new HandCamSlot(Top: Math.Min(80, 20 + 25 * _cards.Count)));
         UpdateCamUi();
         Save();
@@ -194,10 +275,10 @@ public partial class SettingsView : UserControl
             grid.Children.Add(l); grid.Children.Add(sl); grid.Children.Add(text);
             return sl;
         }
-        var size = Row(0, "Width", 10, 50, slot.Size, out var st);
-        var height = Row(1, "Height", 5, 60, slot.Height, out var ht);
-        var right = Row(2, "From right", 0, 100, slot.Right, out var rt);
-        var top = Row(3, "From top", 0, 100, slot.Top, out var tt);
+        var size = Row(0, L.T("Width"), 10, 40, slot.Size, out var st);
+        var height = Row(1, L.T("Height"), 10, 40, slot.Height, out var ht);
+        var right = Row(2, L.T("From right"), 0, 100, slot.Right, out var rt);
+        var top = Row(3, L.T("From top"), 0, 100, slot.Top, out var tt);
         root.Children.Add(head); root.Children.Add(devices); root.Children.Add(grid);
 
         var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85 };
@@ -215,7 +296,7 @@ public partial class SettingsView : UserControl
 
         void Changed(object? s, RoutedPropertyChangedEventArgs<double> e) { UpdateCamUi(); Save(); }
         size.ValueChanged += Changed; height.ValueChanged += Changed; right.ValueChanged += Changed; top.ValueChanged += Changed;
-        devices.SelectionChanged += (_, _) => Save();
+        devices.SelectionChanged += (_, _) => { UpdateCamUi(); Save(); };
         remove.Click += (_, _) =>
         {
             _cards.Remove(card);
@@ -233,7 +314,7 @@ public partial class SettingsView : UserControl
         for (int i = 0; i < _cards.Count; i++)
         {
             var c = _cards[i];
-            c.Title.Text = $"Webcam {i + 1}";
+            c.Title.Text = L.F("Webcam {0}", i + 1);
             c.SizeText.Text = $"{(int)c.Size.Value}%"; c.HeightText.Text = $"{(int)c.Height.Value}%"; c.RightText.Text = $"{(int)c.Right.Value}%"; c.TopText.Text = $"{(int)c.Top.Value}%";
             var w = W * c.Size.Value / 100; var h = H * c.Height.Value / 100;
             c.Marker.Width = w; c.Marker.Height = h;
@@ -241,14 +322,12 @@ public partial class SettingsView : UserControl
             Canvas.SetLeft(c.Marker, Math.Max(0, Math.Min(W - w, W - w - W * c.Right.Value / 100)));
             Canvas.SetTop(c.Marker, Math.Max(0, Math.Min(H - h, H * c.Top.Value / 100)));
         }
-        CamAdd.Visibility = _cards.Count >= HandCamSlot.Max ? Visibility.Collapsed : Visibility.Visible;
+        CamAdd.IsEnabled = _cards.Count < HandCamSlot.Max && _devices.Any(d => !_cards.Any(c => Equals(c.Devices.SelectedItem, d)));
     }
 
     async Task RefreshCamDevices()
     {
-        var ffmpeg = AppHost.ResolveFfmpeg();
-        if (ffmpeg is null) return;
-        _devices = await HandCamDeviceList.ListAsync(ffmpeg);
+        _devices = await Task.Run(() => AppHost.EnsureObs() ? HandCamDeviceList.List() : []);
         var was = _loading; _loading = true;
         foreach (var c in _cards)
         {
@@ -261,6 +340,7 @@ public partial class SettingsView : UserControl
         foreach (var c in _cards.Where(c => c.Devices.SelectedItem == null))
             c.Devices.SelectedItem = _devices.FirstOrDefault(d => !_cards.Any(o => Equals(o.Devices.SelectedItem, d)));
         _loading = was;
+        UpdateCamUi();
         Save();
     }
 
@@ -282,15 +362,19 @@ public partial class SettingsView : UserControl
         Save();
     }
 
-    const string CheckText = "Check for updates";
+    static string CheckText => L.T("Check for updates");
 
     void OnAutoStartLabel(object sender, MouseButtonEventArgs e) => AutoStart.IsChecked = AutoStart.IsChecked != true;
+    void OnBeatenLabel(object sender, MouseButtonEventArgs e) => DeleteBeaten.IsChecked = DeleteBeaten.IsChecked != true;
+
+    void OnKeepPbLabel(object sender, MouseButtonEventArgs e) => KeepPb.IsChecked = KeepPb.IsChecked != true;
+    void OnErrorReportsLabel(object sender, MouseButtonEventArgs e) => ErrorReports.IsChecked = ErrorReports.IsChecked != true;
 
     async void OnCheckUpdate(object sender, RoutedEventArgs e)
     {
         var tok = _tok;
         CheckBtn.IsEnabled = false;
-        CheckBtn.Content = "Checking…";
+        CheckBtn.Content = L.T("Checking…");
         var latest = await UpdateCheck.Fetch(Http);
         if (tok != _tok) return;
         if (latest != null && UpdateCheck.IsNewer(latest, Current))
@@ -299,7 +383,7 @@ public partial class SettingsView : UserControl
             ResetCheck();
             return;
         }
-        CheckBtn.Content = latest == null ? "Could not check" : "Up to date";
+        CheckBtn.Content = latest == null ? L.T("Could not check") : L.T("Up to date");
         await Task.Delay(3000);
         if (tok == _tok) ResetCheck();
     }
@@ -309,11 +393,64 @@ public partial class SettingsView : UserControl
         CheckBtn.IsEnabled = true;
         if (_host.UpdateAvailable)
         {
-            CheckBtn.Content = "Update";
+            CheckBtn.Content = L.T("Update");
             CheckBtn.SetResourceReference(BackgroundProperty, "Red");
             CheckBtn.Foreground = Brushes.White;
         }
         else { CheckBtn.Content = CheckText; CheckBtn.ClearValue(BackgroundProperty); CheckBtn.ClearValue(ForegroundProperty); }
+    }
+
+    static DateTime _lastReport = DateTime.MinValue;
+    bool _reporting;
+
+    void OnReportText(object sender, TextChangedEventArgs e) => ReportBtn.IsEnabled = !_reporting && !string.IsNullOrWhiteSpace(ReportText.Text);
+
+    async void OnReport(object sender, RoutedEventArgs e)
+    {
+        var tok = _tok;
+        _reporting = true;
+        ReportBtn.IsEnabled = false;
+        if (DateTime.UtcNow - _lastReport < TimeSpan.FromSeconds(60))
+            ReportBtn.Content = L.T("Wait a minute");
+        else
+        {
+            ReportBtn.Content = L.T("Sending…");
+            var ok = await BugReport.Send(Http, ReportText.Text.Trim(), Current.ToString(3), DescribeEnvironment());
+            if (tok != _tok) { _reporting = false; return; }
+            if (ok) { _lastReport = DateTime.UtcNow; ReportText.Clear(); }
+            ReportBtn.Content = ok ? L.T("Sent") : L.T("Could not send");
+        }
+        await Task.Delay(ReportBtn.Content as string == L.T("Sent") ? 1200 : 3000);
+        if (tok != _tok) { _reporting = false; return; }
+        _reporting = false;
+        if (string.IsNullOrWhiteSpace(ReportText.Text)) ReportOverlay.Visibility = Visibility.Collapsed;
+        ResetReport();
+    }
+
+    void OnReportOpen(object sender, RoutedEventArgs e)
+    {
+        ResetReport();
+        ReportOverlay.Visibility = Visibility.Visible;
+        ReportText.Focus();
+    }
+
+    void OnReportCancel(object sender, RoutedEventArgs e)
+    {
+        if (!_reporting) ReportOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    string DescribeEnvironment()
+    {
+        var s = _host.Settings;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var res = $"{SystemParameters.PrimaryScreenWidth * dpi.DpiScaleX:0}x{SystemParameters.PrimaryScreenHeight * dpi.DpiScaleY:0}";
+        return EnvironmentInfo.Describe(new(res, s.VideoQuality.ToString(), s.VideoFps, s.HandCamEnabled, s.HandCams.Count));
+    }
+
+    void ResetReport()
+    {
+        ReportBtn.Content = L.T("Send");
+        ReportBtn.IsEnabled = !_reporting && !string.IsNullOrWhiteSpace(ReportText.Text);
     }
 
     // ---- popup shell -------------------------------------------------------------------------------------------
@@ -338,14 +475,19 @@ public partial class SettingsView : UserControl
         if (_open) return;
         Load();
         _open = true;
-        VersionCaption.Text = $"Version {Current.ToString(3)}";
+        VersionCaption.Text = L.F("Version {0}", Current.ToString(3));
         var tok = ++_tok;
         ResetCheck();
+        _reporting = false;
+        ResetReport();
+        ReportOverlay.Visibility = Visibility.Collapsed;
+        ReportPanel.Visibility = BugReport.Enabled ? Visibility.Visible : Visibility.Collapsed;
         Scrim.BeginAnimation(OpacityProperty, null); Scrim.Opacity = 0;
         Card.BeginAnimation(OpacityProperty, null); Card.Opacity = 0;
         Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         Scale.ScaleX = Scale.ScaleY = 0.94;
         Visibility = Visibility.Visible;
+        Popups.Opened(this, this, Close, () => { });
         UpdateLayout();
         PageScroll.ScrollToTop();
         if (_host.UpdateAvailable) PageScroll.ScrollToBottom();
@@ -356,7 +498,9 @@ public partial class SettingsView : UserControl
     public bool Close()
     {
         if (!_open) return false;
+        if (ReportOverlay.Visibility == Visibility.Visible && !_reporting) { ReportOverlay.Visibility = Visibility.Collapsed; return true; }
         _open = false;
+        Popups.Closed(this);
         Animate(false, ++_tok);
         return true;
     }

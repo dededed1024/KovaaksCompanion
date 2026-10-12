@@ -5,7 +5,7 @@
         Visibility="Collapsed" Typography.NumeralAlignment="Tabular" SizeChanged="OnSized">
     <UserControl.Resources>
         <Style x:Key="SheetClose" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -15,15 +15,15 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Selected}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="PlayerButton" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -38,8 +38,8 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="#24FFFFFF"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Wash}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource WashPress}"/></Trigger>
                             <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -47,7 +47,7 @@
             </Setter>
         </Style>
         <Style x:Key="PlayerToggle" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="{StaticResource Dim}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Dim}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -62,10 +62,10 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Wash}"/></Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource Fg}"/>
-                                <Setter TargetName="Bd" Property="Background" Value="#330A84FF"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentSoft}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
                         </ControlTemplate.Triggers>
@@ -76,32 +76,56 @@
         <Style x:Key="Chip" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
             <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{StaticResource Card}"/></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource Card}"/></Trigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="SheetCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="14"/>
-            <Setter Property="Background" Value="#0DFFFFFF"/>
-            <Setter Property="BorderBrush" Value="#14FFFFFF"/>
+            <Setter Property="Background" Value="{DynamicResource Tint}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource EdgeFaint}"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
     </UserControl.Resources>
     <Grid>
-        <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="#F2232326"
-                BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+        <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
+        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,48,0,0" CornerRadius="18" Background="{DynamicResource Surface}"
+                BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
             <Border x:Name="Clipper" CornerRadius="17" SizeChanged="OnCardSized">
                 <Grid Margin="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" MinWidth="320"/>
-                        <ColumnDefinition x:Name="GapCol" Width="16"/>
-                        <ColumnDefinition x:Name="SideCol" Width="390"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="120"/>
+                        <RowDefinition x:Name="GapRow" Height="12"/>
+                        <RowDefinition x:Name="SideRow" Height="140"/>
+                    </Grid.RowDefinitions>
 
                     <!-- Stage: scenario overview, or one run (stats strip + video + chart + transport) -->
-                    <Grid Grid.Column="0">
+                    <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid x:Name="Header" Margin="2,0,0,12" SizeChanged="OnHeaderSized">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="Heading" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        <Button x:Name="PlayScn" Grid.Column="1" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
+                                ToolTip="{app:Loc 'Start in KovaaK\'s'}" Click="OnPlayScenario" Visibility="Collapsed"/>
+                        <StackPanel x:Name="HeaderTools" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="ScnStar" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
+                                    MinHeight="30" MinWidth="30" VerticalAlignment="Center" ToolTip="{app:Loc 'Add to favorites'}" Click="OnScenarioStar" Visibility="Collapsed"/>
+                            <Button x:Name="RunDelBtn" Content="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Delete play'}" Click="OnDeleteRun" MouseLeave="OnDelLeave"
+                                    MinHeight="30" MinWidth="30" Padding="10,0" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                            <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Show video file in Explorer'}" Click="OnShowVideo"
+                                    MinHeight="30" MinWidth="30" Padding="10,0" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Grid.Row="1">
                         <ScrollViewer x:Name="OverviewScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="OverviewHost"/>
                         </ScrollViewer>
@@ -115,31 +139,14 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <Border x:Name="RunStrip" Padding="0,0,0,0">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ItemsControl x:Name="RunTiles" Style="{StaticResource StatTiles}" VerticalAlignment="Center"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,8" VerticalAlignment="Center">
-                                        <Grid x:Name="PbBadge" Margin="0,0,12,0" Visibility="Collapsed" VerticalAlignment="Center">
-                                            <Border CornerRadius="9" Background="{StaticResource Green}" Opacity="0.18"/>
-                                            <TextBlock Text="PB" Foreground="{StaticResource Green}" FontSize="12" FontWeight="SemiBold" Margin="10,3"/>
-                                        </Grid>
-                                        <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" ToolTip="Show video file in Explorer" Click="OnShowVideo" MinHeight="34" MinWidth="34" Padding="0" Margin="0,0,8,0"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Grid x:Name="Stage" Grid.Row="1" Margin="0,12,0,0" SizeChanged="OnStageSized">
+                            <Grid x:Name="Stage" Grid.Row="1" Margin="0" SizeChanged="OnStageSized">
                                 <Border x:Name="Screen" CornerRadius="14" Background="Black" ClipToBounds="True" MouseLeftButtonDown="OnScreenDown">
                                     <Grid>
                                         <MediaElement x:Name="Media" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True"
                                                       Stretch="Uniform" MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded" MediaFailed="OnMediaFailed"/>
                                         <app:TrailOverlay x:Name="Overlay" IsHitTestVisible="False"/>
                                         <Border x:Name="PendingHost" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                        <TextBlock x:Name="Notice" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Dim}"
+                                        <TextBlock x:Name="Notice" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Dim}"
                                                    FontSize="15" TextWrapping="Wrap" TextAlignment="Center" Margin="24" Visibility="Collapsed"/>
                                     </Grid>
                                 </Border>
@@ -174,17 +181,20 @@
                                                     <Border Style="{StaticResource Chip}" Cursor="Hand" Padding="8,4" Margin="0,0,4,0" CornerRadius="8" Opacity="{Binding Opacity}" MouseLeftButtonUp="OnMetricClick">
                                                         <StackPanel Orientation="Horizontal">
                                                             <Ellipse Width="9" Height="9" Fill="{Binding Brush}" VerticalAlignment="Center"/>
-                                                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource Dim}" FontSize="12.5" Margin="8,0,8,0"/>
+                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Dim}" FontSize="12.5" Margin="8,0,8,0"/>
                                                             <TextBlock Text="{Binding Value}" FontWeight="SemiBold" FontSize="13" MinWidth="30"/>
                                                         </StackPanel>
                                                     </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <TextBlock x:Name="TimeText" Grid.Column="1" Foreground="{StaticResource Dim}" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,4" Margin="12,0,0,0" CornerRadius="8" Visibility="Collapsed"
+                                                    ToolTip="{app:Loc 'Overlay the previous local play'}" MouseLeftButtonUp="OnPrevClick">
+                                                <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev play'}" Foreground="{DynamicResource Dim}" FontSize="12.5"/>
+                                            </Border>                                        </StackPanel>
                                     </Grid>
                                     <app:RunChart x:Name="Chart" Grid.Row="1" Margin="0,6,0,0" Cursor="Hand" MouseLeftButtonDown="OnChartDown" MouseMove="OnChartMove" MouseLeftButtonUp="OnChartUp"/>
-                                    <TextBlock x:Name="RunNote" Grid.Row="2" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource Dim}" Visibility="Collapsed"/>
                                 </Grid>
                             </Border>
 
@@ -198,72 +208,49 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                    <ToggleButton x:Name="TrailBtn" Content="Trail" Style="{StaticResource PlayerToggle}" ToolTip="Show or hide the trail (T)" Click="OnTrailClick"/>
-                                    <StackPanel x:Name="NudgeBox" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0" ToolTip="Trail sync">
-                                        <Button x:Name="NudgeMinus" Content="&#x2212;" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail earlier 10 ms ([)" Click="OnNudgeMinus"/>
-                                        <TextBlock x:Name="NudgeText" Text="0 ms" FontSize="12.5" MinWidth="56" TextAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Dim}"
-                                                   Cursor="Hand" Background="Transparent" ToolTip="Trail sync (click to reset)" MouseLeftButtonUp="OnNudgeReset"/>
-                                        <Button x:Name="NudgePlus" Content="+" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="Trail later 10 ms (])" Click="OnNudgePlus"/>
+                                    <ToggleButton x:Name="TrailBtn" Content="{app:Loc 'Trail'}" Style="{StaticResource PlayerToggle}" ToolTip="{app:Loc 'Show or hide the trail (T)'}" Click="OnTrailClick"/>
+                                    <StackPanel x:Name="NudgeBox" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0" ToolTip="{app:Loc 'Trail sync'}">
+                                        <Button x:Name="NudgeMinus" Content="&#x2212;" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="{app:Loc 'Trail earlier 10 ms ([)'}" Click="OnNudgeMinus"/>
+                                        <TextBlock x:Name="NudgeText" Text="0 ms" FontSize="12.5" MinWidth="56" TextAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Dim}"
+                                                   Cursor="Hand" Background="Transparent" ToolTip="{app:Loc 'Trail sync (click to reset)'}" MouseLeftButtonUp="OnNudgeReset"/>
+                                        <Button x:Name="NudgePlus" Content="+" Style="{StaticResource PlayerButton}" Padding="8,0" Margin="0" ToolTip="{app:Loc 'Trail later 10 ms (])'}" Click="OnNudgePlus"/>
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="&#x2039; 1f" Style="{StaticResource PlayerButton}" Click="OnStepBack" ToolTip="Step back 1/60 s (←)"/>
-                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontSize="20" Width="40" Height="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Play / pause (Space)" Click="OnPlayPause"/>
-                                    <Button Content="1f &#x203A;" Style="{StaticResource PlayerButton}" Click="OnStepForward" ToolTip="Step forward 1/60 s (→)"/>
+                                    <Button Content="&#x2039; 1f" Style="{StaticResource PlayerButton}" Click="OnStepBack" ToolTip="{app:Loc 'Step back 1/60 s (←)'}"/>
+                                    <Button x:Name="PlayBtn" Content="&#xE768;" FontSize="20" Width="40" Height="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="{app:Loc 'Play / pause (Space)'}" Click="OnPlayPause"/>
+                                    <Button Content="1f &#x203A;" Style="{StaticResource PlayerButton}" Click="OnStepForward" ToolTip="{app:Loc 'Step forward 1/60 s (→)'}"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <TextBlock x:Name="TimeReadout" FontSize="13" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{StaticResource Dim}">
-                                        <Run x:Name="TimeNow" Foreground="{StaticResource Fg}" Text="0:00"/><Run Text=" / "/><Run x:Name="TimeTotal" Text="0:00"/>
+                                    <TextBlock x:Name="TimeReadout" FontSize="13" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="{DynamicResource Dim}">
+                                        <Run x:Name="TimeNow" Foreground="{DynamicResource Fg}" Text="0:00"/><Run Text=" / "/><Run x:Name="TimeTotal" Text="0:00"/>
                                     </TextBlock>
-                                    <Button x:Name="SpeedBtn" Content="1x" Style="{StaticResource PlayerButton}" MinWidth="48" ToolTip="Playback speed" Click="OnSpeedClick"/>
+                                    <Button x:Name="SpeedBtn" Content="1x" Style="{StaticResource PlayerButton}" MinWidth="48" ToolTip="{app:Loc 'Playback speed'}" Click="OnSpeedClick"/>
                                     <Popup x:Name="SpeedPop" PlacementTarget="{Binding ElementName=SpeedBtn}" Placement="Top" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-                                        <Border Margin="10,10,10,6" Padding="4" CornerRadius="10" Background="#FF2A2A2E" BorderBrush="#1FFFFFFF" BorderThickness="1">
+                                        <Border Margin="10,10,10,6" Padding="4" CornerRadius="10" Background="{DynamicResource Raised}" BorderBrush="{DynamicResource Edge}" BorderThickness="1">
                                             <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
                                             <StackPanel x:Name="SpeedMenu"/>
                                         </Border>
                                     </Popup>
-                                    <Button x:Name="FsBtn" Content="&#xE740;" FontSize="16" Width="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="Fullscreen (F)" Click="OnFsClick"/>
+                                    <Button x:Name="FsBtn" Content="&#xE740;" FontSize="16" Width="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="{app:Loc 'Fullscreen (F)'}" Click="OnFsClick"/>
                                 </StackPanel>
                             </Grid>
                         </Grid>
                     </Grid>
+                    </Grid>
 
-                    <!-- Sidebar: scenario, tiles, score per run, run list -->
-                    <Grid x:Name="Side" Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Grid Margin="2,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <DockPanel>
-                                <Button x:Name="PlayScn" DockPanel.Dock="Right" Content="Play" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
-                                        ToolTip="Start in KovaaK's" Click="OnPlayScenario" Visibility="Collapsed"/>
-                                <TextBlock x:Name="Heading" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                            </DockPanel>
-                        </Grid>
-                        <ItemsControl x:Name="SideTiles" Grid.Row="1" Style="{StaticResource StatTiles}" Margin="0,0,0,4"/>
-                        <Border x:Name="SideChartCard" Grid.Row="2" Style="{StaticResource SheetCard}" Padding="14,10,14,8">
-                            <StackPanel>
-                                <TextBlock Text="Score per run" Style="{StaticResource Caption}" FontSize="12" Margin="2,0,0,4"/>
-                                <app:ScoreChart x:Name="SideChart" Height="130"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Row="3" Margin="0,12,0,0" Style="{StaticResource SheetCard}" Background="#0AFFFFFF" ClipToBounds="True">
+                    <!-- Sidebar: run list -->
+                    <Grid x:Name="Side" Grid.Row="2">
+                        <Border Style="{StaticResource SheetCard}" Background="{DynamicResource Tint}" ClipToBounds="True">
                             <Grid>
                                 <ScrollViewer x:Name="RunsScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <StackPanel Margin="6,6,6,6">
                                         <StackPanel x:Name="RunsHost"/>
                                         <Button x:Name="MoreBtn" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,0,0,2" Padding="8,0,8,0" MinHeight="26" Background="Transparent"
-                                                Foreground="{StaticResource Accent}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Click="OnMore"/>
+                                                Foreground="{DynamicResource Accent}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Click="OnMore"/>
                                     </StackPanel>
                                 </ScrollViewer>
-                                <TextBlock x:Name="NoRuns" Text="No local runs yet" Foreground="{StaticResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="NoRuns" Text="{app:Loc 'No local plays yet'}" Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                             </Grid>
                         </Border>
                     </Grid>

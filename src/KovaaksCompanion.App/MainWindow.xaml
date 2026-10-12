@@ -1,7 +1,8 @@
 <Window x:Class="KovaaksCompanion.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Icon="pack://application:,,,/Assets/app.ico" Title="KovaaK's Companion" WindowStyle="None" Width="1440" Height="820" MinWidth="960" MinHeight="540" Background="{StaticResource Bg}">
+        xmlns:app="clr-namespace:KovaaksCompanion.App"
+        Icon="pack://application:,,,/Assets/app.ico" Title="KovaaK's Companion" WindowStyle="None" Width="1440" Height="820" MinWidth="960" MinHeight="540" Background="{DynamicResource Bg}">
     <Window.Resources>
         <!-- Caption button: flat 46x48 glyph, hover wash; Close hovers red -->
         <Style x:Key="CaptionButton" TargetType="Button">
@@ -13,7 +14,7 @@
             <Setter Property="MinHeight" Value="0"/>
             <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
             <Setter Property="FontSize" Value="10"/>
-            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
             <Setter Property="Template">
@@ -24,15 +25,15 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Selected}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="NavButton" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
@@ -43,8 +44,8 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Selected}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -82,18 +83,19 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button x:Name="ProfileBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,4,0" ToolTip="Profile" Click="OnProfile">
-                    <TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
+                <Button x:Name="SearchBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,4,0" ToolTip="{app:Loc 'Search'}" Click="OnSearch">
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
-                <Button x:Name="GearBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" ToolTip="Settings" Click="OnGear">
+                <Button x:Name="GearBtn" Style="{StaticResource NavButton}" Width="34" Height="34" Margin="0,0,8,0" ToolTip="{app:Loc 'Settings'}" Click="OnGear">
                     <TextBlock x:Name="GearGlyph" Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"
                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
             </StackPanel>
             <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top">
-                <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize"/>
-                <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize"/>
-                <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="Close"/>
+                <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="{app:Loc 'Minimize'}"/>
+                <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="OnMaximize" ToolTip="{app:Loc 'Maximize'}"/>
+                <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="{app:Loc 'Close'}"/>
             </StackPanel>
         </Grid>
     </Grid>

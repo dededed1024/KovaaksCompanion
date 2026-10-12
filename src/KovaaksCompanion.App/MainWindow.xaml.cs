@@ -1,6 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Shell;
+using KovaaksCompanion.Core;
 
 namespace KovaaksCompanion.App;
 
@@ -15,7 +18,9 @@ public partial class MainWindow : Window
     public MainWindow(AppHost host)
     {
         InitializeComponent();
+        Popups.Reset();
         Backdrop.Apply(this);
+        ApplyScale(host.Settings.UiScale);
         _stats = new StatsView(host);
         _replay = new ReplayView(host);
         _settings = new SettingsView(host);
@@ -23,11 +28,21 @@ public partial class MainWindow : Window
         Root.Children.Add(_replay); // above the pages, below the title bar (ZIndex 1), so the caption buttons keep working
         Root.Children.Add(_settings);
         Root.Children.Add(_update);
+        Popups.AddBase(SearchBtn, GearBtn);
         PreviewKeyDown += OnNavKey;
         PreviewMouseDown += (_, e) => { if (e.ChangedButton == MouseButton.XButton1) { e.Handled = true; GoBack(); } };
         Closed += (_, _) => { _stats.Detach(); _replay.Detach(); _settings.Detach(); };
         StateChanged += (_, _) => SyncCaption();
         if (host.UpdateAvailable) MarkUpdate();
+    }
+
+    /// <summary>Scales the whole window content to <paramref name="percent"/> of the design size.</summary>
+    public void ApplyScale(int percent)
+    {
+        var s = Math.Clamp(percent, AppSettings.MinUiScale, AppSettings.MaxUiScale) / 100.0;
+        Root.LayoutTransform = new ScaleTransform(s, s);
+        MinWidth = 960 * s; MinHeight = 540 * s;
+        WindowChrome.GetWindowChrome(this).CaptionHeight = 48 * s;
     }
 
     // A chrome window overshoots the screen by the resize border when maximized; pad it back in.
@@ -36,7 +51,7 @@ public partial class MainWindow : Window
         var max = WindowState == WindowState.Maximized;
         Root.Margin = max ? SystemParameters.WindowResizeBorderThickness : new Thickness(0);
         MaxButton.Content = max ? "" : "";
-        MaxButton.ToolTip = max ? "Restore" : "Maximize";
+        MaxButton.ToolTip = max ? L.T("Restore") : L.T("Maximize");
     }
 
     void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
@@ -45,35 +60,25 @@ public partial class MainWindow : Window
 
     void OnNavKey(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && !_update.IsOpen) { e.Handled = true; OnSearch(null!, null!); return; }
-        if (!_settings.IsOpen && _replay.HandleKey(e)) return;
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; if (!Popups.Any) OnSearch(null!, null!); return; }
+        if (!_settings.IsOpen && !_update.IsOpen && _replay.HandleKey(e)) return;
         var back = (e.Key == Key.Escape && Keyboard.FocusedElement is not TextBox) || (e.Key == Key.System && e.SystemKey == Key.Left && Keyboard.Modifiers.HasFlag(ModifierKeys.Alt));
         if (back) e.Handled = GoBack();
     }
 
     /// <summary>Closes the topmost popup or overlay; false when nothing was open.</summary>
-    bool GoBack() => _update.Close() || _settings.Close() || _stats.CloseOverlay() || _replay.Close();
+    bool GoBack() => Popups.CloseTop();
 
     void OnSearch(object sender, RoutedEventArgs e)
     {
         _settings.Close();
         _replay.Close();
-        _stats.CloseProfile();
         _stats.OpenSearch();
-    }
-
-    void OnProfile(object sender, RoutedEventArgs e)
-    {
-        _stats.CloseSearch();
-        _settings.Close();
-        _replay.Close();
-        _stats.OpenProfile();
     }
 
     void OnGear(object sender, RoutedEventArgs e)
     {
         _stats.CloseSearch();
-        _stats.CloseProfile();
         _replay.Close();
         _settings.Open();
     }

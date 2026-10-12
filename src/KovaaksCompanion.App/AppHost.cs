@@ -4,9 +4,11 @@ using System.Windows;
 using KovaaksCompanion.Core;
 using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Input;
+using KovaaksCompanion.Core.Library;
 using KovaaksCompanion.Core.Session;
 using KovaaksCompanion.Core.Update;
 using KovaaksCompanion.Core.Video;
+using KovaaksCompanion.Core.Video.Obs;
 using WinForms = System.Windows.Forms;
 
 namespace KovaaksCompanion.App;
@@ -31,9 +33,25 @@ public sealed class AppHost : IDisposable
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     sealed class Pending(string scenario, DateTime end) { public string Scenario = scenario; public DateTime End = end; public double Progress; }
     readonly List<Pending> _pending = [];
+    /// <summary>Id of the open live session (the game process start ticks); null while the game is not running.</summary>
+    volatile Tuple<long>? _liveBox;
+    long? _liveId { get => _liveBox?.Item1; set => _liveBox = value is { } v ? Tuple.Create(v) : null; }
 
-    public AppHost(Application app) { _app = app; _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile); }
+    public AppHost(Application app)
+    {
+        _app = app;
+        var loaded = _settings;
+        _settings = loaded.WithDetectedPaths(); // the default data root depends on where KovaaK's is
+        _settingsDirty = _settings != loaded;
+        KovaaksCompanion.Core.Benchmarks.CacheMigration.Run(_settings);
+        _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile);
+        L.Set(_settings.Language);
+        Theme.Apply(_settings.Theme);
+        PlaySession.LiveIds = LiveRunLog.Load(_settings.LiveRunFile);
+        ErrorReporter.Configure(Http, App.CurrentVersion.ToString(3), () => _settings.SendErrorReports);
+    }
     readonly string _uiFile;
+    readonly bool _settingsDirty;
 
     public AppSettings Settings => _settings;
     /// <summary>True while the game window is being recorded.</summary>
@@ -64,41 +82,109 @@ public sealed class AppHost : IDisposable
     /// <summary>Raised on a thread-pool thread when <see cref="GameActive"/> may have changed.</summary>
     public event Action? GameStateChanged;
 
-    /// <summary>The embedded (extracted + verified) ffmpeg, else detection. Null when none.</summary>
-    public static string? ResolveFfmpeg() => ResolveFfmpeg(out _);
-
-    static string? ResolveFfmpeg(out string source)
+    /// <summary>The embedded libobs runtime, unpacked and complete. Null when it cannot be extracted.</summary>
+    public static string? ResolveLibobs()
     {
-        var bundled = FfmpegBundle.Ensure(() => typeof(AppHost).Assembly.GetManifestResourceStream("ffmpeg.exe"));
-        if (bundled != null) { source = "embedded"; return bundled; }
-        AppLog.Write("ffmpeg", "embedded ffmpeg unavailable, trying PathDetector");
-        var found = PathDetector.FindFfmpeg();
-        source = found != null ? "PathDetector" : "none";
-        return found;
+        var root = ObsBundle.Ensure(() => typeof(AppHost).Assembly.GetManifestResourceStream("libobs.zip"));
+        AppLog.Write("obs", $"resolved: {root ?? "(none)"}");
+        return root;
+    }
+
+    /// <summary>Starts libobs (idempotent) so its device lists work; false when it is unavailable.</summary>
+    public static bool EnsureObs()
+    {
+        if (ObsRuntime.IsStarted) return true;
+        var root = ResolveLibobs();
+        return root != null && ObsRuntime.Start(root);
+    }
+
+    readonly object _bestGate = new();
+    Dictionary<string, double>? _best;
+
+    /// <summary>True when the run beats every earlier run of its scenario in the stats folder (same rule as the PB badge). The stats folder is scanned once; later runs update the map.</summary>
+    bool IsPersonalBest(KovaaksCompanion.Core.Stats.RunStats run)
+    {
+        lock (_bestGate)
+        {
+            _best ??= KovaaksCompanion.Core.Library.RunLibrary.Scan(_settings.StatsFolder).AllRuns
+                .Where(r => r.Start < run.Start)
+                .GroupBy(r => r.Scenario, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Max(r => r.Score), StringComparer.OrdinalIgnoreCase);
+            var pb = !_best.TryGetValue(run.Scenario, out var best) || run.Score > best;
+            if (pb) _best[run.Scenario] = run.Score;
+            return pb;
+        }
     }
 
     void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
+
+    readonly object _cleanGate = new();
+
+    /// <summary>
+    /// Deletes session folders per the storage settings (beaten runs, then the oldest while over the size limit), never favorite runs, and keeps their scores in the cache.
+    /// Returns true when something was deleted; <paramref name="notify"/> then also raises <see cref="RunFinished"/> so the views reload.
+    /// </summary>
+    bool Cleanup(bool notify)
+    {
+        try
+        {
+            lock (_cleanGate)
+            {
+                var s = _settings;
+                if (!s.DeleteBeatenRuns && s.StorageLimitGb <= 0) return false;
+                var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet());
+                var cache = new KovaaksCompanion.Core.Benchmarks.StatsCache(s.CacheFolder);
+                var all = StorageCleaner.Scan(s.SessionsFolder);
+                var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, cache.DeletedScores()).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
+                bool Keep(SessionInfo i) => favs.Contains(UiState.RunKey(i.Scenario, i.End)) || pbs.Contains(UiState.RunKey(i.Scenario, i.End));
+                var victims = s.DeleteBeatenRuns ? StorageCleaner.Superseded(all, Keep) : [];
+                victims.AddRange(StorageCleaner.OverLimit(all.Except(victims).ToList(), StorageCleaner.LimitBytes(s.StorageLimitGb), Keep));
+                var n = StorageCleaner.Delete(victims, cache);
+                if (n > 0) AppLog.Write("storage", $"deleted {n} session folder(s)");
+                if (n > 0 && notify) RunFinished?.Invoke();
+                return n > 0;
+            }
+        }
+        catch (Exception e) { AppLog.Write("storage", "cleanup failed: " + e.Message); return false; }
+    }
+
+    /// <summary>Deletes the run's session folder for good, keeps its score in the cache like a server score and hides it from the lists.</summary>
+    public async void DeleteRun(string scenario, DateTime end, double score)
+    {
+        var s = _settings;
+        try
+        {
+            await Task.Run(() =>
+            {
+                SessionStore.Delete(s.SessionsFolder, scenario, end);
+                new KovaaksCompanion.Core.Benchmarks.StatsCache(s.CacheFolder).HideRun(scenario, end, score);
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
+        RunFinished?.Invoke();
+    }
 
     public void Start(bool showMain)
     {
         AppLog.Write("app", $"start: version {typeof(AppHost).Assembly.GetName().Version}, OS {System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({Environment.OSVersion.Version}), 64-bit={Environment.Is64BitProcess}");
         var detected = _settings.WithDetectedPaths();
-        if (detected != _settings)
+        if (detected != _settings || _settingsDirty)
         {
             _settings = detected;
             try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
+        BufferCleaner.Clean(_settings.BufferFolder); // leftovers of a crash; nothing records yet
         _anchor = ClockAnchor.Now();
         _buffer = new MouseRingBuffer(new VideoOptions().BufferMinutes * 60.0, _anchor.Frequency, _anchor.Qpc);
         StartCapture();
 
-        var ffmpeg = ResolveFfmpeg(out var ffmpegSource);
-        AppLog.Write("ffmpeg", $"resolved: {ffmpeg ?? "(none)"} source={ffmpegSource}");
-        if (ffmpeg != null) StartVideo(ffmpeg);
-        else SetError("ffmpeg missing (video disabled)");
+        var libobs = ResolveLibobs();
+        if (libobs != null) StartVideo(libobs);
+        else SetError("libobs missing (video disabled)");
 
         _saver = new SessionSaver(_settings.SessionsFolder, _buffer, ClockAnchor.Now,
-            (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null));
+            (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null),
+            IsPersonalBest);
         _saver.Error += SetError;
         _saver.Saved += (info, folder) =>
         {
@@ -107,6 +193,7 @@ public sealed class AppHost : IDisposable
                 _pending.RemoveAll(p => p.Scenario.Equals(info.Scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((p.End - info.End).TotalSeconds) < SessionStore.RunMatchTolerance.TotalSeconds);
             }
             AppLog.Write("session", $"saved {folder}");
+            Cleanup(notify: false); // before the views reload, so they never list a run that is about to go
             SessionSaved?.Invoke(info, folder);
         };
 
@@ -114,6 +201,7 @@ public sealed class AppHost : IDisposable
         _watcher.RunFinished += (run, csv) =>
         {
             AppLog.Write("session", $"run finished: {csv}");
+            if (_liveId is { } liveId) PlaySession.LiveIds = LiveRunLog.Add(_settings.LiveRunFile, run.Scenario, run.End, liveId);
             var item = new Pending(run.Scenario, run.End);
             lock (_pending) { _pending.Add(item); }
             RunFinished?.Invoke(); // the run shows now, with a progress ring until the clip is saved
@@ -132,6 +220,7 @@ public sealed class AppHost : IDisposable
 
         BuildTray();
         Autostart.Refresh(_settings.StartWithWindows);
+        _ = Task.Run(() => Cleanup(notify: true));
         if (showMain) ShowMain("Stats");
         _ = CheckForUpdate();
     }
@@ -164,15 +253,17 @@ public sealed class AppHost : IDisposable
     }
 
 
-    void StartVideo(string ffmpegPath)
+    void StartVideo(string obsRoot)
     {
         if (_video != null) return;
         _video = new VideoCaptureService(new VideoOptions
         {
-            FfmpegPath = ffmpegPath, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(), MaxHeight = _settings.VideoQuality.MaxHeight(),
+            ObsRoot = obsRoot, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(), MaxHeight = _settings.VideoQuality.MaxHeight(),
             Fps = _settings.VideoFps,
         }, () => HandCamConfig.From(_settings));
         _video.Error += m => SetError("video: " + m);
+        _video.GameLaunched += t => _liveId = t.Ticks;
+        _video.GameExited += () => _liveId = null;
         _video.StateChanged += () => GameStateChanged?.Invoke();
         try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }
     }
@@ -186,8 +277,8 @@ public sealed class AppHost : IDisposable
     void BuildTray()
     {
         var menu = new WinForms.ContextMenuStrip { Renderer = new DarkMenuRenderer(), ShowImageMargin = false, Font = new System.Drawing.Font("Malgun Gothic", 10f) };
-        menu.Items.Add("Open", null, (_, _) => ShowMain());
-        menu.Items.Add("Exit", null, (_, _) => _app.Dispatcher.Invoke(_app.Shutdown));
+        menu.Items.Add(L.T("Open"), null, (_, _) => ShowMain());
+        menu.Items.Add(L.T("Exit"), null, (_, _) => _app.Dispatcher.Invoke(_app.Shutdown));
 
         _tray = new WinForms.NotifyIcon
         {
@@ -197,18 +288,44 @@ public sealed class AppHost : IDisposable
         if (_lastError.Length > 0) _tray.ShowBalloonTip(5000, "KovaaK's Companion", _lastError, WinForms.ToolTipIcon.Warning);
     }
 
+    void RebuildTray()
+    {
+        if (_tray?.ContextMenuStrip is not { } m || m.Items.Count < 2) return;
+        m.Items[0].Text = L.T("Open"); m.Items[1].Text = L.T("Exit");
+    }
+
     public void ShowMain(string? page = null) => _app.Dispatcher.Invoke(() =>
     {
         if (_main == null)
         {
-            _main = new MainWindow(this);
-            _main.Closed += (_, _) => _main = null;
-            _main.Show();
+            OpenMain();
         }
         else { if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal; _main.Activate(); }
         if (page != null) _main.ShowPage(page);
         OfferUpdate();
     });
+
+    void OpenMain(Rect? bounds = null, WindowState state = WindowState.Normal)
+    {
+        var w = _main = new MainWindow(this);
+        w.Closed += (_, _) => { if (_main == w) _main = null; };
+        if (bounds is { } b) { w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = b.Left; w.Top = b.Top; w.Width = b.Width; w.Height = b.Height; }
+        if (state == WindowState.Maximized) w.WindowState = state;
+        w.Show();
+    }
+
+    /// <summary>Replaces the main window with a fresh one at the same place, so every view is built with the new language, theme and accent.</summary>
+    void RebuildMain()
+    {
+        var old = _main;
+        if (old == null) return;
+        var bounds = old.WindowState == WindowState.Normal ? new Rect(old.Left, old.Top, old.Width, old.Height) : old.RestoreBounds;
+        var state = old.WindowState == WindowState.Maximized ? WindowState.Maximized : WindowState.Normal;
+        OpenMain(bounds, state);
+        old.Close();
+        _main!.ShowPage("Settings");
+        RebuildTray();
+    }
 
     /// <summary>Opens the replay popup (scenario overview) over the main window; <paramref name="origin"/> is the clicked point in window coordinates.</summary>
     public void ShowScenario(string scenario, Point? origin) => _app.Dispatcher.Invoke(() =>
@@ -239,8 +356,18 @@ public sealed class AppHost : IDisposable
 
     public void ApplySettings(AppSettings s)
     {
+        var old = _settings;
         _settings = s;
         _settings.Save();
+        if (s.Language != old.Language || s.Theme != old.Theme)
+        {
+            L.Set(s.Language);
+            Theme.Apply(s.Theme);
+            _app.Dispatcher.BeginInvoke(RebuildMain);
+        }
+        else if (s.UiScale != old.UiScale) _app.Dispatcher.Invoke(() => _main?.ApplyScale(s.UiScale));
+        if (s.StorageLimitGb != old.StorageLimitGb || s.DeleteBeatenRuns != old.DeleteBeatenRuns || s.KeepPersonalBests != old.KeepPersonalBests)
+            _ = Task.Run(() => Cleanup(notify: true));
     }
 
     public void Dispose()
@@ -249,7 +376,8 @@ public sealed class AppHost : IDisposable
         _trayIcon?.Dispose();
         _watcher?.Dispose();
         _capture?.Dispose();
-        _video?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(8));
+        var stopped = _video?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(8)) ?? true;
+        if (stopped) BufferCleaner.Clean(_settings.BufferFolder); // libobs is shut down, so its chunks are junk
     }
 }
 

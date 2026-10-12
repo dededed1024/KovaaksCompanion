@@ -32,6 +32,7 @@ public partial class UpdateView : UserControl
         Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         Scale.ScaleX = Scale.ScaleY = 0.94;
         Visibility = Visibility.Visible;
+        Popups.Opened(this, this, Close, () => { });
         UpdateLayout();
         Animate(true, tok);
     }
@@ -41,6 +42,7 @@ public partial class UpdateView : UserControl
     {
         if (!_open) return false;
         _open = false;
+        Popups.Closed(this);
         Animate(false, ++_tok);
         return true;
     }
