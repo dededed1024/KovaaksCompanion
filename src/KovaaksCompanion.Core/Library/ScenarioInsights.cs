@@ -9,6 +9,9 @@ public sealed record ScoreBin(double From, double To, int Count);
 /// <summary>Average score of the local runs started in an hour block of the day (<see cref="Hour"/> is the first hour).</summary>
 public sealed record DayBlock(int Hour, int Runs, double Average);
 
+/// <summary>Local runs played at one sensitivity (cm per 360, the mean of the grouped runs): their count, average and best score.</summary>
+public sealed record SensGroup(double Cm360, int Runs, double Average, double Best);
+
 /// <summary>Average score of the n-th play of the scenario within a session (the last row is "n or later").</summary>
 public sealed record SessionSlot(int Position, bool OrLater, int Plays, double Average);
 
@@ -69,6 +72,14 @@ public static class ScenarioInsights
             .Select(g => new DayBlock(g.Key, g.Count(), g.Average(r => r.Score)))
             .ToList();
     }
+
+    /// <summary>Local runs grouped by the sensitivity they were played at (runs within half a cm/360 below 20 cm, one cm above, count as the same), lowest sens first. Runs without a known sens are left out.</summary>
+    public static List<SensGroup> BySensitivity(IReadOnlyList<RunRecord> runs) =>
+        runs.Where(r => r.Cm360 is > 0)
+            .GroupBy(r => { var w = r.Cm360!.Value < 20 ? 0.5 : 1.0; return Math.Round(r.Cm360.Value / w) * w; })
+            .OrderBy(g => g.Key)
+            .Select(g => new SensGroup(g.Average(r => r.Cm360!.Value), g.Count(), g.Average(r => r.Score), g.Max(r => r.Score)))
+            .ToList();
 
     /// <summary>
     /// Average score of the first, second and later plays of the scenario within a play session. Sessions come from

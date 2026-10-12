@@ -28,6 +28,9 @@ public sealed class ScoreBook
         return book;
     }
 
+    /// <summary>Every scenario with a local run or a server score.</summary>
+    public IEnumerable<string> AllScenarios => Lib.Scenarios.Concat(_cloud.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+
     public ScenarioStats For(string scenario)
     {
         if (_stats.TryGetValue(scenario, out var s)) return s;

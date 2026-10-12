@@ -34,6 +34,14 @@ public sealed class RunLibrary
     public RunLibrary Without(IReadOnlySet<(string Scenario, DateTime End)> hidden) =>
         hidden.Count == 0 ? this : new(AllRuns.Where(r => !hidden.Contains((r.Scenario.ToLowerInvariant(), r.End))));
 
+    /// <summary>Adds the archived statistics of deleted runs whose stats CSV is gone (matched by scenario and end time).</summary>
+    public RunLibrary WithArchived(IReadOnlyCollection<RunRecord> archived)
+    {
+        if (archived.Count == 0) return this;
+        var have = AllRuns.Select(r => (r.Scenario.ToLowerInvariant(), r.End)).ToHashSet();
+        return new(AllRuns.Concat(archived.Where(r => !have.Contains((r.Scenario.ToLowerInvariant(), r.End)))));
+    }
+
     /// <summary>Summary of the run's .perf, or null when it is missing or unreadable (older runs may have none).</summary>
     static PerfSummary? ReadPerf(string statsCsv)
     {

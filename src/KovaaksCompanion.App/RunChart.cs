@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 
@@ -6,35 +6,35 @@ namespace KovaaksCompanion.App;
 
 /// <summary>Running totals at one moment, placed on the video time axis. Every value but <see cref="Accuracy"/> is NaN when unknown.</summary>
 public readonly record struct ChartPoint(double VideoSec, double Accuracy, double Score = double.NaN, double Kills = double.NaN,
-    double Shots = double.NaN, double Hits = double.NaN, double DamageEff = double.NaN)
+    double Shots = double.NaN, double Hits = double.NaN, double MouseSpeed = double.NaN)
 {
     public double this[ChartSeries s] => s switch
     {
         ChartSeries.Accuracy => Accuracy, ChartSeries.Score => Score, ChartSeries.Kills => Kills,
-        ChartSeries.Shots => Shots, ChartSeries.Hits => Hits, _ => DamageEff,
+        ChartSeries.Shots => Shots, ChartSeries.Hits => Hits, _ => MouseSpeed,
     };
 }
 
-public enum ChartSeries { Accuracy, Score, Kills, Shots, Hits, DamageEff }
+public enum ChartSeries { Accuracy, Score, Kills, Shots, Hits, MouseSpeed }
 
 public static class ChartSeriesInfo
 {
     public static readonly ChartSeries[] All = Enum.GetValues<ChartSeries>();
 
-    public static string Name(ChartSeries s) => s switch { ChartSeries.DamageEff => L.T("Damage eff."), _ => L.T(s.ToString()) };
+    public static string Name(ChartSeries s) => s switch { ChartSeries.MouseSpeed => L.T("Mouse speed"), _ => L.T(s.ToString()) };
 
     public static string BrushKey(ChartSeries s) => s switch
     {
         ChartSeries.Accuracy => "Accent", ChartSeries.Score => "Green", ChartSeries.Kills => "Orange",
-        ChartSeries.Shots => "Purple", ChartSeries.Hits => "Teal", _ => "Red",
+        ChartSeries.Shots => "Purple", ChartSeries.Hits => "Teal", _ => "Yellow",
     };
 
     public static Brush Brush(ChartSeries s) => (Brush)Application.Current.FindResource(BrushKey(s));
 
     /// <summary>Percent series share the left axis; count series each scale from 0 to their own maximum.</summary>
-    public static bool IsPercent(ChartSeries s) => s is ChartSeries.Accuracy or ChartSeries.DamageEff;
+    public static bool IsPercent(ChartSeries s) => s == ChartSeries.Accuracy;
 
-    public static string Format(ChartSeries s, double v) => double.IsNaN(v) ? "–" : IsPercent(s) ? $"{v:P0}" : $"{v:0}";
+    public static string Format(ChartSeries s, double v) => double.IsNaN(v) ? "–" : IsPercent(s) ? $"{v:P0}" : s == ChartSeries.MouseSpeed ? $"{v:0}°/s" : $"{v:0}";
 }
 
 /// <summary>

@@ -58,6 +58,15 @@ public static class SensConversion
         ("rainbow", 0.018 / Pi), ("r6", 0.018 / Pi),
     ];
 
+    /// <summary>Mouse travel for a full horizontal turn, in cm. False when the sens scale is unknown or the DPI is missing.</summary>
+    public static bool TryGetCmPer360(InputSettings s, out double cm)
+    {
+        cm = 0;
+        if (s.Dpi <= 0 || !TryGetDegreesPerCount(s, out var yaw, out _)) return false;
+        cm = 360.0 / yaw / s.Dpi * 2.54;
+        return double.IsFinite(cm) && cm > 0;
+    }
+
     /// <summary>False for an unknown scale or missing data: keep raw counts, degrees are unavailable.</summary>
     public static bool TryGetDegreesPerCount(InputSettings s, out double yawPerCount, out double pitchPerCount)
     {
