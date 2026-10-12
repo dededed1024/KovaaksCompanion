@@ -21,7 +21,7 @@ public static class ChartSeriesInfo
 {
     public static readonly ChartSeries[] All = Enum.GetValues<ChartSeries>();
 
-    public static string Name(ChartSeries s) => s switch { ChartSeries.DamageEff => "Damage eff.", _ => s.ToString() };
+    public static string Name(ChartSeries s) => s switch { ChartSeries.DamageEff => L.T("Damage eff."), _ => L.T(s.ToString()) };
 
     public static string BrushKey(ChartSeries s) => s switch
     {
@@ -48,9 +48,17 @@ public sealed class RunChart : FrameworkElement
     IReadOnlyList<ChartPoint> _points = [];
     IReadOnlyList<double> _kills = [];
     readonly HashSet<ChartSeries> _visible = [];
+    IReadOnlyList<ChartPoint> _ghost = [];
     double _duration, _playhead;
 
     public bool Has(ChartSeries s) => _points.Any(p => !double.IsNaN(p[s]));
+
+    /// <summary>Another run's points on the same time axis, drawn dashed behind the run; empty clears it.</summary>
+    public void SetGhost(IReadOnlyList<ChartPoint> points)
+    {
+        _ghost = points;
+        InvalidateVisual();
+    }
 
     public void Set(IReadOnlyList<ChartPoint> points, double duration, IReadOnlyList<double>? killVideoSecs = null)
     {
@@ -94,11 +102,13 @@ public sealed class RunChart : FrameworkElement
         var shown = ChartSeriesInfo.All.Where(Shown).ToList();
 
         // Left axis: fitted to the percent series that are shown.
-        var pct = shown.Where(ChartSeriesInfo.IsPercent).SelectMany(s => _points.Select(p => p[s]).Where(v => !double.IsNaN(v))).ToList();
+        var ghost = _ghost.Where(p => p.VideoSec <= _duration).ToList();
+        var all = _points.Concat(ghost).ToList(); // both runs share the scale so they compare directly
+        var pct = shown.Where(ChartSeriesInfo.IsPercent).SelectMany(s => all.Select(p => p[s]).Where(v => !double.IsNaN(v))).ToList();
         var (lo, hi) = PercentRange(pct);
 
         // Count series: 0 to a round maximum each.
-        var max = shown.Where(s => !ChartSeriesInfo.IsPercent(s)).ToDictionary(s => s, s => NiceCeil(_points.Select(p => p[s]).Where(v => !double.IsNaN(v)).DefaultIfEmpty(0).Max()));
+        var max = shown.Where(s => !ChartSeriesInfo.IsPercent(s)).ToDictionary(s => s, s => NiceCeil(all.Select(p => p[s]).Where(v => !double.IsNaN(v)).DefaultIfEmpty(0).Max()));
 
         double X(double sec) => Math.Clamp(sec / _duration, 0, 1) * w;
         double Y(double frac) => h - 4 - Math.Clamp(frac, 0, 1) * (h - 8);
@@ -113,6 +123,15 @@ public sealed class RunChart : FrameworkElement
         {
             var kx = X(k);
             dc.DrawRoundedRectangle(red, null, new Rect(kx - 1, h - 6, 2, 6), 1, 1);
+        }
+
+        foreach (var s in shown.OrderByDescending(s => s))
+        {
+            var brush = ChartSeriesInfo.Brush(s);
+            var ghostBrush = brush.CloneCurrentValue();
+            ghostBrush.Opacity = 0.5;
+            var pen = new Pen(ghostBrush, 1.5) { LineJoin = PenLineJoin.Round, DashStyle = new DashStyle([3, 3], 0) };
+            Line(dc, ghost.Where(p => !double.IsNaN(p[s])).Select(p => new Point(X(p.VideoSec), YOf(s, p[s]))), pen);
         }
 
         // Accuracy last so it sits on top, as before.
@@ -131,9 +150,16 @@ public sealed class RunChart : FrameworkElement
         if (pct.Count > 0)
             foreach (var f in new[] { 0.0, 0.5, 1.0 })
                 Label(dc, $"{(lo + (hi - lo) * f) * 100:0}%", 4, Y(f), f, dim, left: true);
-        if (max.Count > 0 && max.First() is var (cs, cmax) && cmax > 0)
+        // Each count series gets its own column, filling in from the right edge.
+        var rx = w - 4;
+        foreach (var (cs, cmax) in max)
+        {
+            if (cmax <= 0) continue;
+            var colW = 0.0;
             foreach (var f in new[] { 0.0, 0.5, 1.0 })
-                Label(dc, Compact(cmax * f), w - 4, Y(f), f, ChartSeriesInfo.Brush(cs), left: false);
+                colW = Math.Max(colW, Label(dc, Compact(cmax * f), rx, Y(f), f, ChartSeriesInfo.Brush(cs), left: false));
+            rx -= colW + 8;
+        }
     }
 
     /// <summary>Percent axis bounds in 5 % steps around the data, at least 20 points tall and never past 0..100 %.</summary>
@@ -173,10 +199,11 @@ public sealed class RunChart : FrameworkElement
     }
 
     /// <summary>Axis label at <paramref name="y"/>, nudged inward at the top and bottom gridlines so it stays inside the plot.</summary>
-    static void Label(DrawingContext dc, string text, double x, double y, double frac, Brush brush, bool left)
+    static double Label(DrawingContext dc, string text, double x, double y, double frac, Brush brush, bool left)
     {
         var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, brush, 1.0);
         var ty = frac >= 1 ? y + 1 : frac <= 0 ? y - ft.Height - 1 : y - ft.Height / 2;
         dc.DrawText(ft, new Point(left ? x : x - ft.Width, ty));
+        return ft.Width;
     }
 }

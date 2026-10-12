@@ -61,20 +61,27 @@ public static class ChartPaths
         return g;
     }
 
-    static double Lum(Color c)
+    public static double Lum(Color c)
     {
         static double L(byte v) { var x = v / 255.0; return x <= 0.03928 ? x / 12.92 : Math.Pow((x + 0.055) / 1.055, 2.4); }
         return 0.2126 * L(c.R) + 0.7152 * L(c.G) + 0.0722 * L(c.B);
     }
 
-    /// <summary>A brush safe to use for text: the colour blended towards white until its relative luminance is about 0.35 (hue kept). Fills and bars keep the raw brush.</summary>
-    public static Brush TextTone(Brush b)
+    /// <summary>A brush safe to use for text on the current theme: on the light theme the colour is blended towards black until its relative luminance is at most about 0.17, otherwise towards white until it is at least about 0.35 (hue kept). Fills and bars keep the raw brush.</summary>
+    public static Brush TextTone(Brush b) => Theme.IsLight ? TextToneOn(b, light: true) : TextToneOn(b, light: false);
+
+    /// <summary>Like <see cref="TextTone"/> for text on a dark surface whatever the theme (the profile card).</summary>
+    public static Brush TextToneOnDark(Brush b) => TextToneOn(b, light: false);
+
+    static Brush TextToneOn(Brush b, bool light)
     {
-        if (b is not SolidColorBrush s || Lum(s.Color) >= 0.35) return b;
+        if (b is not SolidColorBrush s) return b;
         var c = s.Color;
+        if (light ? Lum(c) <= 0.17 : Lum(c) >= 0.35) return b;
+        var target = light ? 0 : 255;
+        Color Mix(double k) => Color.FromRgb((byte)(c.R + (target - c.R) * k), (byte)(c.G + (target - c.G) * k), (byte)(c.B + (target - c.B) * k));
         double t = 0;
-        Color Mix(double k) => Color.FromRgb((byte)(c.R + (255 - c.R) * k), (byte)(c.G + (255 - c.G) * k), (byte)(c.B + (255 - c.B) * k));
-        while (t < 1 && Lum(Mix(t)) < 0.35) t += 0.02;
+        while (t < 1 && (light ? Lum(Mix(t)) > 0.17 : Lum(Mix(t)) < 0.35)) t += 0.02;
         var r = new SolidColorBrush(Mix(t));
         r.Freeze();
         return r;

@@ -55,7 +55,7 @@ public sealed class RadarChart : FrameworkElement
     {
         var v = Math.Clamp(value, 0, Rings);
         var rank = (int)Math.Floor(v + 1e-9);
-        var name = rank >= 1 && rank <= _tierNames.Count ? _tierNames[rank - 1] : "UNRANKED";
+        var name = rank >= 1 && rank <= _tierNames.Count ? _tierNames[rank - 1] : L.T("UNRANKED");
         return (name, rank >= Rings ? "" : $"+{(v - rank) * 100:0}%", rank >= 1 && rank <= _tierBrushes.Count ? ChartPaths.TextTone(_tierBrushes[rank - 1]) : dim);
     }
 
@@ -66,7 +66,7 @@ public sealed class RadarChart : FrameworkElement
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
         var dim = (Brush)Application.Current.FindResource("Dim");
         var accent = (Brush)Application.Current.FindResource("Accent");
-        if (_axes.Count < 3) { Label(dc, "Need at least 3 axes", w / 2, h / 2 - 7, dim, true); return; }
+        if (_axes.Count < 3) { Label(dc, L.T("Need at least 3 axes"), w / 2, h / 2 - 7, dim, true); return; }
 
         var (c, r) = Geometry();
         var n = _axes.Count;
@@ -127,7 +127,7 @@ public sealed class RadarChart : FrameworkElement
 
     static Brush Argb(byte a, byte r, byte g, byte b)
     {
-        var br = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        var br = new SolidColorBrush(Theme.Ink(Color.FromArgb(a, r, g, b)));
         br.Freeze();
         return br;
     }

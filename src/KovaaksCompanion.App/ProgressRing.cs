@@ -13,7 +13,7 @@ sealed class ProgressRing : FrameworkElement
     {
         _value = value;
         Width = Height = size;
-        var track = new SolidColorBrush(Colors.White) { Opacity = 0.14 };
+        var track = new SolidColorBrush(Theme.IsLight ? Colors.Black : Colors.White) { Opacity = 0.14 };
         track.Freeze();
         _track = new Pen(track, thickness);
         _arc = new Pen(brush, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };

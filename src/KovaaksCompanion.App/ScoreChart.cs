@@ -26,6 +26,7 @@ public sealed class ScoreChart : FrameworkElement
     public void Set(IReadOnlyList<(DateTime When, double Value)> points, string format = "0.#", ChartKind kind = ChartKind.Line, bool overlays = false, IReadOnlyList<ChartBand>? bands = null)
     {
         _points = points; _format = format; _kind = kind; _overlays = overlays; _bands = bands ?? []; _miniBrush = null;
+        AttachVisuals(false);
         _hover = -1;
         InvalidateVisual();
     }
@@ -35,6 +36,70 @@ public sealed class ScoreChart : FrameworkElement
     public double MiniTextCap { get => _miniTextCap; set { if (Math.Abs(_miniTextCap - value) < 0.01) return; _miniTextCap = value; InvalidateVisual(); } }
     /// <summary>Card mode: above this card height the watermark repeats upward to fill the card.</summary>
     public double MiniStackAbove { get => _miniStackAbove; set { if (_miniStackAbove.Equals(value)) return; _miniStackAbove = value; InvalidateVisual(); } }
+    bool _marquee;
+    /// <summary>Card mode: the watermark always repeats and drifts downward in a loop. Turn off for a static image.</summary>
+    public bool Marquee
+    {
+        get => _marquee;
+        set
+        {
+            if (_marquee == value) return;
+            _marquee = value;
+            InvalidateVisual();
+        }
+    }
+
+    // The watermark lives in its own retained visual so the drift is a transform animation run by the compositor, not a redraw per frame.
+    // Visual order: watermark (clipped to the card) below, line and tags above. OnRender then only paints the hit-test rect.
+    readonly ContainerVisual _markClip = new();
+    readonly DrawingVisual _mark = new();
+    readonly DrawingVisual _lineVis = new();
+    readonly TranslateTransform _markShift = new();
+    bool _visualsAttached;
+    double _animPitch = -1;
+
+    protected override int VisualChildrenCount => _visualsAttached ? 2 : 0;
+
+    protected override Visual GetVisualChild(int index) => index == 0 ? _markClip : _lineVis;
+
+    void AttachVisuals(bool attach)
+    {
+        if (_visualsAttached == attach) return;
+        _visualsAttached = attach;
+        if (attach) { AddVisualChild(_markClip); AddVisualChild(_lineVis); }
+        else { RemoveVisualChild(_markClip); RemoveVisualChild(_lineVis); StopDrift(); }
+    }
+
+    void StartDrift(double pitch)
+    {
+        if (Math.Abs(_animPitch - pitch) < 0.01) return;
+        _animPitch = pitch;
+        var anim = new System.Windows.Media.Animation.DoubleAnimation(0, pitch, TimeSpan.FromSeconds(7)) { RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever };
+        // Locked to 60 fps. The animation is clock-based (position = elapsed time / period), so a dropped frame skips ahead instead of slowing the drift, and the compositor interpolates the sub-pixel position of every frame.
+        System.Windows.Media.Animation.Timeline.SetDesiredFrameRate(anim, 60);
+        _markShift.BeginAnimation(TranslateTransform.YProperty, anim);
+    }
+
+    void StopDrift()
+    {
+        if (_animPitch < 0) return;
+        _animPitch = -1;
+        _markShift.BeginAnimation(TranslateTransform.YProperty, null);
+    }
+
+    static readonly Typeface MarkFace = new(new FontFamily("Segoe UI Black, Arial Black, Segoe UI"), FontStyles.Normal, FontWeights.Black, FontStretches.Normal);
+
+    public ScoreChart()
+    {
+        // Display mode + ClearType snap glyphs to whole pixels, which makes the drifting watermark step. Ideal + grayscale lets it move smoothly.
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+        _mark.Transform = _markShift;
+        _markClip.Children.Add(_mark);
+        Loaded += (_, _) => InvalidateVisual();
+        Unloaded += (_, _) => StopDrift();
+    }
+
     Brush? _miniBrush;
     string _watermark = "";
     bool _complete;
@@ -44,37 +109,45 @@ public sealed class ScoreChart : FrameworkElement
     {
         _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _hover = -1;
         IsHitTestVisible = false;
+        AttachVisuals(true);
         InvalidateVisual();
+    }
+
+    /// <summary>Watermark rows into the retained visual: one row sits on the card's bottom edge, more stack upward. The marquee animates the whole visual down by one pitch, so the loop is seamless.</summary>
+    void RenderMark(double w, double h, Color c)
+    {
+        using var dc = _mark.RenderOpen();
+        _markClip.Clip = new RectangleGeometry(new Rect(0, 0, w, h));
+        if (_watermark.Length == 0) { StopDrift(); return; }
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
+        var he = Math.Min(h, MiniTextCap);
+        var size = 100 * he * 1.7 / probe.Height;
+        var mark = new SolidColorBrush(Color.FromArgb(0x80, c.R, c.G, c.B));
+        mark.Freeze();
+        var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, size, mark, dpi);
+        var x = w - ft.Width + size * 0.15;
+        var pitch = he * 0.95;
+        dc.DrawText(ft, new Point(x, h - ft.Baseline));
+        // A card taller than the threshold repeats the name upward, the top row cut off by the card edge.
+        if (_marquee || h > MiniStackAbove)
+            for (var y = h - pitch; y > -pitch; y -= pitch)
+                dc.DrawText(ft, new Point(x, y - ft.Baseline));
+        if (_marquee && IsLoaded) StartDrift(pitch); else StopDrift();
     }
 
     void RenderMini(DrawingContext dc, double w, double h, Brush tier)
     {
         var c = ColorOf(tier);
-        if (_watermark.Length > 0)
+        if (_watermark.Length > 0 && _complete)
         {
-            var face = new Typeface(new FontFamily("Segoe UI Black, Arial Black, Segoe UI"), FontStyles.Normal, FontWeights.Black, FontStretches.Normal);
-            var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 100, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            var he = Math.Min(h, MiniTextCap);
-            var size = 100 * he * 1.7 / probe.Height;
-            var mark = new SolidColorBrush(Color.FromArgb(0x80, c.R, c.G, c.B));
-            mark.Freeze();
-            var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, size, mark, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, h - ft.Baseline));
-            // A card taller than the threshold repeats the name upward, the top row cut off by the card edge.
-            if (h > MiniStackAbove)
-            {
-                var pitch = he * 0.95;
-                for (var y = h - pitch; y > -pitch; y -= pitch)
-                    dc.DrawText(ft, new Point(w - ft.Width + size * 0.15, y - ft.Baseline));
-            }
-            if (_complete)
-            {
-                var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
-                // Scales with the card height, up to twice the watermark's height cap.
-                var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
-                var tag = new FormattedText("COMPLETE", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, tagSize, tagBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-                dc.DrawText(tag, new Point(w - tag.Width - 8, h - tag.Baseline - 6));
-            }
+            var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
+            var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
+            // Scales with the card height, up to twice the watermark's height cap.
+            var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
+            var tag = new FormattedText(L.T("Complete").ToUpperInvariant(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize, tagBrush, dpi);
+            dc.DrawText(tag, new Point(w - tag.Width - 8, h - tag.Baseline - 6));
         }
         if (_points.Count < 2) return;
         var lo = _points.Min(p => p.Value);
@@ -88,7 +161,21 @@ public sealed class ScoreChart : FrameworkElement
         var grad = new LinearGradientBrush(Color.FromArgb(0, c.R, c.G, c.B), Color.FromArgb(0x99, c.R, c.G, c.B), 90);
         grad.Freeze();
         dc.DrawGeometry(grad, null, ChartPaths.MonotoneArea(pts, h));
-        dc.DrawGeometry(null, new Pen(tier, 2) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, ChartPaths.Monotone(pts));
+        var line = ChartPaths.Monotone(pts);
+        // Static glow: wide translucent strokes layered under the line.
+        foreach (var (thick, alpha) in new[] { (9.0, 0x0A), (6.0, 0x14), (4.0, 0x20) })
+        {
+            var glow = new Pen(Frozen(Color.FromArgb((byte)alpha, c.R, c.G, c.B)), thick) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            glow.Freeze();
+            dc.DrawGeometry(null, glow, line);
+        }
+        dc.DrawGeometry(null, new Pen(tier, 2) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, line);
+        // Halo on the latest point.
+        var last = pts[^1];
+        var halo = new RadialGradientBrush(Color.FromArgb(0x60, c.R, c.G, c.B), Color.FromArgb(0, c.R, c.G, c.B));
+        halo.Freeze();
+        dc.DrawEllipse(halo, null, last, 8, 8);
+        dc.DrawEllipse(tier, null, last, 2.5, 2.5);
     }
 
     static Brush Res(string key) => (Brush)Application.Current.FindResource(key);
@@ -101,7 +188,6 @@ public sealed class ScoreChart : FrameworkElement
         return r;
     }
 
-    static readonly Brush LabelBack = Frozen(Color.FromArgb(0xB0, 0x14, 0x14, 0x16));
 
     static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
@@ -110,7 +196,7 @@ public sealed class ScoreChart : FrameworkElement
     FormattedText Text(string text, double size, Brush brush, bool bold = false) =>
         new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, bold ? BoldFace : Face, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
 
-    static List<double> NiceTicks(double lo, double hi, bool percent)
+    internal static List<double> NiceTicks(double lo, double hi, bool percent)
     {
         var range = Math.Max(hi - lo, 1e-9);
         var rough = range / 4;
@@ -160,11 +246,17 @@ public sealed class ScoreChart : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
-        if (_miniBrush != null) { RenderMini(dc, w, h, _miniBrush); return; }
+        if (_miniBrush != null)
+        {
+            RenderMark(w, h, ColorOf(_miniBrush));
+            using var ldc = _lineVis.RenderOpen();
+            RenderMini(ldc, w, h, _miniBrush);
+            return;
+        }
         var dim = Res("Dim");
         if (_points.Count == 0)
         {
-            var ft = Text("No data", 12, dim);
+            var ft = Text(L.T("No data"), 12, dim);
             dc.DrawText(ft, new Point((w - ft.Width) / 2, (h - ft.Height) / 2));
             return;
         }
@@ -238,21 +330,13 @@ public sealed class ScoreChart : FrameworkElement
             // Bands sit under the line.
             DrawBands(dc, bands, left, w, Y);
 
-            if (_overlays && n >= 6)
-            {
-                var win = Math.Clamp(n / 8, 3, 15);
-                var avg = new List<Point>();
-                for (var i = 0; i < n; i++)
-                {
-                    var from = Math.Max(0, i - win + 1);
-                    var mean = _points.Skip(from).Take(i - from + 1).Average(p => p.Value);
-                    avg.Add(new Point(X(i), Y(mean)));
-                }
-                dc.DrawGeometry(null, new Pen(WithAlpha(fg, 0.55), 1.5) { LineJoin = PenLineJoin.Round }, ChartPaths.Monotone(avg));
-            }
             var strokeBrush = new LinearGradientBrush(Color.FromArgb(0x8C, ac.R, ac.G, ac.B), ac, 0);
             strokeBrush.Freeze();
             dc.DrawGeometry(null, new Pen(strokeBrush, 2) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, line);
+
+            // Every run is a dot, whatever the density.
+            var dotPen = new Pen(bg, 1);
+            foreach (var pt in pts) dc.DrawEllipse(accent, dotPen, pt, 2.5, 2.5);
 
             if (_overlays)
             {
@@ -284,9 +368,15 @@ public sealed class ScoreChart : FrameworkElement
         {
             var y = Math.Round(Y(b.Value)) + 0.5;
             dc.DrawLine(new Pen(WithAlpha(b.Brush, 0.7), 1) { DashStyle = new DashStyle([4, 4], 0) }, new Point(left, y), new Point(w - Right, y));
-            var ft = Text(b.Label, 10, ChartPaths.TextTone(b.Brush), true);
+            // The chip follows the theme (white on light, dark on dark), and the text falls back to the plain foreground if the tier colour still reads poorly on it.
+            var chip = Theme.IsLight ? Color.FromArgb(0xEB, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xB0, 0x14, 0x14, 0x16);
+            var chipBack = new SolidColorBrush(chip);
+            chipBack.Freeze();
+            var tone = ChartPaths.TextTone(b.Brush);
+            if (tone is SolidColorBrush ts && Theme.Contrast(ts.Color, Color.FromRgb(chip.R, chip.G, chip.B)) < 4.5) tone = Res("Fg");
+            var ft = Text(b.Label, 10, tone, true);
             var rect = new Rect(left + 4, y - ft.Height - 2, ft.Width + 8, ft.Height + 2);
-            dc.DrawRoundedRectangle(LabelBack, null, rect, 3, 3);
+            dc.DrawRoundedRectangle(chipBack, null, rect, 3, 3);
             dc.DrawText(ft, new Point(rect.X + 4, rect.Y + 1));
         }
     }
@@ -318,21 +408,37 @@ public sealed class ScoreChart : FrameworkElement
         dc.DrawText(t2, new Point(bx + 8, by + 6 + t1.Height));
     }
 
-    protected override void OnMouseMove(MouseEventArgs e)
+    /// <summary>Raised with the point index when the user clicks the chart.</summary>
+    public event Action<int>? PointClicked;
+
+    int IndexAt(MouseEventArgs e)
     {
-        base.OnMouseMove(e);
         var n = _points.Count;
-        if (n == 0 || ActualWidth <= 0 || ActualHeight <= 0) return;
+        if (n == 0 || ActualWidth <= 0 || ActualHeight <= 0) return -1;
         var (left, pw, _, _, _, _, _) = Layout(ActualWidth, ActualHeight);
         var mx = e.GetPosition(this).X;
         int idx;
         if (n == 1) idx = 0;
         else if (_kind == ChartKind.Bars) idx = (int)Math.Floor((mx - left) / pw * n);
         else idx = (int)Math.Round((mx - left) / pw * (n - 1));
-        idx = Math.Clamp(idx, 0, n - 1);
-        if (idx == _hover) return;
+        return Math.Clamp(idx, 0, n - 1);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var idx = IndexAt(e);
+        if (idx < 0 || idx == _hover) return;
         _hover = idx;
         InvalidateVisual();
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (PointClicked is null) return;
+        var idx = IndexAt(e);
+        if (idx >= 0) PointClicked(idx);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)

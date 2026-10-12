@@ -10,7 +10,8 @@ public sealed class ActivityCalendar : FrameworkElement
 {
     static Typeface Face => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     static Typeface BoldFace => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
-    const double Gap = 3, LeftW = 30, Right = 4;
+    const double Gap = 3, Right = 4;
+    double LeftW => ShowLabels ? 30 : 0;
     IReadOnlyDictionary<DateTime, int> _plays = new Dictionary<DateTime, int>();
     Brush _tone = Brushes.Gray;
     (int Week, int Row)? _hover;
@@ -23,6 +24,14 @@ public sealed class ActivityCalendar : FrameworkElement
 
     /// <summary>When set, always shows exactly this many weeks; the cells (and so the height and the label sizes) scale with the width, keeping the aspect ratio.</summary>
     public int? FixedWeeks { get; set; }
+
+    bool _showLabels = true;
+    /// <summary>Weekday and month labels and the legend. Off: only the cells (and the hover tip) show.</summary>
+    public bool ShowLabels
+    {
+        get => _showLabels;
+        set { _showLabels = value; InvalidateMeasure(); InvalidateVisual(); }
+    }
 
     bool _light;
     /// <summary>On a light background: dark labels and outlines, dark-tinted empty cells.</summary>
@@ -57,15 +66,15 @@ public sealed class ActivityCalendar : FrameworkElement
     /// <summary>Horizontal offset centring the grid when the control is wider than it (fixed mode).</summary>
     double OffX => FixedWeeks == null ? 0 : Math.Max(0, (ActualWidth - GridW(Cell)) / 2);
 
-    double MonthH => 16 * Scale;
+    double MonthH => ShowLabels ? 16 * Scale : 0;
 
-    double FootH => 22 * Scale;
+    double FootH => ShowLabels ? 22 * Scale : 0;
 
     protected override Size MeasureOverride(Size avail)
     {
         var w = double.IsInfinity(avail.Width) ? 600 : avail.Width;
         var cell = CellFor(w);
-        return new Size(FixedWeeks == null ? w : Math.Min(w, GridW(cell)), (16 + 22) * ScaleFor(cell) + 7 * (cell + Gap));
+        return new Size(FixedWeeks == null ? w : Math.Min(w, GridW(cell)), (ShowLabels ? 16 + 22 : 0) * ScaleFor(cell) + 7 * (cell + Gap));
     }
 
     public void Set(IReadOnlyDictionary<DateTime, int> playsPerDay, Brush tone)
@@ -106,7 +115,7 @@ public sealed class ActivityCalendar : FrameworkElement
 
     static Brush Argb(byte a, byte r, byte g, byte b)
     {
-        var br = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        var br = new SolidColorBrush(Theme.Ink(Color.FromArgb(a, r, g, b)));
         br.Freeze();
         return br;
     }
@@ -135,7 +144,8 @@ public sealed class ActivityCalendar : FrameworkElement
         var sc = Scale;
 
         // Weekday labels.
-        foreach (var (row, name) in new[] { (0, "Mon"), (2, "Wed"), (4, "Fri") })
+        if (ShowLabels)
+        foreach (var (row, name) in new[] { (0, L.T("Mon")), (2, L.T("Wed")), (4, L.T("Fri")) })
         {
             var ft = Text(name, 10 * sc, dim);
             dc.DrawText(ft, new Point(OffX, CellRect(0, row).Y + (Cell - ft.Height) / 2));
@@ -143,12 +153,12 @@ public sealed class ActivityCalendar : FrameworkElement
 
         // Month labels.
         var lastEnd = double.NegativeInfinity;
-        for (var wk = 0; wk < weeks; wk++)
+        for (var wk = 0; wk < weeks && ShowLabels; wk++)
         {
             var start = first.AddDays(wk * 7);
             var firstOfMonth = Enumerable.Range(0, 7).Select(i => start.AddDays(i)).FirstOrDefault(d => d.Day == 1);
             if (firstOfMonth == default && wk != 0) continue;
-            var label = (firstOfMonth == default ? start : firstOfMonth).ToString("MMM", CultureInfo.InvariantCulture);
+            var label = (firstOfMonth == default ? start : firstOfMonth).ToString("MMM", L.Culture);
             if (wk == 0 && firstOfMonth == default && start.Day > 21 && FixedWeeks == null) continue; // a partial first month would be misleading
             var ft = Text(label, 10 * sc, dim);
             var x = CellRect(wk, 0).X;
@@ -187,35 +197,38 @@ public sealed class ActivityCalendar : FrameworkElement
                 }
             }
 
-        // Legend, bottom right. Layout: "More" swatches "Less" [PB dot "Personal best"]
-        var more = Text("More", 10 * sc, dim);
-        var less = Text("Less", 10 * sc, dim);
-        var y = h - FootH + 6 * sc;
-        var sw = 12 * sc;
-        var x0 = OffX + GridW(Cell) - Right - more.Width;
-        dc.DrawText(more, new Point(x0, y));
-        x0 -= 4;
-        for (var i = 4; i >= 0; i--)
+        if (ShowLabels)
         {
-            x0 -= sw;
-            dc.DrawRoundedRectangle(i == 0 ? EmptyCell : Alpha(_tone, new[] { 0, 0.30, 0.50, 0.75, 1.0 }[i]), null, new Rect(x0, y, sw, sw), 3, 3);
-            x0 -= 3;
-        }
-        x0 -= 1;
+            // Legend, bottom right. Layout: "More" swatches "Less" [PB dot "Personal best"]
+            var more = Text(L.T("More"), 10 * sc, dim);
+            var less = Text(L.T("Less"), 10 * sc, dim);
+            var y = h - FootH + 6 * sc;
+            var sw = 12 * sc;
+            var x0 = OffX + GridW(Cell) - Right - more.Width;
+            dc.DrawText(more, new Point(x0, y));
+            x0 -= 4;
+            for (var i = 4; i >= 0; i--)
+            {
+                x0 -= sw;
+                dc.DrawRoundedRectangle(i == 0 ? EmptyCell : Alpha(_tone, new[] { 0, 0.30, 0.50, 0.75, 1.0 }[i]), null, new Rect(x0, y, sw, sw), 3, 3);
+                x0 -= 3;
+            }
+            x0 -= 1;
 
-        // "Less" and PB legend layout: right-to-left from lessX
-        var lessX = x0 - less.Width;
-        dc.DrawText(less, new Point(lessX, y));
+            // "Less" and PB legend layout: right-to-left from lessX
+            var lessX = x0 - less.Width;
+            dc.DrawText(less, new Point(lessX, y));
 
-        // PB legend to the left of "Less"
-        if (PbDays.Count > 0)
-        {
-            var pbText = Text("Personal best", 10 * sc, dim);
-            var pbTextX = lessX - 14 * sc - pbText.Width;
-            dc.DrawText(pbText, new Point(pbTextX, y));
-            var dotRadius = Math.Max(1.2, Cell * 0.09);
-            var dotCenter = new Point(pbTextX - 6 * sc - dotRadius, y + sw / 2);
-            dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
+            // PB legend to the left of "Less"
+            if (PbDays.Count > 0)
+            {
+                var pbText = Text(L.T("Personal best"), 10 * sc, dim);
+                var pbTextX = lessX - 14 * sc - pbText.Width;
+                dc.DrawText(pbText, new Point(pbTextX, y));
+                var dotRadius = Math.Max(1.2, Cell * 0.09);
+                var dotCenter = new Point(pbTextX - 6 * sc - dotRadius, y + sw / 2);
+                dc.DrawEllipse(Alpha(Res("Green"), 0.8), null, dotCenter, dotRadius, dotRadius);
+            }
         }
 
         if (_hover is { } hv)
@@ -223,7 +236,7 @@ public sealed class ActivityCalendar : FrameworkElement
             var day = first.AddDays(hv.Week * 7 + hv.Row);
             var cr = CellRect(hv.Week, hv.Row);
             var t1 = Text($"{CountOf(day)} plays", 13 * sc, Res("Fg"), true);
-            var t2 = Text(day.ToString("ddd, yyyy-MM-dd", CultureInfo.InvariantCulture), 10 * sc, Res("Dim"));
+            var t2 = Text(day.ToString("ddd, yyyy-MM-dd", L.Culture), 10 * sc, Res("Dim"));
             double bw = Math.Max(t1.Width, t2.Width) + 16, bh = t1.Height + t2.Height + 12;
             var bx = Math.Clamp(cr.X + Cell / 2 - bw / 2, 2, Math.Max(2, w - bw - 2));
             var by = cr.Y - bh - 6;

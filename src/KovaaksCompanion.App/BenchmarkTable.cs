@@ -29,6 +29,42 @@ public sealed class BenchmarkTable : UserControl
     /// <summary>A single click on a scenario row: its name and the pointer position in window coordinates.</summary>
     public event Action<string, Point?>? ScenarioOpened;
 
+    /// <summary>The capture button in a category header was clicked.</summary>
+    public event Action<BenchCategory>? CategoryCaptureRequested;
+
+    /// <summary>False leaves the capture button out of each category header (the capture's own table).</summary>
+    public bool ShowCaptureButton { get; set; } = true;
+
+    /// <summary>Small camera glyph button; shows a check for 1.2s after the click.</summary>
+    static Border CaptureButton(Action click)
+    {
+        var glyph = new TextBlock
+        {
+            Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 12, Foreground = Res("Dim"),
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var b = new Border
+        {
+            Width = 24, Height = 20, CornerRadius = new CornerRadius(6), Background = Brushes.Transparent, Cursor = Cursors.Hand,
+            ToolTip = L.T("Copy as image"), Child = glyph, VerticalAlignment = VerticalAlignment.Center,
+        };
+        b.MouseEnter += (_, _) => b.Background = Argb("#14FFFFFF");
+        b.MouseLeave += (_, _) => b.Background = Brushes.Transparent;
+        b.MouseLeftButtonDown += (_, e) => { b.CaptureMouse(); e.Handled = true; };
+        b.MouseLeftButtonUp += async (_, e) =>
+        {
+            if (!b.IsMouseCaptured) return;
+            b.ReleaseMouseCapture();
+            e.Handled = true;
+            if (!b.IsMouseOver) return;
+            click();
+            glyph.Text = "";
+            await Task.Delay(1200);
+            glyph.Text = "";
+        };
+        return b;
+    }
+
     /// <summary>False hides each card's header row (name, rank, progress), for pages whose own hero already shows it.</summary>
     public bool ShowCategoryHeader { get; set; } = true;
 
@@ -41,7 +77,7 @@ public sealed class BenchmarkTable : UserControl
 
     static Brush Argb(string hex)
     {
-        var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        var b = new SolidColorBrush(Theme.Ink((Color)ColorConverter.ConvertFromString(hex)));
         b.Freeze();
         return b;
     }
@@ -52,6 +88,28 @@ public sealed class BenchmarkTable : UserControl
         var r = new SolidColorBrush(Color.FromArgb((byte)(alpha * 255), c.R, c.G, c.B));
         r.Freeze();
         return r;
+    }
+
+    /// <summary>Like <see cref="WithAlpha"/> with the colour's saturation and brightness raised a little.</summary>
+    static Brush Vivid(Brush b, double alpha)
+    {
+        var c = b is SolidColorBrush s ? s.Color : Colors.Gray;
+        double r = c.R / 255.0, g = c.G / 255.0, bl = c.B / 255.0;
+        var max = Math.Max(r, Math.Max(g, bl));
+        var min = Math.Min(r, Math.Min(g, bl));
+        var d = max - min;
+        double h = 0;
+        if (d > 0)
+            h = max == r ? ((g - bl) / d + 6) % 6 : max == g ? (bl - r) / d + 2 : (r - g) / d + 4;
+        var sat = Math.Min(1, (max == 0 ? 0 : d / max) * 1.15);
+        var val = Math.Min(1, max * 1.1);
+        var ch = val * sat;
+        var x = ch * (1 - Math.Abs(h % 2 - 1));
+        var m = val - ch;
+        var (rr, gg, bb) = (int)h switch { 0 => (ch, x, 0.0), 1 => (x, ch, 0.0), 2 => (0.0, ch, x), 3 => (0.0, x, ch), 4 => (x, 0.0, ch), _ => (ch, 0.0, x) };
+        var res = new SolidColorBrush(Color.FromArgb((byte)(alpha * 255), (byte)((rr + m) * 255), (byte)((gg + m) * 255), (byte)((bb + m) * 255)));
+        res.Freeze();
+        return res;
     }
 
     static TextBlock Cell(string text, double size, Brush fg, HorizontalAlignment h, FontWeight? weight = null, Thickness? margin = null, bool trim = true) => Tab(new()
@@ -103,7 +161,7 @@ public sealed class BenchmarkTable : UserControl
         var shown = cats.Where(c => c.Subs.Any(s => s.Rows.Count > 0)).ToList();
         if (shown.Count == 0)
         {
-            _stack.Children.Add(new TextBlock { Text = "No scenarios", Foreground = dim, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 24) });
+            _stack.Children.Add(new TextBlock { Text = L.T("No scenarios"), Foreground = dim, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 24) });
             return;
         }
         for (var i = 0; i < shown.Count; i++)
@@ -123,7 +181,7 @@ public sealed class BenchmarkTable : UserControl
         var c = ((SolidColorBrush)Res("Accent")).Color;
         var brush = new SolidColorBrush(c);
         card.BorderBrush = brush;
-        var anim = new ColorAnimation(c, Color.FromArgb(0x14, 255, 255, 255), TimeSpan.FromMilliseconds(600)) { FillBehavior = FillBehavior.Stop };
+        var anim = new ColorAnimation(c, Theme.Ink(Color.FromArgb(0x14, 255, 255, 255)), TimeSpan.FromMilliseconds(600)) { FillBehavior = FillBehavior.Stop };
         anim.Completed += (_, _) => card.BorderBrush = Argb("#12FFFFFF");
         brush.BeginAnimation(SolidColorBrush.ColorProperty, anim);
     }
@@ -157,21 +215,22 @@ public sealed class BenchmarkTable : UserControl
             {
                 CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Background = WithAlpha(rankBrush ?? dim, 0.15),
-                Child = new TextBlock { Text = rankBrush == null ? "UNRANKED" : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = ChartPaths.TextTone(rankBrush ?? dim) },
+                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANKED") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = ChartPaths.TextTone(rankBrush ?? dim) },
             }, 1);
             var bar = new Grid { Width = 120, Height = 4, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
-            H(Cell(stat.Rank >= tiers ? "Max" : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
+            H(Cell(stat.Rank >= tiers ? L.T("Max") : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
+            if (ShowCaptureButton) H(CaptureButton(() => CategoryCaptureRequested?.Invoke(cat)), 5);
             Put(g, head, hr, 0, cols);
         }
 
         // Column header, repeated per card so each reads on its own.
         var cr = AddRow(g, ColH);
         Put(g, new Border { BorderBrush = Res("Separator"), BorderThickness = new Thickness(0, 0, 0, 1) }, cr, 0, cols);
-        Put(g, Cell("SCENARIO", 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
-        Put(g, Cell("SCORE", 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
+        Put(g, Cell(L.T("SCENARIO"), 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
+        Put(g, Cell(L.T("Score").ToUpperInvariant(), 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
             Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, -8, 0), false), cr, 3 + k);
 
@@ -181,11 +240,11 @@ public sealed class BenchmarkTable : UserControl
             if (subs.Count > 1 && name.Length > 0 && !name.Equals(cat.Name, StringComparison.OrdinalIgnoreCase))
             {
                 var row = AddRow(g, CapH);
-                var cap = new DockPanel { Margin = new Thickness(16, 0, 16, 0), IsHitTestVisible = false };
+                var cap = new DockPanel { Margin = new Thickness(16, 0, 10, 0) };
                 var label = Cell(name.ToUpperInvariant(), 10.5, Argb("#8AFFFFFF"), HorizontalAlignment.Left, FontWeights.SemiBold, null, false);
                 DockPanel.SetDock(label, Dock.Left);
                 cap.Children.Add(label);
-                cap.Children.Add(new Border { Height = 1, Background = Argb("#14FFFFFF"), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+                cap.Children.Add(new Border { Height = 1, Background = Argb("#14FFFFFF"), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false });
                 Put(g, cap, row, 0, cols);
             }
             foreach (var r in sub.Rows) BuildRow(g, AddRow(g, RowH), r, tierNames, tierBrushes, cols);
@@ -247,7 +306,7 @@ public sealed class BenchmarkTable : UserControl
         }));
         Add(score, 1);
 
-        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "MAX" : $"{pos.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
+        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? L.T("Max").ToUpperInvariant() : $"{pos.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
 
         var sepText = Argb("#66FFFFFF");
         var nextText = Argb("#B3FFFFFF");
@@ -258,7 +317,17 @@ public sealed class BenchmarkTable : UserControl
             var reached = has && k <= rank;
             var next = has && k == rank + 1;
             if (reached && k <= tierBrushes.Count)
-                cell.Children.Add(new Border { Margin = new Thickness(2, 3, 2, 3), CornerRadius = new CornerRadius(6), Background = WithAlpha(tierBrushes[k - 1], 0.22) });
+            {
+                // Only the outer ends are rounded and inset: neighbouring reached tiers meet square.
+                var first = k == 1;
+                var last = k == rank;
+                cell.Children.Add(new Border
+                {
+                    Margin = new Thickness(first ? 2 : 0, 3, last ? 2 : 0, 3),
+                    CornerRadius = new CornerRadius(first ? 6 : 0, last ? 6 : 0, last ? 6 : 0, first ? 6 : 0),
+                    Background = Vivid(tierBrushes[k - 1], Theme.IsLight ? 0.6 : 0.5),
+                });
+            }
             if (next && row.Best != null)
             {
                 var nb = k <= tierBrushes.Count ? tierBrushes[k - 1] : dim;
@@ -282,8 +351,8 @@ public sealed class BenchmarkTable : UserControl
 
         var wash = new Border { Background = Argb("#0DFFFFFF"), Opacity = 0, IsHitTestVisible = false };
         Put(g, wash, r, 0, cols);
-        var tip = row.Scenario + "\n" + (row.LastPlayed is { } d ? $"Last played {d:yyyy-MM-dd}" : "Not played yet");
-        if (pos.ToNext is { } to && rank < tiers && rank < tierNames.Count) tip += $"\n+{to.ToString("#,0.#", CultureInfo.InvariantCulture)} to {tierNames[rank]}";
+        var tip = row.Scenario + "\n" + (row.LastPlayed is { } d ? L.F("Last played {0}", d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) : L.T("Not played yet"));
+        if (pos.ToNext is { } to && rank < tiers && rank < tierNames.Count) tip += "\n" + L.F("+{0} to {1}", to.ToString("#,0.#", CultureInfo.InvariantCulture), tierNames[rank]);
         var hit = new Border { Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = tip };
         Put(g, hit, r, 0, cols);
         void Fade(double to) => wash.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(120)));
