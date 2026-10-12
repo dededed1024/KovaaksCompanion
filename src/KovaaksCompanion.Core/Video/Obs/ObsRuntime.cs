@@ -117,6 +117,24 @@ public static unsafe class ObsRuntime
         return l;
     }
 
+    /// <summary>(display name, libobs id) of every DirectShow video device, in the order the dshow_input source lists them.</summary>
+    public static List<(string Name, string Id)> DshowDevices()
+    {
+        var l = new List<(string, string)>();
+        var props = ObsNative.obs_get_source_properties("dshow_input");
+        if (props == 0) return l;
+        try
+        {
+            var p = ObsNative.obs_properties_get(props, "video_device_id");
+            if (p == 0) return l;
+            for (nuint i = 0, n = ObsNative.obs_property_list_item_count(p); i < n; i++)
+                if (ObsNative.Str(ObsNative.obs_property_list_item_name(p, i)) is { Length: > 0 } name && ObsNative.Str(ObsNative.obs_property_list_item_string(p, i)) is { Length: > 0 } id)
+                    l.Add((name, id));
+        }
+        finally { ObsNative.obs_properties_destroy(props); }
+        return l;
+    }
+
     public static List<string> SourceIds()
     {
         var l = new List<string>();
@@ -132,8 +150,8 @@ public static unsafe class ObsRuntime
             if (level > MaxLogLevel) return;
             var buf = stackalloc byte[2048];
             ObsNative.vsnprintf(buf, 2048, fmt, args);
-            Console.Error.WriteLine((level <= ObsNative.LogError ? "error: " : level <= ObsNative.LogWarning ? "warn: " : "info: ") + Marshal.PtrToStringUTF8((nint)buf));
+            AppLog.Write("obs", (level <= ObsNative.LogError ? "error: " : level <= ObsNative.LogWarning ? "warn: " : "info: ") + Marshal.PtrToStringUTF8((nint)buf));
         }
-        catch (Exception e) { Console.Error.WriteLine("obs log handler: " + e); }
+        catch { }
     }
 }

@@ -32,11 +32,19 @@ public sealed class PacketRing : IDisposable
     readonly string _runId = Guid.NewGuid().ToString("N")[..8];
     Chunk? _open;
     int _nextChunk;
-    bool _hasOrigin;
+    bool _hasOrigin, _originFromCapture;
+    int _arrivalSamples;
+    long _arrivalOriginNs = long.MaxValue;
+    /// <summary>Typical delay between a frame's capture and its packet arriving, used when libobs gives no capture time (secondary canvases).</summary>
+    const long ArrivalLatencyNs = 90_000_000;
+    const int ArrivalSamples = 120;
+    readonly Func<long> _nowNs;
     double _lastVideoSec = double.NegativeInfinity;
 
-    public PacketRing(string bufferDir, TimeSpan keep)
+    /// <param name="nowNs">QPC nanoseconds clock (libobs os_gettime_ns); default is libobs's own.</param>
+    public PacketRing(string bufferDir, TimeSpan keep, Func<long>? nowNs = null)
     {
+        _nowNs = nowNs ?? (() => (long)ObsRuntime.NowNs());
         _dir = bufferDir;
         _keepSec = Math.Max(5, keep.TotalSeconds);
         Directory.CreateDirectory(bufferDir);
@@ -64,10 +72,20 @@ public sealed class PacketRing : IDisposable
         double dts = p.Dts * scale, pts = p.Pts * scale;
         lock (_lock)
         {
-            if (p.IsVideo && !_hasOrigin && p.CaptureNs != 0)
+            if (p.IsVideo && !_originFromCapture)
             {
-                OriginNs = (long)p.CaptureNs - (long)Math.Round(pts * 1e9);
-                _hasOrigin = true;
+                if (p.CaptureNs != 0)
+                {
+                    OriginNs = (long)p.CaptureNs - (long)Math.Round(pts * 1e9);
+                    _hasOrigin = _originFromCapture = true;
+                }
+                else if (_arrivalSamples < ArrivalSamples)
+                {
+                    // no capture time: the earliest (arrival - pts) over the first frames is the one with the least queueing delay
+                    _arrivalOriginNs = Math.Min(_arrivalOriginNs, _nowNs() - (long)Math.Round(pts * 1e9));
+                    OriginNs = _arrivalOriginNs - ArrivalLatencyNs;
+                    if (++_arrivalSamples >= 30) _hasOrigin = true;
+                }
             }
             if (p.IsVideo && p.Keyframe) StartChunk();
             if (_open == null) return;
@@ -105,9 +123,10 @@ public sealed class PacketRing : IDisposable
     /// <summary>
     /// Writes the packets covering [<paramref name="fromSec"/>, <paramref name="toSec"/>] to <paramref name="path"/>: it starts at the last video keyframe at or before
     /// <paramref name="fromSec"/> (the ring's first keyframe when that is older than the ring) and ends with the last video packet at or before <paramref name="toSec"/>.
+    /// With <paramref name="originSec"/> the file's time 0 is that ring time (the lead-in from the keyframe is cut off by an edit list) instead of the keyframe.
     /// Returns the actual (start, end) in ring seconds, or null when the ring holds no video in the range.
     /// </summary>
-    public (double Start, double End)? WriteClip(string path, double fromSec, double toSec, AvcInfo video, AacInfo? audio)
+    public (double Start, double End)? WriteClip(string path, double fromSec, double toSec, AvcInfo video, AacInfo? audio, double? originSec = null)
     {
         List<Entry> sel;
         Dictionary<int, string> paths;
@@ -147,7 +166,7 @@ public sealed class PacketRing : IDisposable
                 var buf = new byte[e.Length];
                 r.ReadExactly(buf);
                 o.Write(buf);
-            });
+            }, originSec);
         }
         finally { foreach (var r in readers.Values) r.Dispose(); }
         return (sel[0].DtsSec, sel.Last(e => e.IsVideo).DtsSec);

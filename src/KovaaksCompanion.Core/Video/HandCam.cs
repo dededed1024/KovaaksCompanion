@@ -1,15 +1,12 @@
-using System.Diagnostics;
-using System.Globalization;
-using System.Text.RegularExpressions;
-using KovaaksCompanion.Core.Diagnostics;
+﻿using KovaaksCompanion.Core.Video.Obs;
 
 namespace KovaaksCompanion.Core.Video;
 
 /// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width, height of the video height; gaps from the right / top edge of the video. The cam image fills the box (cover, centered crop).</summary>
-public sealed record HandCamLayout(int SizePercent = 25, int RightPercent = 0, int TopPercent = 20, int HeightPercent = 14);
+public sealed record HandCamLayout(int SizePercent = 25, int RightPercent = 0, int TopPercent = 20, int HeightPercent = 25);
 
 /// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, and its place in the video.</summary>
-public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int Right = 0, int Top = 20, int Height = 14)
+public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int Right = 0, int Top = 20, int Height = 25)
 {
     public const int Max = 3;
     public HandCamLayout Layout => new(Size, Right, Top, Height);
@@ -23,9 +20,12 @@ public sealed class HandCamSlots : List<HandCamSlot>, IEquatable<HandCamSlots>
     public override int GetHashCode() => this.Aggregate(0, (h, s) => HashCode.Combine(h, s));
 }
 
-/// <summary>A DirectShow video device; <see cref="Number"/> tells apart devices that share a name (0 = first).</summary>
-public sealed record HandCamDevice(string Name, int Number)
+/// <summary>A DirectShow video device; <see cref="Number"/> tells apart devices that share a name (0 = first). <see cref="Id"/> is libobs's device id (name:path), empty for a saved but absent device.</summary>
+public sealed record HandCamDevice(string Name, int Number, string Id = "")
 {
+    // identity is name + number (what the settings store); the libobs id only says how to open the device
+    public bool Equals(HandCamDevice? o) => o != null && o.Name == Name && o.Number == Number;
+    public override int GetHashCode() => HashCode.Combine(Name, Number);
     public override string ToString() => Number == 0 ? Name : $"{Name} ({Number + 1})";
 }
 
@@ -47,158 +47,37 @@ public sealed record HandCamConfig(IReadOnlyList<HandCamSlot> Cams, HandCamSave 
         => new(s.HandCamEnabled ? s.HandCams.Where(c => c.Device.Length > 0).Take(HandCamSlot.Max).ToList() : [], s.HandCamSave);
 }
 
-/// <summary>DirectShow video device names via `ffmpeg -list_devices`.</summary>
+/// <summary>DirectShow video devices as libobs's dshow_input source lists them.</summary>
 public static class HandCamDeviceList
 {
-    static readonly Regex VideoLine = new("\"(?<n>.+)\" \\(video\\)", RegexOptions.Compiled);
-
-    /// <summary>Video devices in the order ffmpeg lists them (alternative-name lines and audio devices ignored); repeated names get increasing numbers.</summary>
-    public static List<HandCamDevice> Parse(string ffmpegStderr)
+    /// <summary>Video devices in libobs order; repeated names get increasing numbers. Needs the libobs runtime started; empty otherwise.</summary>
+    public static List<HandCamDevice> List()
     {
         var devices = new List<HandCamDevice>();
-        foreach (var line in ffmpegStderr.Split('\n'))
-            if (VideoLine.Match(line) is { Success: true } m)
-            {
-                var name = m.Groups["n"].Value;
-                devices.Add(new HandCamDevice(name, devices.Count(d => d.Name == name)));
-            }
+        if (!ObsRuntime.IsStarted) return devices;
+        foreach (var (name, id) in ObsRuntime.DshowDevices())
+            devices.Add(new HandCamDevice(name, devices.Count(d => d.Name == name), id));
         return devices;
     }
 
-    public static async Task<List<HandCamDevice>> ListAsync(string ffmpegPath)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo(ffmpegPath, "-hide_banner -list_devices true -f dshow -i dummy")
-            { RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true, StandardErrorEncoding = System.Text.Encoding.UTF8 };
-            using var p = Process.Start(psi)!;
-            var err = p.StandardError.ReadToEndAsync();
-            _ = p.StandardOutput.ReadToEndAsync();
-            await p.WaitForExitAsync();
-            return Parse(await err);
-        }
-        catch (Exception e) { AppLog.Write("handcam", "device list failed: " + e.Message); return []; }
-    }
+    /// <summary>libobs id of the saved device, null when it is not connected.</summary>
+    public static string? Resolve(HandCamSlot slot, IReadOnlyList<HandCamDevice> devices)
+        => devices.FirstOrDefault(d => d.Name == slot.Device && d.Number == slot.Number)?.Id;
 }
 
-/// <summary>Records the hand-cam (DirectShow) with the same wall-clock timestamps as the game capture into short rolling segments, so a clip can be cut and aligned to the game footage.</summary>
-public sealed class HandCamRecorder : IAsyncDisposable
+/// <summary>Where a hand cam sits in a game frame of a given size (percentages of the frame, see <see cref="HandCamLayout"/>).</summary>
+public static class HandCamGeometry
 {
-    public const int SegmentSeconds = 2;
-    public const int Fps = 30;
-    public const string SegmentFilePattern = "cam_%03d.mp4";
+    /// <summary>Box the cam occupies: width / height percent of the frame, even pixels.</summary>
+    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l)
+        => (Math.Max(16, gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100 / 2 * 2), Math.Max(16, gameHeight * Math.Clamp(l.HeightPercent, 10, 40) / 100 / 2 * 2));
 
-    readonly string _ffmpeg, _device, _dir, _encoder;
-    readonly int _quality, _slots, _number, _targetWidth, _targetHeight;
-    readonly object _lock = new();
-    readonly List<(string File, TimeSpan Start, TimeSpan End)> _raw = [];
-    readonly List<SegmentInfo> _segments = [];
-    DateTime _epochUtc;
-    Process? _proc;
-    Task? _read;
-
-    /// <param name="index">Position in the cam list; names the buffer folder (cam0, cam1, ...).</param>
-    public HandCamRecorder(string ffmpegPath, HandCamSlot slot, int index, string bufferDir, string encoder, int quality, int bufferMinutes, int targetWidth = 0, int targetHeight = 0)
+    /// <summary>Top-left corner of the cam box: its right / top gap in percent, clamped inside the frame.</summary>
+    public static (int X, int Y) Position(int gameWidth, int gameHeight, int camWidth, int camHeight, HandCamLayout l)
     {
-        (_ffmpeg, _device, _number, _dir, _encoder, _quality, _targetWidth, _targetHeight) = (ffmpegPath, slot.Device, slot.Number, Path.Combine(bufferDir, "cam" + index), encoder, quality, targetWidth, targetHeight);
-        _slots = Math.Max(3, bufferMinutes * 60 / SegmentSeconds) + 2;
+        double right = Math.Clamp(l.RightPercent, 0, 100) / 100.0, top = Math.Clamp(l.TopPercent, 0, 100) / 100.0;
+        var x = Math.Max(0, Math.Min(gameWidth - camWidth, gameWidth - camWidth - gameWidth * right));
+        var y = Math.Max(0, Math.Min(gameHeight - camHeight, gameHeight * top));
+        return ((int)Math.Round(x), (int)Math.Round(y));
     }
-
-    public bool IsRunning => _proc is { HasExited: false };
-    public string LastError { get; private set; } = "";
-    public IReadOnlyList<SegmentInfo> Segments { get { lock (_lock) return _segments.ToList(); } }
-
-    /// <summary>Tries 1280x720@30, then the device default. False (LastError set) when ffmpeg cannot open the device.</summary>
-    public async Task<bool> StartAsync()
-    {
-        Directory.CreateDirectory(_dir);
-        foreach (var f in Directory.GetFiles(_dir, "cam_*.mp4")) { try { File.Delete(f); } catch { } }
-        return await TryLaunchAsync(true) || await TryLaunchAsync(false);
-    }
-
-    async Task<bool> TryLaunchAsync(bool forceMode)
-    {
-        lock (_lock) { _raw.Clear(); _segments.Clear(); }
-        _epochUtc = DateTime.UtcNow;
-        var psi = new ProcessStartInfo(_ffmpeg)
-        { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true, StandardErrorEncoding = System.Text.Encoding.UTF8 };
-        foreach (var a in FfmpegCommand.BuildHandCamRecord(_device, _number, _encoder, _quality, _dir, (_epochUtc - DateTime.UnixEpoch).Ticks / 10, _slots, forceMode, _targetWidth, _targetHeight)) psi.ArgumentList.Add(a);
-        AppLog.Write("handcam", $"start: {string.Join(' ', psi.ArgumentList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
-        var p = Process.Start(psi) ?? throw new InvalidOperationException("ffmpeg did not start");
-        _proc = p;
-        var err = new System.Text.StringBuilder();
-        p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (err) err.AppendLine(e.Data); };
-        p.BeginErrorReadLine();
-        _read = Task.Run(() => ReadSegmentList(p));
-        await Task.WhenAny(p.WaitForExitAsync(), Task.Delay(2500));
-        if (!p.HasExited) return true;
-        string log; lock (err) log = err.ToString();
-        LastError = AppLog.Tail(log);
-        AppLog.Write("handcam", $"exited early (forceMode={forceMode}): {LastError}");
-        p.Dispose(); _proc = null;
-        return false;
-    }
-
-    void ReadSegmentList(Process p)
-    {
-        string? line;
-        var first = true;
-        while ((line = p.StandardOutput.ReadLine()) != null)
-        {
-            if (first) { first = false; continue; } // first segment reports start 0 instead of its real pts (same as VideoRecorder)
-            var parts = line.Split(',');
-            if (parts.Length < 3 ||
-                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ||
-                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var e)) continue;
-            lock (_lock)
-            {
-                _raw.RemoveAll(r => r.File == parts[0]);
-                _raw.Add((parts[0], TimeSpan.FromSeconds(s), TimeSpan.FromSeconds(e)));
-                _segments.Clear();
-                foreach (var r in _raw) _segments.Add(new SegmentInfo(Path.Combine(_dir, r.File), _epochUtc + r.Start, r.End - r.Start));
-            }
-        }
-    }
-
-    public async Task StopAsync()
-    {
-        var p = _proc;
-        if (p is null) return;
-        try
-        {
-            if (!p.HasExited)
-            {
-                try { await p.StandardInput.WriteAsync("q"); await p.StandardInput.FlushAsync(); } catch { }
-                await Task.WhenAny(p.WaitForExitAsync(), Task.Delay(4000));
-                if (!p.HasExited) { try { p.Kill(true); } catch { } await p.WaitForExitAsync(); }
-            }
-            if (_read != null) await Task.WhenAny(_read, Task.Delay(2000));
-        }
-        finally { p.Dispose(); _proc = null; }
-    }
-
-    /// <summary>
-    /// Concatenates the cam segments covering [startUtc, endUtc] into <paramref name="outputPath"/>. Waits (up to maxWait) for the segment holding endUtc to close.
-    /// Returns the wall-clock start of the result (first segment start) or null when nothing is buffered.
-    /// </summary>
-    public async Task<DateTime?> ExtractAsync(DateTime startUtc, DateTime endUtc, string outputPath, Func<IEnumerable<string>, Task> runFfmpeg, TimeSpan? maxWait = null)
-    {
-        var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(SegmentSeconds + 3));
-        List<SegmentInfo> sel;
-        while (true)
-        {
-            sel = SegmentSelector.Select(Segments, startUtc, endUtc, TimeSpan.Zero);
-            if (sel.Count > 0 && sel[^1].EndUtc >= endUtc) break;
-            if (!IsRunning || DateTime.UtcNow > deadline) break;
-            await Task.Delay(100);
-        }
-        if (sel.Count == 0) return null;
-        var list = outputPath + ".txt";
-        await File.WriteAllTextAsync(list, FfmpegCommand.BuildConcatList(sel));
-        try { await runFfmpeg(FfmpegCommand.BuildConcat(list, outputPath)); }
-        finally { try { File.Delete(list); } catch { } }
-        return sel[0].StartUtc;
-    }
-
-    public async ValueTask DisposeAsync() => await StopAsync();
 }

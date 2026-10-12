@@ -6,7 +6,7 @@ namespace KovaaksCompanion.Core.Video.Obs;
 
 /// <summary>What one capture pipeline records.</summary>
 /// <param name="Encoder">libobs video encoder id (see <see cref="ObsCapture.EncoderChain"/>).</param>
-public sealed record ObsCaptureSpec(CaptureTarget Target, string ProcessName, int Fps, int Quality, int? MaxHeight, string Encoder, bool Audio);
+public sealed record ObsCaptureSpec(CaptureTarget Target, string ProcessName, int Fps, int Quality, int? MaxHeight, string Encoder, bool Audio, IReadOnlyList<ObsCamSpec>? Cams = null);
 
 /// <summary>
 /// Game window (Windows Graphics Capture) + the game process's audio -> hardware H.264 + AAC -> <see cref="PacketOutput"/>.
@@ -22,6 +22,8 @@ internal sealed class ObsCapture : IDisposable
 
     readonly ObsCaptureSpec _spec;
     nint _scene, _videoSource, _audioSource, _videoEncoder, _audioEncoder;
+    readonly List<nint> _camSources = [];
+    readonly object _sync = new();
     PacketOutput? _output;
 
     public ObsCapture(ObsCaptureSpec spec) => _spec = spec;
@@ -30,6 +32,8 @@ internal sealed class ObsCapture : IDisposable
     public int OutputWidth { get; private set; }
     public int OutputHeight { get; private set; }
     public bool HasAudio => _audioEncoder != 0;
+    /// <summary>Cam sources composited into the frame.</summary>
+    public IReadOnlyList<nint> CamSources => _camSources;
     public string Error { get; private set; } = "";
 
     /// <summary>Encoder ids libobs actually registered on this machine, in chain order.</summary>
@@ -63,6 +67,15 @@ internal sealed class ObsCapture : IDisposable
         ObsNative.obs_sceneitem_set_pos(item, new ObsNative.Vec2(0, 0));
         ObsNative.obs_sceneitem_set_bounds_type(item, 2); // scale inner
         ObsNative.obs_sceneitem_set_bounds(item, new ObsNative.Vec2(t.Width & ~1, t.Height & ~1));
+        // cams go on top of the game, each in its box (cover-scaled and cropped to it), in list order
+        int baseW = t.Width & ~1, baseH = t.Height & ~1;
+        foreach (var cam in _spec.Cams ?? [])
+        {
+            var src = ObsCamSource.Create(cam.DeviceId, "cam" + (_camSources.Count + 1));
+            if (src == 0) { AppLog.Write("obs", "hand cam source failed: " + cam.DeviceId); continue; }
+            _camSources.Add(src);
+            ObsCamSource.Place(_scene, src, baseW, baseH, cam.Layout);
+        }
         ObsNative.obs_set_output_source(0, ObsNative.obs_scene_get_source(_scene));
 
         if (_spec.Audio)
@@ -95,7 +108,7 @@ internal sealed class ObsCapture : IDisposable
     }
 
     /// <summary>Per-vendor constant-quality settings, keyframe every second, no B-frames.</summary>
-    static nint CreateVideoEncoder(string id, int quality)
+    internal static nint CreateVideoEncoder(string id, int quality)
     {
         var d = ObsNative.obs_data_create();
         try
@@ -144,12 +157,27 @@ internal sealed class ObsCapture : IDisposable
         return $"{Esc(title.ToString())}:{Esc(cls.ToString())}:{Esc(processName + ".exe")}";
     }
 
+    /// <summary>Cams that deliver no frames at 1280x720@30 fall back to their device default mode.</summary>
+    public void FixCamModes()
+    {
+        lock (_sync)
+            foreach (var c in _camSources)
+                if (!ObsCamSource.HasFrames(c)) { AppLog.Write("handcam", "no frames at 1280x720@30, using the device default"); ObsCamSource.UseDeviceDefault(c); }
+    }
+
     public void Dispose()
+    {
+        lock (_sync) DisposeCore();
+    }
+
+    void DisposeCore()
     {
         _output?.Dispose(); _output = null;
         if (_videoEncoder != 0) { ObsNative.obs_encoder_release(_videoEncoder); _videoEncoder = 0; }
         if (_audioEncoder != 0) { ObsNative.obs_encoder_release(_audioEncoder); _audioEncoder = 0; }
         ObsNative.obs_set_output_source(0, 0); ObsNative.obs_set_output_source(1, 0);
+        foreach (var c in _camSources) ObsNative.obs_source_release(c);
+        _camSources.Clear();
         if (_videoSource != 0) { ObsNative.obs_source_release(_videoSource); _videoSource = 0; }
         if (_audioSource != 0) { ObsNative.obs_source_release(_audioSource); _audioSource = 0; }
         if (_scene != 0) { ObsNative.obs_scene_release(_scene); _scene = 0; }

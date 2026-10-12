@@ -115,6 +115,12 @@ internal static unsafe partial class ObsNative
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds_crop(nint item, [MarshalAs(UnmanagedType.U1)] bool crop);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds(nint item, in Vec2 bounds);
 
+    [LibraryImport(Lib)] public static partial nint obs_canvas_create_private([MarshalAs(UnmanagedType.LPUTF8Str)] string name, ref VideoInfo ovi, uint flags);
+    [LibraryImport(Lib)] public static partial void obs_canvas_remove(nint canvas);
+    [LibraryImport(Lib)] public static partial void obs_canvas_release(nint canvas);
+    [LibraryImport(Lib)] public static partial nint obs_canvas_scene_create(nint canvas, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+    [LibraryImport(Lib)] public static partial void obs_canvas_set_channel(nint canvas, uint channel, nint source);
+    [LibraryImport(Lib)] public static partial nint obs_canvas_get_video(nint canvas);
     [LibraryImport(Lib)] public static partial nint obs_video_encoder_create([MarshalAs(UnmanagedType.LPUTF8Str)] string id, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, nint settings, nint hotkeyData);
     [LibraryImport(Lib)] public static partial nint obs_audio_encoder_create([MarshalAs(UnmanagedType.LPUTF8Str)] string id, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, nint settings, nuint mixerIdx, nint hotkeyData);
     [LibraryImport(Lib)] public static partial void obs_encoder_release(nint encoder);

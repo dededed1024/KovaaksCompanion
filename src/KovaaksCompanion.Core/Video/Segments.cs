@@ -1,10 +1,4 @@
-namespace KovaaksCompanion.Core.Video;
-
-/// <summary>A finished ring-buffer segment: file name plus its start on the wall (UTC) clock.</summary>
-public sealed record SegmentInfo(string File, DateTime StartUtc, TimeSpan Duration)
-{
-    public DateTime EndUtc => StartUtc + Duration;
-}
+﻿namespace KovaaksCompanion.Core.Video;
 
 /// <summary>Result of a clip extraction. Clip time 0 corresponds to <see cref="ClipStartUtc"/> / <see cref="ClipStartQpc"/>.</summary>
 public sealed record ClipResult(string Path, DateTime ClipStartUtc, long ClipStartQpc, TimeSpan Duration)
@@ -12,21 +6,6 @@ public sealed record ClipResult(string Path, DateTime ClipStartUtc, long ClipSta
     /// <summary>Position inside the clip of a wall-clock instant.</summary>
     public TimeSpan ToClipTime(DateTime utc) => utc.ToUniversalTime() - ClipStartUtc;
     public DateTime ToUtc(TimeSpan clipTime) => ClipStartUtc + clipTime;
-}
-
-public static class SegmentSelector
-{
-    /// <summary>Contiguous-or-not segments overlapping [start - margin, end + margin], oldest first.</summary>
-    public static List<SegmentInfo> Select(IEnumerable<SegmentInfo> segments, DateTime startUtc, DateTime endUtc, TimeSpan margin)
-    {
-        var from = startUtc.ToUniversalTime() - margin;
-        var to = endUtc.ToUniversalTime() + margin;
-        return segments.Where(s => s.EndUtc > from && s.StartUtc < to).OrderBy(s => s.StartUtc).ToList();
-    }
-
-    /// <summary>True when the selection reaches past the requested window on both sides (or the window is fully buffered).</summary>
-    public static bool Covers(IReadOnlyList<SegmentInfo> selected, DateTime startUtc, DateTime endUtc)
-        => selected.Count > 0 && selected[0].StartUtc <= startUtc.ToUniversalTime() && selected[^1].EndUtc >= endUtc.ToUniversalTime();
 }
 
 /// <summary>QPC (Stopwatch ticks) &lt;-&gt; UTC conversion from one paired sample taken at construction.</summary>

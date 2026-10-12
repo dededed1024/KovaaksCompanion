@@ -1,248 +1,141 @@
 using System.Diagnostics;
-using System.Globalization;
-using System.IO.Pipes;
 using KovaaksCompanion.Core.Diagnostics;
+using KovaaksCompanion.Core.Video.Mp4;
+using KovaaksCompanion.Core.Video.Obs;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Runs one ffmpeg gfxcapture (game window) + process audio -> HW H.264/AAC -> segment-muxer process as a rolling buffer and tracks segment wall-clock times.</summary>
+/// <summary>
+/// Records the game window + its audio (+ composited hand cams) through libobs into a rolling <see cref="PacketRing"/> and cuts clips out of it on demand.
+/// </summary>
 public sealed class VideoRecorder : IAsyncDisposable
 {
     private readonly VideoOptions _o;
-    private readonly object _lock = new();
-    private readonly List<SegmentInfo> _segments = [];
-    private readonly List<(string File, TimeSpan Start, TimeSpan End)> _raw = [];
-    private DateTime _streamEpochUtc;
-    private Process? _proc;
-    private Task? _readTask;
-    private ProcessAudioCapture? _audio;
-    private NamedPipeServerStream? _audioPipe;
-    private CancellationTokenSource? _audioCts;
-    private Task? _audioTask;
+    private ObsCapture? _capture;
+    private PacketRing? _ring;
+    private AvcInfo? _avc;
+    private AacInfo? _aac;
 
     public VideoRecorder(VideoOptions options) => _o = options;
 
-    public bool IsRunning => _proc is { HasExited: false };
+    public bool IsRunning => _capture?.Output.IsActive == true;
+    /// <summary>libobs id of the encoder in use.</summary>
     public string? Encoder { get; private set; }
-    public DxgiOutput? Output { get; private set; }
     public QpcClock Clock { get; } = new();
     public string LastError { get; private set; } = "";
-    /// <summary>stderr (warnings/errors) of the current ffmpeg process.</summary>
-    public string FfmpegLog { get; private set; } = "";
     /// <summary>Why the clip has no audio (empty = audio recorded or not requested).</summary>
     public string AudioError { get; private set; } = "";
-    /// <summary>Captured window region (null = whole monitor).</summary>
+    /// <summary>Captured window.</summary>
     public CaptureTarget? Target { get; private set; }
-    public event Action<SegmentInfo>? SegmentClosed;
+    /// <summary>Size of the recorded video (the capped output size, not the raw window size); 0x0 before start.</summary>
+    public (int Width, int Height) VideoSize { get; private set; }
+    /// <summary>Cam sources composited into the video, in the order they were given.</summary>
+    public IReadOnlyList<nint> CamSources => _capture?.CamSources ?? [];
 
-    public IReadOnlyList<SegmentInfo> Segments { get { lock (_lock) return _segments.ToList(); } }
-
-    /// <summary>Starts recording; tries each encoder of the fallback chain until one stays alive. Returns false if none works.</summary>
-    public async Task<bool> StartAsync(CancellationToken ct = default)
+    /// <summary>Starts recording; tries each encoder of the fallback chain until one starts. Returns false if none works.</summary>
+    public async Task<bool> StartAsync(IReadOnlyList<ObsCamSpec> cams, CancellationToken ct = default)
     {
         Directory.CreateDirectory(_o.BufferDir);
-        foreach (var f in Directory.GetFiles(_o.BufferDir, "seg_*.mp4")) TryDelete(f);
+        foreach (var f in Directory.GetFiles(_o.BufferDir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) TryDelete(f);
 
-        int outIdx, adapter;
-        if (_o.CaptureWindow)
-        {
-            Target = await WaitForWindowAsync(ct);
-            if (Target is null) { LastError = ct.IsCancellationRequested ? "cancelled" : "game exited before its window appeared"; return false; }
-            AppLog.Write("video", $"target: game window process={Target.ProcessId} hwnd={Target.Hwnd} {Target.Width}x{Target.Height}");
-            Output = Target.Output; outIdx = Target.Output?.OutputIndex ?? 0; adapter = Target.Output?.AdapterIndex ?? _o.AdapterIndex;
-        }
-        else
-        {
-            var primary = _o.OutputIndex is null ? MonitorResolver.FindPrimary() : null;
-            Output = primary;
-            outIdx = _o.OutputIndex ?? primary?.OutputIndex ?? 0;
-            adapter = _o.OutputIndex is null ? primary?.AdapterIndex ?? _o.AdapterIndex : _o.AdapterIndex;
-            AppLog.Write("video", $"target: whole monitor adapter {adapter} output {outIdx}");
-        }
+        Target = await GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);
+        if (Target is null) { LastError = ct.IsCancellationRequested ? "cancelled" : "game exited before its window appeared"; return false; }
+        AppLog.Write("video", $"target: game window process={Target.ProcessId} hwnd={Target.Hwnd} {Target.Width}x{Target.Height}");
 
-        var probe = await RunCaptureAsync(["-hide_banner", "-encoders"]);
-        var encoders = FfmpegCommand.ChooseEncoders(probe, _o.Encoder);
-        AppLog.Write("video", $"encoder probe: {probe.Length} chars, candidates [{string.Join(", ", encoders)}] (requested '{_o.Encoder}')");
+        // libobs wants an MTA thread for its COM use; the UI thread is STA
+        if (!await Task.Run(() => ObsRuntime.Start(_o.ObsRoot))) { LastError = "libobs: " + ObsRuntime.LastError; return false; }
+        var encoders = await Task.Run(() => ObsCapture.AvailableEncoders(_o.Encoder));
+        AppLog.Write("video", $"encoder candidates [{string.Join(", ", encoders)}] (requested '{_o.Encoder}')");
+        if (encoders.Count == 0) { LastError = "no hardware H.264 encoder (NVENC/AMF/QSV) found"; return false; }
+
         foreach (var enc in encoders)
-            if (await TryLaunchAsync(enc, outIdx, adapter)) { Encoder = enc; AppLog.Write("video", "recording with encoder " + enc); return true; }
-        if (encoders.Count == 0) LastError = "no hardware H.264 encoder (NVENC/AMF/QSV) found";
-        AppLog.Write("video", "no encoder worked: " + LastError);
+        {
+            var ring = new PacketRing(_o.BufferDir, TimeSpan.FromMinutes(_o.BufferMinutes));
+            var cap = new ObsCapture(new ObsCaptureSpec(Target, _o.GameProcessName, _o.Fps, _o.Quality, _o.MaxHeight, enc, _o.CaptureAudio, cams));
+            var ok = await Task.Run(() => cap.Start(ring.Append));
+            if (ok)
+            {
+                (_ring, _capture, Encoder, VideoSize) = (ring, cap, enc, (cap.OutputWidth, cap.OutputHeight));
+                AudioError = _o.CaptureAudio && !cap.HasAudio ? "process audio capture unavailable" : "";
+                AppLog.Write("video", $"recording with encoder {enc} at {cap.OutputWidth}x{cap.OutputHeight}");
+                if (cap.CamSources.Count > 0) _ = Task.Run(async () => { await Task.Delay(2000); if (_capture == cap) cap.FixCamModes(); });
+                _ = Task.Run(async () => { for (int i = 0; i < 40 && _avc == null && _capture == cap; i++) { Parameters(cap); if (_avc == null) await Task.Delay(250); } });
+                return true;
+            }
+            LastError = $"{enc}: {cap.Error}";
+            AppLog.Write("video", "encoder failed: " + LastError);
+            cap.Dispose(); ring.Dispose();
+        }
         return false;
     }
 
-    private Task<CaptureTarget?> WaitForWindowAsync(CancellationToken ct)
-        => GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);
-
-    private async Task<bool> TryLaunchAsync(string encoder, int outIdx, int adapter)
-    {
-        lock (_lock) { _segments.Clear(); _raw.Clear(); }
-        string? pipePath = null;
-        AudioError = "";
-        if (_o.CaptureAudio && Target != null)
-        {
-            var audio = new ProcessAudioCapture(Target.ProcessId);
-            if (audio.TryInitialize())
-            {
-                var name = "kc_audio_" + Guid.NewGuid().ToString("N");
-                _audio = audio;
-                _audioPipe = new NamedPipeServerStream(name, PipeDirection.Out, 1, PipeTransmissionMode.Byte);
-                pipePath = @"\\.\pipe\" + name;
-            }
-            else { AudioError = audio.Error; audio.Dispose(); AppLog.Write("audio", "capture init failed: " + AudioError); }
-        }
-        var psi = new ProcessStartInfo(_o.FfmpegPath)
-        {
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            UseShellExecute = false, CreateNoWindow = true,
-        };
-        var epoch = DateTime.UtcNow;
-        _streamEpochUtc = epoch;
-        foreach (var a in FfmpegCommand.BuildRecord(_o, encoder, outIdx, adapter, _o.BufferDir, (epoch - DateTime.UnixEpoch).Ticks / 10, Target, pipePath)) psi.ArgumentList.Add(a);
-        AppLog.Write("ffmpeg", $"start ({encoder}): {psi.FileName} {string.Join(' ', psi.ArgumentList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
-        var p = Process.Start(psi) ?? throw new InvalidOperationException("ffmpeg did not start");
-        _proc = p;
-        p.EnableRaisingEvents = true;
-        var err = new System.Text.StringBuilder();
-        p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (err) { err.AppendLine(e.Data); FfmpegLog = err.ToString(); } };
-        p.Exited += (_, _) =>
-        {
-            string log; lock (err) log = err.ToString();
-            AppLog.Write("ffmpeg", $"exited code={TryExitCode(p)}; stderr tail:{Environment.NewLine}{AppLog.Tail(log)}");
-        };
-        p.BeginErrorReadLine();
-        _readTask = Task.Run(() => ReadSegmentList(p));
-        StartAudioPump();
-        // an unusable encoder/GPU makes ffmpeg exit within a second or two
-        await Task.WhenAny(p.WaitForExitAsync(), Task.Delay(2500));
-        if (p.HasExited)
-        {
-            lock (err) LastError = $"{encoder}: {err}";
-            await StopAudioAsync();
-            _proc = null;
-            return false;
-        }
-        return true;
-    }
-
-    private void StartAudioPump()
-    {
-        if (_audio is null || _audioPipe is null) return;
-        var (audio, pipe) = (_audio, _audioPipe);
-        var cts = _audioCts = new CancellationTokenSource();
-        _audioTask = Task.Run(async () =>
-        {
-            try
-            {
-                using var connect = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-                connect.CancelAfter(TimeSpan.FromSeconds(10));
-                await pipe.WaitForConnectionAsync(connect.Token);
-                audio.Pump(pipe, cts.Token);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception e) { AudioError = e.Message; }
-        });
-    }
-
-    private async Task StopAudioAsync()
-    {
-        _audioCts?.Cancel();
-        if (_audioTask != null) await Task.WhenAny(_audioTask, Task.Delay(2000));
-        _audioPipe?.Dispose(); _audio?.Dispose(); _audioCts?.Dispose();
-        _audioPipe = null; _audio = null; _audioCts = null; _audioTask = null;
-    }
-
-    private void ReadSegmentList(Process p)
-    {
-        string? line;
-        var first = true;
-        while ((line = p.StandardOutput.ReadLine()) != null)
-        {
-            if (first) { first = false; continue; } // the muxer reports 0 as the first segment's start, not its real pts
-            var parts = line.Split(',');
-            if (parts.Length < 3 ||
-                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ||
-                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var e)) continue;
-            SegmentInfo info;
-            lock (_lock)
-            {
-                _raw.RemoveAll(r => r.File == parts[0]);   // slot wrapped: its older content is gone
-                _raw.Add((parts[0], TimeSpan.FromSeconds(s), TimeSpan.FromSeconds(e)));
-                _segments.Clear();
-                foreach (var r in _raw)
-                    _segments.Add(new SegmentInfo(Path.Combine(_o.BufferDir, r.File), _streamEpochUtc + r.Start, r.End - r.Start));
-                info = _segments[^1];
-            }
-            SegmentClosed?.Invoke(info);
-        }
-    }
-
-    /// <summary>Graceful stop ('q' on stdin so the open segment is finalized); kills after the timeout.</summary>
-    public async Task StopAsync(TimeSpan? timeout = null)
-    {
-        var p = _proc;
-        if (p is null) return;
-        try
-        {
-            if (!p.HasExited)
-            {
-                try { await p.StandardInput.WriteAsync("q"); await p.StandardInput.FlushAsync(); } catch { }
-                await Task.WhenAny(p.WaitForExitAsync(), Task.Delay(timeout ?? TimeSpan.FromSeconds(5)));
-                if (!p.HasExited) { try { p.Kill(true); } catch { } await p.WaitForExitAsync(); }
-            }
-            if (_readTask != null) await Task.WhenAny(_readTask, Task.Delay(2000));
-            await StopAudioAsync();
-        }
-        finally { p.Dispose(); _proc = null; }
-    }
-
     /// <summary>
-    /// Cuts [start, end] +/- margin out of the buffer with -c copy. Waits (up to maxWait) for the segment
-    /// containing end+margin to close; if recording already stopped, uses whatever was finalized.
+    /// Cuts [start, end] +/- margin out of the buffer. Waits (up to maxWait) for the buffer to reach end+margin; if recording already stopped, uses whatever was captured.
+    /// The clip starts at the keyframe at or before start - margin; <see cref="ClipResult.ClipStartUtc"/> is that frame's time.
     /// </summary>
     public async Task<ClipResult?> ExtractClipAsync(DateTime startUtc, DateTime endUtc, string outputPath, TimeSpan? maxWait = null)
     {
+        var ring = _ring;
+        if (ring == null || !ring.HasOrigin) return null;
         startUtc = startUtc.ToUniversalTime(); endUtc = endUtc.ToUniversalTime();
-        var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(_o.SegmentSeconds + 5));
-        List<SegmentInfo> sel;
-        while (true)
-        {
-            sel = SegmentSelector.Select(Segments, startUtc, endUtc, _o.ClipMargin);
-            if (sel.Count > 0 && sel[^1].EndUtc >= endUtc + _o.ClipMargin) break;
-            if (!IsRunning || DateTime.UtcNow > deadline) break;
-            await Task.Delay(200);
-        }
-        if (sel.Count == 0) return null;
+        double from = ToRingSec(ring, startUtc - _o.ClipMargin), to = ToRingSec(ring, endUtc + _o.ClipMargin);
+        var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(5));
+        while (ring.LastVideoSec < to && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
-        var list = outputPath + ".txt";
-        await File.WriteAllTextAsync(list, FfmpegCommand.BuildConcatList(sel));
-        try { await RunCaptureAsync(FfmpegCommand.BuildConcat(list, outputPath), throwOnFail: true); }
-        finally { TryDelete(list); }
-        var first = sel[0].StartUtc;
-        return new ClipResult(outputPath, first, Clock.ToQpc(first), sel[^1].EndUtc - first);
+        var (avc, aac) = Parameters(_capture);
+        if (avc == null) return null;
+        var span = await Task.Run(() => ring.WriteClip(outputPath, from, to, avc, aac));
+        if (span is not { } s) return null;
+        var startQpc = NsToQpc(ring.ToQpcNs(s.Start));
+        return new ClipResult(outputPath, Clock.ToUtc(startQpc), startQpc, TimeSpan.FromSeconds(s.End - s.Start + 1.0 / Math.Max(1, _o.Fps)));
     }
 
-    private async Task<string> RunCaptureAsync(IEnumerable<string> args, bool throwOnFail = false)
+    /// <summary>Stream parameters (SPS/PPS, AAC config) read from the running encoders once, then cached.</summary>
+    (AvcInfo? Avc, AacInfo? Aac) Parameters(ObsCapture? cap)
     {
-        var psi = new ProcessStartInfo(_o.FfmpegPath)
-        { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-        using var p = Process.Start(psi)!;
-        var so = p.StandardOutput.ReadToEndAsync();
-        var se = p.StandardError.ReadToEndAsync();
-        await p.WaitForExitAsync();
-        if (throwOnFail && p.ExitCode != 0)
-        {
-            var msg = await se;
-            AppLog.Write("ffmpeg", $"command failed code={p.ExitCode}: {string.Join(' ', psi.ArgumentList)}{Environment.NewLine}{AppLog.Tail(msg)}");
-            throw new IOException("ffmpeg failed: " + msg);
-        }
-        return await so;
+        if (cap == null) return (_avc, _aac);
+        if (_avc == null && Avc.ParameterSets(cap.Output.VideoExtraData() ?? []) is { } ps) _avc = new AvcInfo(cap.OutputWidth, cap.OutputHeight, ps.Sps, ps.Pps);
+        if (_aac == null && cap.HasAudio && cap.Output.AudioExtraData() is { Length: >= 2 } asc) _aac = new AacInfo(48000, 2, asc[..2]); // AAC-LC; libobs appends SBR signalling that MP4 readers do not want
+        return (_avc, _aac);
     }
 
-    private static string TryExitCode(Process p) { try { return p.ExitCode.ToString(); } catch { return "?"; } }
+    /// <summary>The ring's time (seconds on the encoder clock) of a wall-clock instant.</summary>
+    double ToRingSec(PacketRing ring, DateTime utc) => ring.ToRingSec(QpcToNs(Clock.ToQpc(utc)));
+
+    static long QpcToNs(long ticks) => (long)(ticks * 1e9 / Stopwatch.Frequency);
+    static long NsToQpc(long ns) => (long)(ns * (double)Stopwatch.Frequency / 1e9);
+
+    /// <summary>Session-wide clock helpers the cam recorders use to line their rings up with a game clip.</summary>
+    public static long UtcToQpcNs(QpcClock clock, DateTime utc) => QpcToNs(clock.ToQpc(utc));
+
+    /// <summary>Stops the encoders and releases the capture; the buffered footage stays cuttable until <see cref="DisposeAsync"/>.</summary>
+    public async Task StopAsync()
+    {
+        var cap = _capture;
+        if (cap == null) return;
+        await Task.Run(() =>
+        {
+            try
+            {
+                Parameters(cap);
+                cap.Output.Stop();
+                var sw = Stopwatch.StartNew();
+                while (cap.Output.IsActive && sw.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(50);
+            }
+            catch (Exception e) { AppLog.Write("video", "stop failed: " + e.Message); }
+            _capture = null;
+            cap.Dispose();
+        });
+    }
 
     private static void TryDelete(string f) { try { File.Delete(f); } catch { } }
 
-    public async ValueTask DisposeAsync() => await StopAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync();
+        var ring = _ring;
+        _ring = null;
+        await Task.Run(() => ring?.Dispose());
+    }
 }

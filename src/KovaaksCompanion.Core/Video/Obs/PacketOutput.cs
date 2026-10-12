@@ -19,7 +19,7 @@ public sealed record EncodedPacket(bool IsVideo, bool Keyframe, long Pts, long D
 /// </summary>
 internal sealed unsafe class PacketOutput : IDisposable
 {
-    const string Id = "kc_packets";
+    const string Id = "kc_packets", IdVideoOnly = "kc_packets_v";
     static bool _registered;
     static readonly object RegLock = new();
     [ThreadStatic] static PacketOutput? _pending;
@@ -39,7 +39,7 @@ internal sealed unsafe class PacketOutput : IDisposable
         _video = videoEncoder; _audio = audioEncoder;
         _self = GCHandle.Alloc(this);
         _pending = this;
-        try { _output = ObsNative.obs_output_create(Id, name, 0, 0); }
+        try { _output = ObsNative.obs_output_create(audioEncoder == 0 ? IdVideoOnly : Id, name, 0, 0); }
         finally { _pending = null; }
         if (_output == 0) { _self.Free(); throw new InvalidOperationException("obs_output_create failed for " + Id); }
         ObsNative.obs_output_set_video_encoder(_output, _video);
@@ -87,20 +87,23 @@ internal sealed unsafe class PacketOutput : IDisposable
         lock (RegLock)
         {
             if (_registered) return;
+            foreach (var (id, flags, audioCodecs) in new[] { (Id, ObsNative.OutputVideo | ObsNative.OutputAudio | ObsNative.OutputEncoded, "AAC"), (IdVideoOnly, ObsNative.OutputVideo | ObsNative.OutputEncoded, "") })
+            {
             var info = new ObsNative.OutputInfo
             {
-                Id = (nint)Marshal.StringToCoTaskMemUTF8(Id),
-                Flags = ObsNative.OutputVideo | ObsNative.OutputAudio | ObsNative.OutputEncoded,
+                Id = (nint)Marshal.StringToCoTaskMemUTF8(id),
+                Flags = flags,
                 GetName = (nint)(delegate* unmanaged[Cdecl]<nint, nint>)&CbGetName,
                 Create = (nint)(delegate* unmanaged[Cdecl]<nint, nint, nint>)&CbCreate,
                 Destroy = (nint)(delegate* unmanaged[Cdecl]<nint, void>)&CbDestroy,
                 Start = (nint)(delegate* unmanaged[Cdecl]<nint, byte>)&CbStart,
                 Stop = (nint)(delegate* unmanaged[Cdecl]<nint, ulong, void>)&CbStop,
-                EncodedPacket = (nint)(delegate* unmanaged[Cdecl]<nint, ObsNative.EncoderPacket*, void>)&CbPacketIgnored,
+                EncodedPacket = (nint)(delegate* unmanaged[Cdecl]<nint, ObsNative.EncoderPacket*, void>)&CbPacketDirect,
                 EncodedVideoCodecs = (nint)Marshal.StringToCoTaskMemUTF8("h264"),
-                EncodedAudioCodecs = (nint)Marshal.StringToCoTaskMemUTF8("AAC"),
+                EncodedAudioCodecs = audioCodecs.Length == 0 ? 0 : (nint)Marshal.StringToCoTaskMemUTF8(audioCodecs),
             };
             ObsNative.obs_register_output_s(info, (nuint)sizeof(ObsNative.OutputInfo));
+            }
             _registered = true;
         }
     }
@@ -153,21 +156,33 @@ internal sealed unsafe class PacketOutput : IDisposable
         catch (Exception e) { AppLog.Write("obs", "output stop failed: " + e); }
     }
 
-    /// <summary>The output callback itself is not used: the packet callback below sees the same packets together with their capture time.</summary>
+    /// <summary>
+    /// With an audio encoder the interleaved packet callback below delivers every packet together with its capture time, so this one stays quiet.
+    /// A video-only output is not interleaved by libobs: its packets arrive here, without a capture time.
+    /// </summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    static void CbPacketIgnored(nint data, ObsNative.EncoderPacket* pkt) { }
+    static void CbPacketDirect(nint data, ObsNative.EncoderPacket* pkt)
+    {
+        var s = From(data);
+        if (s == null || s._audio != 0 || pkt == null || pkt->Data == null) return;
+        s.Deliver(pkt, 0);
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     static void CbPacketTimed(nint output, ObsNative.EncoderPacket* pkt, ObsNative.EncoderPacketTime* time, nint param)
     {
         var s = From(param);
         if (s == null || pkt == null || pkt->Data == null) return;
+        s.Deliver(pkt, time != null ? time->Cts : 0);
+    }
+
+    void Deliver(ObsNative.EncoderPacket* pkt, ulong captureNs)
+    {
         try
         {
             var bytes = new byte[(int)pkt->Size];
             Marshal.Copy((nint)pkt->Data, bytes, 0, bytes.Length);
-            s.Packet?.Invoke(new EncodedPacket(pkt->Type == 1, pkt->Keyframe != 0, pkt->Pts, pkt->Dts, pkt->TimebaseNum, pkt->TimebaseDen, bytes,
-                pkt->DtsUsec, time != null ? time->Cts : 0));
+            Packet?.Invoke(new EncodedPacket(pkt->Type == 1, pkt->Keyframe != 0, pkt->Pts, pkt->Dts, pkt->TimebaseNum, pkt->TimebaseDen, bytes, pkt->DtsUsec, captureNs));
         }
         catch (Exception e) { AppLog.Write("obs", "packet handler failed: " + e); }
     }

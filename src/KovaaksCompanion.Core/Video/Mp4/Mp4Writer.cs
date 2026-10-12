@@ -20,13 +20,17 @@ public static class Mp4Writer
     const int MovieTimescale = 1000;
     const int VideoTimescale = 90000;
 
-    /// <summary>Writes the file. <paramref name="writeSample"/> receives the sample's index in <paramref name="samples"/> and must write exactly its <see cref="Mp4Sample.Length"/> bytes.</summary>
-    public static void Write(Stream output, AvcInfo video, AacInfo? audio, IReadOnlyList<Mp4Sample> samples, Action<int, Stream> writeSample)
+    /// <summary>
+    /// Writes the file. <paramref name="writeSample"/> receives the sample's index in <paramref name="samples"/> and must write exactly its <see cref="Mp4Sample.Length"/> bytes.
+    /// <paramref name="originSec"/> is the clip's time 0 on the samples' clock (default: the first video sample): a later first video sample is delayed by an empty edit,
+    /// an earlier one (decode lead-in before a keyframe) is cut off by an edit that starts inside the media.
+    /// </summary>
+    public static void Write(Stream output, AvcInfo video, AacInfo? audio, IReadOnlyList<Mp4Sample> samples, Action<int, Stream> writeSample, double? originSec = null)
     {
         var vIdx = Enumerable.Range(0, samples.Count).Where(i => samples[i].IsVideo).ToList();
         var aIdx = audio == null ? [] : Enumerable.Range(0, samples.Count).Where(i => !samples[i].IsVideo).ToList();
         if (vIdx.Count == 0) throw new ArgumentException("no video samples", nameof(samples));
-        var t0 = samples[vIdx[0]].DtsSec;
+        var t0 = originSec ?? samples[vIdx[0]].DtsSec;
 
         var ftyp = Box("ftyp", w => { w.Ascii("isom"); w.U32(0x200); w.Ascii("isom"); w.Ascii("iso2"); w.Ascii("avc1"); w.Ascii("mp41"); });
         // moov size does not depend on the chunk offsets (fixed-width stco), so build it once with zeros to learn the mdat start
@@ -49,7 +53,10 @@ public static class Mp4Writer
 
     static byte[] BuildMoov(AvcInfo v, AacInfo? a, IReadOnlyList<Mp4Sample> s, List<int> vIdx, List<int> aIdx, double t0, long[] offsets)
     {
-        var vTicks = Ticks(s, vIdx, VideoTimescale, t0, out var vDur);
+        var vFirst = s[vIdx[0]].DtsSec;
+        var vTicks = Ticks(s, vIdx, VideoTimescale, vFirst, out var vDur);
+        var vDelayMs = (long)Math.Round(Math.Max(0, vFirst - t0) * MovieTimescale);
+        var vTrimTicks = (long)Math.Round(Math.Max(0, t0 - vFirst) * VideoTimescale);
         long aDelayMs = 0;
         long[]? aTicks = null; long aDur = 0;
         if (a != null && aIdx.Count > 0)
@@ -58,7 +65,7 @@ public static class Mp4Writer
             aDelayMs = (long)Math.Round(Math.Max(0, aStart - t0) * MovieTimescale);
             aTicks = Ticks(s, aIdx, a.SampleRate, aStart, out aDur);
         }
-        var vMovieDur = (long)Math.Round(vDur * MovieTimescale / (double)VideoTimescale);
+        var vMovieDur = vDelayMs + (long)Math.Round(Math.Max(0, vDur - vTrimTicks) * MovieTimescale / (double)VideoTimescale);
         var aMovieDur = aTicks == null ? 0 : aDelayMs + (long)Math.Round(aDur * MovieTimescale / (double)a!.SampleRate);
         var movieDur = Math.Max(vMovieDur, aMovieDur);
 
@@ -71,7 +78,7 @@ public static class Mp4Writer
                 m.Matrix(); for (int i = 0; i < 6; i++) m.U32(0);
                 m.U32(aTicks == null ? 2u : 3u);
             }));
-            w.Raw(VideoTrak(v, s, vIdx, vTicks, vDur, vMovieDur, offsets));
+            w.Raw(VideoTrak(v, s, vIdx, vTicks, vDur, vMovieDur, offsets, vDelayMs, vTrimTicks));
             if (aTicks != null) w.Raw(AudioTrak(a!, s, aIdx, aTicks, aDur, aMovieDur, aDelayMs, offsets));
         });
     }
@@ -86,10 +93,18 @@ public static class Mp4Writer
         return t;
     }
 
-    static byte[] VideoTrak(AvcInfo v, IReadOnlyList<Mp4Sample> s, List<int> idx, long[] ticks, long duration, long movieDur, long[] offsets)
+    static byte[] VideoTrak(AvcInfo v, IReadOnlyList<Mp4Sample> s, List<int> idx, long[] ticks, long duration, long movieDur, long[] offsets, long delayMs, long trimTicks)
         => Box("trak", w =>
         {
             w.Raw(Tkhd(1, movieDur, v.Width, v.Height, 0));
+            if (delayMs > 0 || trimTicks > 0)
+                w.Raw(Box("edts", e => e.Raw(Box("elst", l =>
+                {
+                    var shownMs = (long)Math.Round(Math.Max(0, duration - trimTicks) * MovieTimescale / (double)VideoTimescale);
+                    l.U32(0); l.U32(delayMs > 0 ? 2u : 1u);
+                    if (delayMs > 0) { l.U32((uint)delayMs); l.U32(0xFFFFFFFF); l.U32(0x00010000); }
+                    l.U32((uint)shownMs); l.U32((uint)trimTicks); l.U32(0x00010000);
+                }))));
             w.Raw(Box("mdia", m =>
             {
                 m.Raw(Mdhd(VideoTimescale, duration));
