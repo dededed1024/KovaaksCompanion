@@ -19,6 +19,7 @@
         <SolidColorBrush x:Key="Red" Color="#FF453A"/>
         <SolidColorBrush x:Key="Purple" Color="#BF5AF2"/>
         <SolidColorBrush x:Key="Teal" Color="#64D2FF"/>
+        <SolidColorBrush x:Key="Yellow" Color="#FFD60A"/>
         <!-- Theme-driven surfaces (values are replaced at runtime by Theme.Apply) -->
         <SolidColorBrush x:Key="Surface" Color="#F2232326"/>
         <SolidColorBrush x:Key="Raised" Color="#2C2C2E"/>
@@ -341,9 +342,9 @@
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="12" BorderThickness="1.5" BorderBrush="{TemplateBinding BorderBrush}">
                             <Grid>
-                                <ScrollViewer x:Name="PART_ContentHost" Style="{x:Null}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+                                <ScrollViewer x:Name="PART_ContentHost" Style="{x:Null}" Margin="{TemplateBinding Padding}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                                 <TextBlock x:Name="Placeholder" Text="{TemplateBinding Tag}" Foreground="{DynamicResource Dim}" Margin="{TemplateBinding Padding}"
-                                           Padding="2,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
+                                           Padding="2,0,0,0" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" IsHitTestVisible="False" Visibility="Collapsed"/>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>

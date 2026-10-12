@@ -6,8 +6,8 @@ namespace KovaaksCompanion.Core;
 public sealed class UiState
 {
     public static readonly string[] DefaultSeries = ["Accuracy", "Score"];
-    /// <summary>Voltaic S5 Novice.</summary>
-    public static readonly string[] DefaultFavorites = ["459"];
+    /// <summary>Viscose Benchmark S2 Easier, then Voltaic S5 Novice (the profile card lists the newest favorite first, so Voltaic leads).</summary>
+    public static readonly string[] DefaultFavorites = ["2335", "459"];
 
     public static string DefaultFile => Path.Combine(AppSettings.DefaultDataFolder, "ui.json");
 
@@ -50,6 +50,8 @@ public sealed class UiState
     public static string PlaylistKey(string playlist) => $"p:{playlist}";
     public static string SubcategoryKey(string playlist, string parent, string sub) => $"c:{playlist}|{parent}|{sub}";
     public static string ScenarioKey(string scenario) => $"s:{scenario}";
+    /// <summary>A whole category of a playlist: a <see cref="SubcategoryKey"/> without the subcategory.</summary>
+    public static string CategoryKey(string playlist, string category) => SubcategoryKey(playlist, category, "");
 
     /// <summary>Splits a <see cref="SubcategoryKey"/>; null when malformed.</summary>
     public static (string Playlist, string Parent, string Sub)? ParseSubcategoryKey(string key)

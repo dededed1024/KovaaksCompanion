@@ -21,7 +21,6 @@ public partial class StatsView
         BuildProfileTools();
         FillProfile();
         FillCelebration();
-        BuildProfileEditor();
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, RefitProfile);
     }
 
@@ -41,7 +40,8 @@ public partial class StatsView
     void ApplyProfileAccent()
     {
         ProfileCard.BorderBrush = _host.Ui.ProfileAccent.Length > 0 ? Alpha(ProfileAccent, 0.5) : SolidFixed("#1FFFFFFF");
-        ProfileCard.Background = ProfileBg(ProfileLight ? (byte)0xFF : (byte)0xF5);
+        // Opaque like the diagonal panel beside the cards, so the gray card is one even surface (a translucent card lets the window backdrop tint only its left part).
+        ProfileCard.Background = ProfileBg(0xFF);
     }
 
     static Color WithAlpha(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
@@ -98,7 +98,6 @@ public partial class StatsView
     /// <summary>The left column is this fraction wider than the picture; the stats and calendar are BodyFrac of the picture width, so the line never touches them.</summary>
     const double BodyExtra = 0, BodyFrac = 0.84, Lean = 0.08;
     double _profilePicH;
-    System.Windows.Shapes.Path? _profilePanel;
 
     /// <summary>Picture box height: 50% of the card height, and at most 40% of its width at 16:9. Independent of the column width, so the layout is the same with or without a picture.</summary>
     double PicHeight(double sc)
@@ -208,13 +207,8 @@ public partial class StatsView
             ProfileTools.Children.Add(replay);
         }
 
-        var edit = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Edit"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 24, Foreground = _profileEditing ? (Brush)FindResource("Accent") : FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-        edit.Click += (_, _) =>
-        {
-            _profileEditing = !_profileEditing;
-            BuildProfileTools();
-            BuildProfileEditor();
-        };
+        var edit = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Edit"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 24, Foreground = FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        edit.Click += (_, _) => OpenProfileEdit();
         ProfileTools.Children.Add(edit);
 
         var copy = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
@@ -303,7 +297,7 @@ public partial class StatsView
             var stats = BuildPlayStats(runs, plays, 26, 16, FontWeights.SemiBold, ProfileInk);
             ((FrameworkElement)stats).Margin = new Thickness(4, 12, 4, 12);
             body.Children.Add(stats);
-            var cal = new ActivityCalendar { MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 4) };
+            var cal = new ActivityCalendar { MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 28) };
             cal.Light = ProfileLight;
             cal.Set(_book.PlaysPerDay, ProfileTone);
             cal.PbDays = _book.PersonalBestDays;

@@ -23,10 +23,7 @@ public partial class StatsView
     static readonly bool PinnedTiersEnabled = false;
 
     const int SessionRunsShown = 7;
-    const int SessionsPerPage = 5;
-    int _sessionPage = 0;
     Border? _heroSlot, _playlistsSlot;
-    StackPanel? _sessionsPanel;
 
     void ShowHome()
     {
@@ -35,7 +32,6 @@ public partial class StatsView
         HomeHost.Children.Clear();
         HomeHost.Children.Add(BuildHome());
         RefreshProfile();
-        if (_listOpen && _listKind == "Sessions") FillList();
         HomeScroll.UpdateLayout();
         HomeScroll.ScrollToVerticalOffset(keep);
         UpdateLivePill();
@@ -44,7 +40,6 @@ public partial class StatsView
 
     FrameworkElement? _liveCard;
     bool _livePillOn, _liveShown;
-    DateTime? _newestEnd;
 
     // Closed until the game runs under this app, so sessions from before launch are never live.
     bool _gameWasActive;
@@ -90,6 +85,42 @@ public partial class StatsView
         }
     }
 
+    bool _topButtonOn;
+
+    /// <summary>Shows the floating back-to-top button once Home is scrolled past one viewport (not while a popup is open).</summary>
+    void UpdateTopButton()
+    {
+        var want = !_popupOpen && HomeScroll.IsVisible && HomeScroll.VerticalOffset > HomeScroll.ActualHeight;
+        if (want == _topButtonOn) return;
+        _topButtonOn = want;
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        var dur = TimeSpan.FromMilliseconds(200);
+        if (want)
+        {
+            var tt = new TranslateTransform(0, 12);
+            TopButton.RenderTransform = tt;
+            TopButton.Visibility = Visibility.Visible;
+            TopButton.IsHitTestVisible = true;
+            TopButton.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(TopButton.Opacity, 1, dur) { EasingFunction = ease });
+            tt.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(12, 0, dur) { EasingFunction = ease });
+        }
+        else
+        {
+            TopButton.IsHitTestVisible = false;
+            var fade = new System.Windows.Media.Animation.DoubleAnimation(TopButton.Opacity, 0, dur) { EasingFunction = ease };
+            fade.Completed += (_, _) => { if (!_topButtonOn) TopButton.Visibility = Visibility.Collapsed; };
+            TopButton.BeginAnimation(OpacityProperty, fade);
+        }
+    }
+
+    void OnTopButton(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        _ws = HomeScroll;
+        _target = 0;
+        StartEase(HomeScroll);
+    }
+
     void OnLivePill(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
@@ -105,7 +136,8 @@ public partial class StatsView
     {
         if (_playlistsSlot == null) return;
         if (_heroSlot != null) _heroSlot.Child = BuildTierHero();
-        if (_listOpen) FillList();
+        FillBrowse();
+        if (_editOpen) FillProfileEditor();
         RefreshResults();
     }
 
@@ -115,10 +147,8 @@ public partial class StatsView
     UIElement BuildHome()
     {
         var page = new StackPanel();
-        _sessionsPanel = null;
         var runs = _lib.AllRuns.OrderByDescending(r => r.End).ToList();
         var pbs = PbSet();
-        var today = DateTime.Today;
 
         if (PinnedTiersEnabled)
         {
@@ -129,11 +159,12 @@ public partial class StatsView
         {
             _heroSlot = null;
         }
-        _playlistsSlot = new Border { Child = PlaylistsButton() };
-        page.Children.Add(_playlistsSlot);
+        _playlistsSlot = new Border { Child = BuildBrowse() };
+        // The live session card sat in the sessions list, which Home no longer shows: there is no live card to jump to.
+        _liveCard = null;
+        _liveShown = LiveNow();
         if (runs.Count > 0)
         {
-            page.Children.Add(FadeTitle("Sessions", 40));
             var plays = runs.GroupBy(r => r.End.Date).ToDictionary(g => g.Key, g => g.Count());
             var day = _selDay is { } d0 && plays.ContainsKey(d0) ? d0 : plays.Keys.Max();
             _selDay = day;
@@ -144,7 +175,7 @@ public partial class StatsView
             {
                 cal.Cursor = Cursors.Hand;
                 cal.SelectedDay = day;
-                cal.SizeChanged += (_, _) => dayScroll.Height = cal.ActualHeight;
+                cal.SizeChanged += (_, _) => dayScroll.Height = Math.Max(220, cal.ActualHeight);
                 cal.DayClicked += clicked =>
                 {
                     _selDay = clicked.Date;
@@ -152,70 +183,11 @@ public partial class StatsView
                     FillDay(dayList, clicked.Date, pbs);
                     dayScroll.ScrollToTop();
                 };
+                // Local runs and server scores together, so a day with a PB dot never reads "0 plays".
+                cal.Set(_book.PlaysPerDay, ChartPaths.TextTone((Brush)FindResource("Accent")));
                 cal.PbDays = _book.PersonalBestDays;
-            }, calendarShare: 2.4, maxCell: 42, maxWeeks: 24);
-
-            var sessions = PlaySession.Group(_lib.AllRuns.Where(r => !IsHidden(r)), all: _lib.AllRuns, personalBests: pbs);
-            var sessionsList = new StackPanel();
-            var pagerPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
-
-            var hasEmptyLive = LiveNow() && (sessions.Count == 0 || sessions[0].End < _liveSince);
-            var totalPages = (sessions.Count + (hasEmptyLive ? 1 : 0) + SessionsPerPage - 1) / SessionsPerPage;
-            if (_sessionPage >= totalPages) _sessionPage = Math.Max(0, totalPages - 1);
-
-            void FillSessions()
-            {
-                sessionsList.Children.Clear();
-                _liveCard = null;
-                _newestEnd = sessions.Count > 0 ? sessions[0].End : null;
-                var liveNow = LiveNow();
-                _liveShown = liveNow;
-                // No run yet this game launch: show an empty live session on top.
-                var shown = sessions;
-                if (liveNow && (sessions.Count == 0 || sessions[0].End < _liveSince))
-                    shown = [new PlaySession([], 0) { Number = sessions.Count > 0 ? sessions[0].Number + 1 : 1, Opened = _liveSince }, .. sessions];
-                var live = shown.Count > 0 && _sessionPage == 0 && liveNow;
-                var start = _sessionPage * SessionsPerPage;
-                var end = Math.Min(start + SessionsPerPage, shown.Count);
-                for (var i = start; i < end; i++) sessionsList.Children.Add(SessionCard(shown[i], pbs, i == 0 && live));
-                if (live && sessionsList.Children.Count > 0) _liveCard = sessionsList.Children[0] as FrameworkElement;
-                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, UpdateLivePill);
-
-                pagerPanel.Children.Clear();
-                if (totalPages > 1)
-                {
-                    var pagerRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-                    var prevBtn = new Button { Style = (Style)FindResource("PopupClose"), Width = 30, Height = 30, Padding = new Thickness(0), Margin = new Thickness(2, 0, 2, 0), Content = "\uE76B", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14 };
-                    prevBtn.IsEnabled = _sessionPage > 0;
-                    prevBtn.Opacity = _sessionPage > 0 ? 1.0 : 0.3;
-                    prevBtn.Click += (_, _) => { _sessionPage--; FillSessions(); };
-                    pagerRow.Children.Add(prevBtn);
-
-                    var visible = Math.Min(5, totalPages);
-                    var pageStart = Math.Clamp(_sessionPage - 2, 0, totalPages - visible);
-                    var pageEnd = pageStart + visible;
-
-                    for (var p = pageStart; p < pageEnd; p++)
-                    {
-                        var pageNum = p + 1;
-                        var btn = new Button { Style = (Style)FindResource("PopupClose"), Width = 30, Height = 30, Padding = new Thickness(0), Margin = new Thickness(2, 0, 2, 0), Content = pageNum.ToString(), FontSize = 13, Foreground = p == _sessionPage ? (Brush)FindResource("Accent") : (Brush)FindResource("Dim") };
-                        if (p == _sessionPage) btn.FontWeight = FontWeights.SemiBold;
-                        else btn.Opacity = 0.55;
-                        var pageIdx = p;
-                        btn.Click += (_, _) => { _sessionPage = pageIdx; FillSessions(); };
-                        pagerRow.Children.Add(btn);
-                    }
-
-                    var nextBtn = new Button { Style = (Style)FindResource("PopupClose"), Width = 30, Height = 30, Padding = new Thickness(0), Margin = new Thickness(2, 0, 2, 0), Content = "\uE76C", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14 };
-                    nextBtn.IsEnabled = _sessionPage < totalPages - 1;
-                    nextBtn.Opacity = _sessionPage < totalPages - 1 ? 1.0 : 0.3;
-                    nextBtn.Click += (_, _) => { _sessionPage++; FillSessions(); };
-                    pagerRow.Children.Add(nextBtn);
-
-                    pagerPanel.Children.Add(pagerRow);
-                }
-            }
-            FillSessions();
+                cal.LiveDay = LiveNow() ? DateTime.Today : null;
+            }, calendarShare: 2.4, maxCell: 42, maxWeeks: 24, stackBelow: 1000);
 
             if (activityCard is Border activityBorder)
             {
@@ -224,15 +196,14 @@ public partial class StatsView
                 var inner = activityBorder.Child;
                 activityBorder.Child = null;
                 wrapper.Children.Add(BuildPlayStats(runs, plays));
-                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 24, 16, 40) });
+                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 12, 16, 24) });
                 wrapper.Children.Add(inner ?? new Border());
-                _sessionsPanel = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
-                _sessionsPanel.Children.Add(sessionsList);
-                _sessionsPanel.Children.Add(pagerPanel);
                 activityBorder.Child = wrapper;
             }
             page.Children.Add(activityCard);
         }
+        // The Playlists / Scenarios / Replays tabs close the page.
+        page.Children.Add(_playlistsSlot);
         return page;
     }
 
@@ -256,7 +227,7 @@ public partial class StatsView
         };
         cells.Add((L.T("PB"), $"{_book.PersonalBestCount}"));
         cells.Add((L.T("Complete"), $"{done}"));
-        var grid = new Grid { Margin = new Thickness(16, 12, 16, 12) };
+        var grid = new Grid { Margin = new Thickness(8, 2, 8, 2) };
         for (var i = 0; i < cells.Count; i++)
         {
             if (i > 0)
@@ -363,7 +334,7 @@ public partial class StatsView
                 var sc = scenario; var e = end;
                 var run = _lib.AllRuns.FirstOrDefault(r => r.End == end && string.Equals(r.Scenario, scenario, StringComparison.OrdinalIgnoreCase));
                 var sub = $"{end:yyyy-MM-dd} {ClockFormat.Clock(end)}" + (run is null ? "" : $" · {run.Score:0.#}");
-                list.Children.Add(ResultRow(null, scenario, scenario, sub, "", DimB, p => { CloseSearch(); if (!_host.ShowRun(sc, e)) _host.ShowScenario(sc, p); }, tier: run is null ? null : TierOf(scenario, run.Score)));
+                list.Children.Add(ResultRow(null, scenario, scenario, sub, "", DimB, p => { CloseSearch(); _host.ShowRun(sc, e, true); }, tier: run is null ? null : TierOf(scenario, run.Score)));
             }
         }
         return list;
@@ -376,7 +347,7 @@ public partial class StatsView
         var ui = _host.Ui;
         var playlists = BenchmarkCatalog.All.Where(b => NameMatch(b) || b.Difficulties.Any(d => Match(d.DifficultyName)))
             .OrderByDescending(b => b.Difficulties.Any(d => ui.IsFavorite($"{d.KovaaksBenchmarkId}"))).ThenByDescending(NameMatch).Take(12).ToList();
-        var scenarios = _lib.Scenarios.Where(Match).OrderByDescending(ui.IsFavoriteScenario).Take(30).ToList();
+        var scenarios = _book.AllScenarios.Where(Match).OrderByDescending(ui.IsFavoriteScenario).Take(30).ToList();
 
         var body = new List<UIElement>();
         UIElement Caption(string t, bool first) => Text(L.T(t).ToUpperInvariant(), 11, DimB, null, new Thickness(16, first ? 4 : 14, 16, 4));
@@ -419,7 +390,8 @@ public partial class StatsView
     /// <summary>The highest tier a score reaches in the scenario; null without tiers or below the first.</summary>
     ChartBand? TierOf(string scenario, double score) => TierBands(scenario)?.LastOrDefault(b => score >= b.Value);
 
-    Border ResultRow(Brush? tierBrush, string benchmarkId, string title, string sub, string mark, Brush markBrush, Action<Point?> click, bool fav = false, ChartBand? tier = null)
+    /// <summary>A list row: title, a sub line and, when <paramref name="tier"/> or <paramref name="score"/> is given, the tier name with the score right of it.</summary>
+    Border ResultRow(Brush? tierBrush, string benchmarkId, string title, string sub, string mark, Brush markBrush, Action<Point?> click, bool fav = false, ChartBand? tier = null, string? score = null, bool tile = false)
     {
         // Same look as the playlist card: tier name in the tier colour, card washed with the tier colour toward the right.
         Brush restBg = Brushes.Transparent;
@@ -432,25 +404,29 @@ public partial class StatsView
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 8, 4) };
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = tile ? new Thickness(0) : new Thickness(0, 4, 8, 4) };
 
-        // Title with optional tier dot
-        var titleStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        if (tierBrush != null)
-        {
-            var dot = new System.Windows.Shapes.Ellipse { Width = 7, Height = 7, Fill = tierBrush, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-            titleStack.Children.Add(dot);
-        }
-        if (fav) titleStack.Children.Add(new TextBlock { Text = "\uE735", FontFamily = new FontFamily(Icons), FontSize = 12, Foreground = Solid("#FFD60A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        // Title with optional tier dot and favorite star; the name takes the rest of the row and wraps, so it is always shown in full.
+        var titleStack = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
+        void Lead(UIElement e) { DockPanel.SetDock(e, Dock.Left); titleStack.Children.Add(e); }
+        if (tierBrush != null) Lead(new System.Windows.Shapes.Ellipse { Width = 7, Height = 7, Fill = tierBrush, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+        if (fav) Lead(new TextBlock { Text = "\uE735", FontFamily = new FontFamily(Icons), FontSize = 12, Foreground = Solid("#FFD60A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         var t = Text(title, 13.5, FgB, FontWeights.SemiBold);
-        t.TextTrimming = TextTrimming.CharacterEllipsis;
+        t.TextWrapping = TextWrapping.Wrap;
         titleStack.Children.Add(t);
         info.Children.Add(titleStack);
 
         var st = Text(sub, 11.5, DimB, null, new Thickness(0, 2, 0, 0));
         st.TextTrimming = TextTrimming.CharacterEllipsis;
         info.Children.Add(st);
-        if (tier != null) info.Children.Add(Text(tier.Label, 12, ChartPaths.TextTone(tier.Brush), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+        if (tier != null || score != null)
+        {
+            var tone = tier != null ? ChartPaths.TextTone(tier.Brush) : DimB;
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+            if (tier != null) line.Children.Add(Text(tier.Label, 12, tone, FontWeights.Bold));
+            if (score != null) line.Children.Add(Text(score, 12, tone, FontWeights.SemiBold, new Thickness(tier != null ? 8 : 0, 0, 0, 0)));
+            info.Children.Add(line);
+        }
         g.Children.Add(info);
         if (mark.Length > 0)
         {
@@ -459,7 +435,7 @@ public partial class StatsView
             Grid.SetColumn(m, 1);
             g.Children.Add(m);
         }
-        var row = new Border { MinHeight = 48, CornerRadius = new CornerRadius(14), Margin = new Thickness(8, 4, 8, 4), Padding = new Thickness(14, 4, 6, 4), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Background = restBg, Cursor = Cursors.Hand, Child = g };
+        var row = new Border { MinHeight = 48, CornerRadius = new CornerRadius(14), Margin = tile ? new Thickness(TileGap / 2) : new Thickness(8, 4, 8, 4), Padding = tile ? new Thickness(14, 12, 14, 12) : new Thickness(14, 4, 6, 4), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Background = restBg, Cursor = Cursors.Hand, Child = g };
         row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
         row.MouseLeave += (_, _) => row.Background = restBg;
         RowClick.Attach(row, click, down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : restBg);
@@ -708,9 +684,8 @@ public partial class StatsView
 
         stack.Children.Add(tierGrid);
 
-        // Line 3: Percentage or Max (11.5, centered)
-        var top = p.OverallRank >= p.RankNames.Count - 1;
-        var percentText = Text(top ? L.T("Max") : $"{p.OverallFraction * 100:0}%", 11.5, textDim, null, new Thickness(0, 8, 0, 0));
+        // Line 3: Percentage (11.5, centered)
+        var percentText = Text($"{p.OverallFraction * 100:0}%", 11.5, textDim, null, new Thickness(0, 8, 0, 0));
         percentText.HorizontalAlignment = HorizontalAlignment.Center;
         percentText.TextAlignment = TextAlignment.Center;
         stack.Children.Add(percentText);
@@ -789,8 +764,11 @@ public partial class StatsView
             var rowTitle = new TextBlock();
             rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = FgB });
             rowTitle.Inlines.Add(new System.Windows.Documents.Run("  " + ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
+            rowTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             info.Children.Add(rowTitle);
-            info.Children.Add(Text((s.RunCount == 1 ? L.F("{0} play", s.RunCount) : L.F("{0} plays", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + $" · {s.AverageAccuracy:P0}", 12, DimB, null, new Thickness(0, 2, 0, 0)));
+            var counts = Text((s.RunCount == 1 ? L.F("{0} play", s.RunCount) : L.F("{0} plays", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + $" · {s.AverageAccuracy:P0}", 12, DimB, null, new Thickness(0, 2, 0, 0));
+            counts.TextWrapping = TextWrapping.Wrap;
+            info.Children.Add(counts);
             g.Children.Add(info);
             if (pbCount >= 1)
             {
@@ -811,6 +789,41 @@ public partial class StatsView
             row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
             row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
             host.Children.Add(row);
+        }
+
+        // Server scores of the day that have no local run (other PC, older plays): one line each.
+        var server = new List<(string Scenario, ScoreRecord Rec)>();
+        foreach (var n in _book.AllScenarios)
+        {
+            var st = _book.For(n);
+            foreach (var rec in st.Records.Where(r => r.Run == null && r.Time.Date == day)) server.Add((n, rec));
+        }
+        if (server.Count == 0) return;
+        host.Children.Add(Text(L.T("Server records"), 12, DimB, FontWeights.SemiBold, new Thickness(10, 10, 0, 4)));
+        foreach (var (n, rec) in server.OrderByDescending(x => x.Rec.Time))
+        {
+            var g = new Grid { Margin = new Thickness(10, 0, 10, 0), MinHeight = 28 };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var name = Text(n, 12.5, FgB, FontWeights.SemiBold);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            g.Children.Add(name);
+            var score = Text(rec.Score.ToString("0.#"), 12.5, FgB, FontWeights.SemiBold, new Thickness(8, 0, 0, 0));
+            score.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(score, 1);
+            g.Children.Add(score);
+            if (_book.For(n).PersonalBests.Contains(rec))
+            {
+                var green = (Brush)FindResource("Green");
+                var pill = new Grid { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                pill.Children.Add(new Border { CornerRadius = new CornerRadius(8), Background = green, Opacity = 0.18 });
+                pill.Children.Add(Text("PB", 10.5, green, FontWeights.SemiBold, new Thickness(8, 1, 8, 1)));
+                Grid.SetColumn(pill, 2);
+                g.Children.Add(pill);
+            }
+            host.Children.Add(g);
         }
     }
 
@@ -991,7 +1004,7 @@ public partial class StatsView
         return new DrawingBrush(g) { Stretch = Stretch.Fill };
     }
 
-    Border RunRow(RunRecord r, bool pb)
+    Border RunRow(RunRecord r, bool pb, bool dated = false)
     {
         var name = r.Scenario;
         var end = r.End;
@@ -1000,13 +1013,12 @@ public partial class StatsView
         var tier = bands?.LastOrDefault(b => r.Score >= b.Value);
 
         var g = new Grid();
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(68) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(dated ? 140 : 84) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         void Put(FrameworkElement e, int col, Thickness m, HorizontalAlignment h = HorizontalAlignment.Left)
         {
@@ -1014,8 +1026,10 @@ public partial class StatsView
             Grid.SetColumn(e, col);
             g.Children.Add(e);
         }
-        Put(Text(ClockFormat.Clock(r.Start), 12, DimB), 0, new Thickness(8, 0, 0, 0));
-        var nm = Text(name, 13, FgB, FontWeights.SemiBold);
+        Put(Text(dated ? L.MonthDay(r.End) + " " + ClockFormat.Clock(r.Start) : ClockFormat.Clock(r.Start), 12, DimB), 0, new Thickness(12, 0, 0, 0));
+        var nm = Text("", 13, FgB, FontWeights.SemiBold);
+        if (_host.Ui.IsFavoriteRun(name, end)) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
+        nm.Inlines.Add(new System.Windows.Documents.Run(name));
         nm.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(nm, 1, new Thickness(4, 0, 16, 0));
         var bench = tier != null ? TierBenchmarkName(name) : null;
@@ -1036,7 +1050,7 @@ public partial class StatsView
             pill.Children.Add(Text("PB", 10.5, green, FontWeights.SemiBold, new Thickness(8, 1, 8, 1)));
             Put(pill, 5, new Thickness(10, 0, 0, 0));
         }
-        var row = new Border { Height = 40, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g };
+        var row = new Border { Height = ListRowHeight, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g };
         if (replay)
         {
             var playText = Text("", 15, (Brush)FindResource("Accent"));
@@ -1053,65 +1067,26 @@ public partial class StatsView
         }
         else
         {
-            RowClick.Attach(row, p => _host.ShowScenario(name, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
+            RowClick.Attach(row, p => _host.ShowRun(name, end, true), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
         }
-        Put(DeleteRunButton(r), 7, new Thickness(0));
         row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
         row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
         return row;
     }
 
-    /// <summary>Trash button of a run row: the first click arms it (red), the second deletes the run.</summary>
-    Button DeleteRunButton(RunRecord r)
-    {
-        var icon = new TextBlock { Text = "\uE74D", FontFamily = new FontFamily(Icons), FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        var btn = new Button { Style = (Style)FindResource("PopupClose"), Width = 30, Height = 30, Padding = new Thickness(0), Content = icon, ToolTip = L.T("Delete play"), Foreground = DimB };
-        var armed = false;
-        btn.Click += (_, e) =>
-        {
-            e.Handled = true;
-            if (!armed)
-            {
-                armed = true;
-                btn.Foreground = (Brush)FindResource("Red");
-                btn.ToolTip = L.T("Click again to delete the replay for good");
-                return;
-            }
-            DeleteRun(r);
-        };
-        btn.MouseLeave += (_, _) => { armed = false; btn.Foreground = DimB; btn.ToolTip = L.T("Delete play"); };
-        return btn;
-    }
+    // Home tabs: playlists, scenarios and replays
 
-    /// <summary>Deletes the run's session folder for good, keeps its score in the cache like a server score and hides it from the lists.</summary>
-    async void DeleteRun(RunRecord r)
-    {
-        var sessions = _host.SessionsFolder;
-        var cache = Cache;
-        try
-        {
-            await Task.Run(() =>
-            {
-                SessionStore.Delete(sessions, r.Scenario, r.End);
-                cache.HideRun(r.Scenario, r.End, r.Score);
-            });
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
-        Reload();
-    }
-
-    // Playlists
-
-    bool _listOpen;
-    string _listKind = "Playlists";
-    int _listTok;
+    string _browseTab = "Playlists";
+    Border? _browseHost;
+    Border? _browseTabs;
+    int _browseCols;
 
     /// <summary>When any scenario of the playlist was last played, or null.</summary>
     DateTime? LastPlayed(int id)
     {
         DateTime? m = null;
         foreach (var n in _index.Scenarios(id))
-            if (_lib.Runs(n) is { Count: > 0 } l && (m == null || l[^1].End > m)) m = l[^1].End;
+            if (_book.For(n).LastPlayed is { } t && (m == null || t > m)) m = t;
         return m;
     }
 
@@ -1128,90 +1103,71 @@ public partial class StatsView
             .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Rank).ThenByDescending(i => i.Frac)
             .Select(i => (i.B, i.D, i.Fav)).ToList();
 
-    /// <summary>The Home button that opens the playlists popup, next to the search button.</summary>
-    UIElement PlaylistsButton()
+    /// <summary>Columns of a tab's list at this width: 3 playlist cards, fewer when narrow; scenarios and replays are one column of rows.</summary>
+    static int BrowseColumns(string tab, double width)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
-        var kinds = new (string Kind, string Label, string Glyph)[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Plays", "Replays", ""), ("Sessions", "Sessions", "") };
-        foreach (var (kind, label, glyph) in kinds)
+        if (tab != "Playlists") return 1;
+        return width < 520 ? 1 : width < 800 ? 2 : 3;
+    }
+
+    /// <summary>Folded row counts that size the list rows; with one <see cref="BrowseItemHeight"/> for all of them the folded tabs are equally tall.</summary>
+    const int FoldedRows = 2;
+    const double BrowseItemHeight = 84;
+    const int FoldedListRows = 5;
+    /// <summary>Height of a list row: <see cref="FoldedListRows"/> of them are as tall as the folded playlist cards.</summary>
+    const double ListRowHeight = BrowseItemHeight * FoldedRows / FoldedListRows;
+
+    /// <summary>The tab strip over the list of the chosen tab, always unfolded, with a button back to the top of the page.</summary>
+    UIElement BuildBrowse()
+    {
+        var tabs = new UniformGrid { Rows = 1 };
+        foreach (var (kind, label, glyph) in new[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Plays", "Record", "") })
         {
+            var tab = kind;
             var content = new StackPanel { Orientation = Orientation.Horizontal };
-            content.Children.Add(new TextBlock { Text = glyph, FontFamily = new FontFamily(Icons), FontSize = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 10, 0) });
+            content.Children.Add(new TextBlock { Text = glyph, FontFamily = new FontFamily(Icons), FontSize = 14, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
             content.Children.Add(new TextBlock { Text = L.T(label), VerticalAlignment = VerticalAlignment.Center });
-            var open = new Button { Content = content, MinHeight = 46, Padding = new Thickness(20, 0, 22, 0), Margin = new Thickness(0, 0, 10, 0), FontSize = 15, FontWeight = FontWeights.SemiBold };
-            open.Click += (_, _) => OpenList(kind);
-            row.Children.Add(open);
+            var rb = new RadioButton { Style = (Style)FindResource("Segment"), Content = content, IsChecked = kind == _browseTab, MinWidth = 120 };
+            rb.Checked += (_, _) =>
+            {
+                if (_browseTab == tab) return;
+                _browseTab = tab;
+                FillBrowse();
+            };
+            tabs.Children.Add(rb);
         }
-        return row;
+        _browseTabs = new Border { Style = (Style)FindResource("SegmentTrack"), Child = tabs, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(TileGap / 2, 4, 0, 8) };
+        _browseHost = new Border();
+        FillBrowse();
+        return _browseHost;
     }
 
-    public void OpenList(string kind)
+    /// <summary>Redraws the list of the chosen tab.</summary>
+    void FillBrowse()
     {
-        if (_listOpen) return;
-        _listOpen = true;
-        Register("list", ListPopup, CloseList, () => ListPopup.Focus());
-        _listKind = kind;
-        ListTitle.Text = L.T(kind == "Plays" ? "Replays" : kind);
-        _listTok++;
-        ListScrim.BeginAnimation(OpacityProperty, null); ListScrim.Opacity = 0;
-        ListCard.BeginAnimation(OpacityProperty, null); ListCard.Opacity = 0;
-        ListScale.BeginAnimation(ScaleTransform.ScaleXProperty, null); ListScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-        ListScale.ScaleX = ListScale.ScaleY = 0.94;
-        FillList();
-        ListPopup.Visibility = Visibility.Visible;
-        Animate(true, null, ListScrim, ListCard, ListScale);
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_listOpen) ListPopup.Focus(); });
-    }
+        if (_browseHost == null) return;
+        var tab = _browseTab;
+        var cols = BrowseColumns(tab, HomeHost.Width);
+        _browseCols = cols;
+        var items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
+            : tab == "Scenarios" ? ScenarioRows() : RecordRows();
 
-    public void CloseList()
-    {
-        if (!_listOpen) return;
-        _listOpen = false;
-        Popups.Closed((this, "list"));
-        var tok = ++_listTok;
-        Animate(false, () =>
+        var body = new StackPanel();
+        if (_browseTabs != null)
         {
-            if (tok != _listTok) return;
-            ListPopup.Visibility = Visibility.Collapsed;
-            ListScroll.Content = null;
-        }, ListScrim, ListCard, ListScale);
-    }
-
-    void OnListScrim(object sender, MouseButtonEventArgs e) => CloseList();
-
-    void OnListKey(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape) return;
-        e.Handled = true;
-        CloseList();
-    }
-
-    /// <summary>Fills the popup for the current kind, keeping the scroll position when redrawn.</summary>
-    void FillList()
-    {
-        var offset = ListScroll.VerticalOffset;
-        if (_listKind == "Sessions")
-        {
-            ListScroll.Content = _sessionsPanel;
-            ListScroll.UpdateLayout();
-            ListScroll.ScrollToVerticalOffset(offset);
-            return;
+            (_browseTabs.Parent as Panel)?.Children.Remove(_browseTabs);
+            body.Children.Add(_browseTabs);
         }
-        var grid = new UniformGrid { Columns = 3 };
-        int Wide(double w, int max) => w < 520 ? 1 : w < 800 ? Math.Min(2, max) : max;
-        var max = 3;
-        if (_listKind == "Playlists")
-            foreach (var (b, d, fav) in SortedPlaylists()) grid.Children.Add(PlaylistCard(b, d, fav));
-        else
+        if (items.Count == 0) body.Children.Add(Text(L.T(tab == "Scenarios" ? "No scenarios" : "No plays"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
+        var grid = new UniformGrid { Columns = cols };
+        foreach (var make in items)
         {
-            max = 2;
-            foreach (var r in _listKind == "Scenarios" ? ScenarioRows() : RecordRows()) grid.Children.Add(r);
+            var el = make();
+            if (el is FrameworkElement fe && tab == "Playlists") fe.MinHeight = BrowseItemHeight;
+            grid.Children.Add(el);
         }
-        grid.Columns = max;
-        grid.SizeChanged += (_, e) => grid.Columns = Wide(e.NewSize.Width, max);
-        ListScroll.Content = new Border { Padding = new Thickness(TileGap / 2 - 2, 0, TileGap / 2 - 2, 0), Child = grid };
-        ListScroll.UpdateLayout();
-        ListScroll.ScrollToVerticalOffset(offset);
+        body.Children.Add(new Border { Padding = new Thickness(TileGap / 2 - 2, 0, TileGap / 2 - 2, 0), Child = grid });
+        _browseHost.Child = Card(body, new Thickness(8, 4, 8, 4), CardGap);
     }
 
     /// <summary>Rank thresholds and server best score per scenario, from every loaded benchmark.</summary>
@@ -1239,43 +1195,66 @@ public partial class StatsView
     /// <summary>The line under a scenario name: the playlist it belongs to (see <see cref="TierSource"/>), then <paramref name="text"/>.</summary>
     string WithPlaylist(string scenario, string text) => TierBenchmarkName(scenario) is { } name ? $"{name} · {text}" : text;
 
-    IEnumerable<UIElement> ScenarioRows()
+    List<Func<UIElement>> ScenarioRows()
     {
         var ui = _host.Ui;
         var data = RankData();
-        return _lib.Scenarios
+        return _book.AllScenarios
             .Select(n =>
             {
                 var s = _book.For(n);
                 double? pct = data.TryGetValue(n, out var t) ? TierProgress(t.Maxes, Math.Max(s.Best, t.Score)) : null;
-                return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: _lib.Runs(n) is { Count: > 0 } l ? l[^1].End : DateTime.MinValue, Pct: pct);
+                return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: s.LastPlayed ?? DateTime.MinValue, Pct: pct);
             })
             .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last).ThenByDescending(i => PercentKey(i.Pct))
-            .Select(i =>
-            {
-                var name = i.N;
-                var tier = TierOf(name, i.S.Best);
-                return (UIElement)ResultRow(null, name, name, WithPlaylist(name, L.F("{0} plays", i.S.Plays)), i.S.Best > 0 ? i.S.Best.ToString("0.#") : "", tier is null ? DimB : ChartPaths.TextTone(tier.Brush),
-                    p => { CloseList(); _host.ShowScenario(name, p); }, i.Fav, tier);
-            });
+            .Select(i => (Func<UIElement>)(() => ScenarioRow(i.N, i.S, i.Fav))).ToList();
     }
 
-    IEnumerable<UIElement> RecordRows()
+    /// <summary>One scenario as a list row, laid out like <see cref="RunRow"/>: favorite mark, name, playlist, tier, best score, plays.</summary>
+    Border ScenarioRow(string name, ScenarioStats stats, bool fav)
+    {
+        var tier = TierOf(name, stats.Best);
+        var g = new Grid();
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        void Put(FrameworkElement e, int col, Thickness m, HorizontalAlignment h = HorizontalAlignment.Left)
+        {
+            e.VerticalAlignment = VerticalAlignment.Center; e.HorizontalAlignment = h; e.Margin = m;
+            Grid.SetColumn(e, col);
+            g.Children.Add(e);
+        }
+        var nm = Text("", 13, FgB, FontWeights.SemiBold);
+        if (fav) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
+        nm.Inlines.Add(new System.Windows.Documents.Run(name));
+        nm.TextTrimming = TextTrimming.CharacterEllipsis;
+        Put(nm, 0, new Thickness(12, 0, 16, 0));
+        var bench = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
+        bench.TextTrimming = TextTrimming.CharacterEllipsis;
+        Put(bench, 1, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
+        Put(Text(tier?.Label ?? "-", 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
+        var sc = Text(stats.Best > 0 ? stats.Best.ToString("0.#") : "-", 13, tier != null ? ChartPaths.TextTone(tier.Brush) : FgB, FontWeights.SemiBold);
+        System.Windows.Documents.Typography.SetNumeralAlignment(sc, FontNumeralAlignment.Tabular);
+        Put(sc, 3, new Thickness(0), HorizontalAlignment.Right);
+        var row = new Border { Height = ListRowHeight, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g };
+        RowClick.Attach(row, p => _host.ShowScenario(name, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
+        row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        return row;
+    }
+
+    List<Func<UIElement>> RecordRows()
     {
         var ui = _host.Ui;
         var data = RankData();
+        var pbs = PbSet();
         return _lib.AllRuns.Where(r => !IsHidden(r))
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
             .OrderByDescending(i => i.Fav).ThenByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
-            .Take(300)
-            .Select(i =>
-            {
-                var (sc, end) = (i.R.Scenario, i.R.End);
-                var tier = TierOf(sc, i.R.Score);
-                return (UIElement)ResultRow(null, sc, sc, WithPlaylist(sc, L.Stamp(end)), i.R.Score.ToString("0.#"), tier is null ? DimB : ChartPaths.TextTone(tier.Brush),
-                    p => { CloseList(); if (!_host.ShowRun(sc, end)) _host.ShowScenario(sc, p); }, i.Fav, tier);
-            });
+            .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
     }
+
     UIElement PlaylistCard(Benchmark b, Difficulty d, bool fav)
     {
         var titleStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -1295,7 +1274,7 @@ public partial class StatsView
             var pct = p!.OverallRank >= p.RankNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
             info.Children.Add(Text($"{TierText.Label(p.OverallRankName)} · {pct}", 12, ChartPaths.TextTone(RankBrush(d, p.OverallRankName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
         }
-        else info.Children.Add(Text(L.T("UNRANKED"), 12, new SolidColorBrush(Color.FromRgb(0x36, 0x36, 0x38)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+        else info.Children.Add(Text(L.T("UNRANK"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
 
         var card = new Border { CornerRadius = new CornerRadius(14), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(TileGap / 2), Cursor = Cursors.Hand };
         if (ranked && RankBrush(d, p!.OverallRankName) is SolidColorBrush rankBrush)
@@ -1334,30 +1313,31 @@ public partial class StatsView
         var ranked = p != null && p.OverallRankName.Length > 0;
         var tier = ranked ? RankBrush(d, p!.OverallRankName) : (Brush)FindResource("Dim");
         var history = p == null ? [] : Tier.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.RankMaxes)));
-        var watermark = ranked ? TierText.Label(p!.OverallRankName) : "";
+        var watermark = ranked ? TierText.Label(p!.OverallRankName) : L.T("UNRANK");
         var complete = p != null && p.IsTierComplete(p.OverallRank);
-        return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p, () => OpenPlaylist(b, d));
+        return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
     }
 
-    /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="cloudOf"/> supplies the scenarios whose server scores fill in a line with no local runs.</summary>
-    UIElement MiniCard(string name, string sub, Brush dot, Brush tier, bool ranked, List<(DateTime Day, double Value)> history, string watermark, bool complete, BenchmarkProgress? cloudOf, Action click)
+    /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="fraction"/> is the progress to the next tier (shown while not <paramref name="complete"/>); <paramref name="cloudOf"/> supplies the scenarios whose server scores fill in a line with no local runs.</summary>
+    UIElement MiniCard(string name, string sub, Brush dot, Brush tier, bool ranked, List<(DateTime Day, double Value)> history, string watermark, bool complete, double? fraction, BenchmarkProgress? cloudOf, Action click)
     {
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         titleRow.Children.Add(new System.Windows.Shapes.Ellipse { Width = 10, Height = 10, Fill = dot, Margin = new Thickness(0, 6, 10, 0), VerticalAlignment = VerticalAlignment.Center });
-        var title = Text(name, 32, ProfileTone, FontWeights.Light);
+        var title = Text(name, 32, SolidFixed("#FFFFFFFF"), FontWeights.Light);
         title.FontFamily = new FontFamily("Segoe UI");
         title.TextTrimming = TextTrimming.CharacterEllipsis;
         title.Opacity = 0.85;
         titleRow.Children.Add(title);
         var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(18, 0, 0, 0) };
         info.Children.Add(titleRow);
-        var diff = Text(sub, 22, ProfileTone, FontWeights.Light, new Thickness(20, 4, 0, 0));
+        var diff = Text(sub, 22, SolidFixed("#FFFFFFFF"), FontWeights.Light, new Thickness(20, 4, 0, 0));
         diff.FontFamily = new FontFamily("Segoe UI");
         diff.Opacity = 0.65;
         info.Children.Add(diff);
 
-        var chart = new ScoreChart { IsHitTestVisible = false };
-        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete);
+        var chart = new ScoreChart { IsHitTestVisible = false, MiniLineDown = 12 };
+        // Not complete: the progress to the next tier as a whole number, truncated (never rounded up to 100).
+        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete, !complete && fraction is { } f ? $"{Math.Floor(Math.Clamp(f, 0, 1) * 100):0}" : null);
         if (cloudOf != null) _ = EnsureCloudAsync(cloudOf.Scenarios.Where(sc => sc.RankMaxes.Count > 0).Select(sc => sc.Scenario)); // a change redraws Home through the book
         chart.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.Transparent, 0.15), new GradientStop(Colors.White, 0.5) }, new Point(0, 0), new Point(1, 0));
 

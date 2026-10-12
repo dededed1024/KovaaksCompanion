@@ -40,7 +40,7 @@ public partial class StatsView : UserControl
     readonly PlaylistIndex _index;
     readonly Dictionary<string, int> _diffChoice = new(StringComparer.OrdinalIgnoreCase);
     BrowserItem? _popupItem;
-    string? _playlist;
+    string? _playlist, _scrollCat;
     string _favSig = "";
     bool _loaded, _popupOpen;
     readonly DispatcherTimer _liveTimer;
@@ -71,8 +71,8 @@ public partial class StatsView : UserControl
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
         PlaylistScroll.IsVisibleChanged += (_, _) => CopyImage.Visibility = PlaylistScroll.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         Popups.AddBase(HomeScroll);
-        HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); };
-        HomeScroll.ScrollChanged += (_, _) => UpdateLivePill();
+        HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); UpdateTopButton(); };
+        HomeScroll.ScrollChanged += (_, _) => { UpdateLivePill(); UpdateTopButton(); };
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
         HomeScroll.Loaded += (_, _) =>
         {
@@ -191,6 +191,7 @@ public partial class StatsView : UserControl
         var avail = Math.Max(0, HomeScroll.ActualWidth - 64 - 14);
         HomeHost.Width = Math.Min(HomeMaxWidth, avail);
         ProfileBox.Width = Math.Min(HomeMaxWidth, avail);
+        if (_browseHost != null && BrowseColumns(_browseTab, HomeHost.Width) != _browseCols) FillBrowse();
     }
 
 
@@ -296,7 +297,7 @@ public partial class StatsView : UserControl
         var cache = Cache;
         var (lib, sessions, serverBest, deletedBest, hidden, scores) = await Task.Run(() => {
             var infos = SessionStore.List(sessionsFolder).Select(s => s.Info).ToList();
-            return (RunLibrary.Scan(folder).Verified(infos), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
+            return (RunLibrary.Scan(folder).Verified(infos).WithArchived(cache.ArchivedRuns()), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
         });
         _book = _book.WithLibrary(lib);
         (_sessions, _deletedBest, _hidden) = (sessions, deletedBest, hidden);
@@ -308,7 +309,7 @@ public partial class StatsView : UserControl
         _celebrateNext = false;
         UpdateTierMarks(celebrate);
         ShowHome();
-        if (_confettiPending) Dispatcher.BeginInvoke(DispatcherPriority.Loaded, FireConfetti);
+        if (_confettiPending) _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, FireConfetti);
         if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         _ = SyncServerAsync();
     }
@@ -397,10 +398,11 @@ public partial class StatsView : UserControl
         return new BrowserItem(b.BenchmarkName, b, theme, "", Lighten(theme, 0.45));
     }
 
-    /// <summary>Opens a playlist (at <paramref name="d"/> when given, else the remembered difficulty) in the popup.</summary>
-    void OpenPlaylist(Benchmark b, Difficulty? d = null)
+    /// <summary>Opens a playlist (at <paramref name="d"/> when given, else the remembered difficulty) in the popup; with <paramref name="category"/> the page scrolls to that category's card.</summary>
+    void OpenPlaylist(Benchmark b, Difficulty? d = null, string? category = null)
     {
         if (d != null) _diffChoice[b.BenchmarkName] = d.KovaaksBenchmarkId;
+        _scrollCat = category;
         _popupItem = MakeItem(b);
         OpenPopup();
         ShowBenchmark(_popupItem);
@@ -584,6 +586,11 @@ public partial class StatsView : UserControl
         _ctx = new PlaylistCtx(item, d, p, report, cats, tierNames.Select(TierText.Label).ToList(), tierBrushes, history, counts, blocks, entries, cutoff, item.Theme);
         SetLayout("playlist");
         ShowPlaylist(keep);
+        if (_scrollCat is { } cat)
+        {
+            _scrollCat = null;
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_popupOpen && tok == _token) _bench?.ScrollToCategory(cat); });
+        }
         _ = LoadCloudAsync(tok, item, p);
     }
 

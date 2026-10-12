@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Media;
 
 namespace KovaaksCompanion.App;
@@ -15,13 +15,28 @@ public static class Theme
         ("Rose", "#FF375F"), ("Ember", "#FF9F0A"), ("Gold", "#FFD60A"), ("Forest", "#30D158"), ("Ocean", "#0A84FF"), ("Violet", "#BF5AF2"),
     ];
 
+    /// <summary>Background hue, saturation and value of the themes whose tint of the accent over dark gray looked wrong (pale red, brown orange and yellow, khaki green); the others keep the tint.</summary>
+    static readonly Dictionary<string, (double H, double S, double V)> Backgrounds = new()
+    {
+        ["Rose"] = (350, 0.86, 0.38), ["Ember"] = (30, 0.95, 0.80), ["Gold"] = (50, 1.0, 0.75), ["Forest"] = (138, 0.85, 0.36),
+    };
+
+    static Color FromHsv(double h, double s, double v)
+    {
+        var c = v * s;
+        var x = c * (1 - Math.Abs(h / 60 % 2 - 1));
+        var m = v - c;
+        var (r, g, b) = (int)(h / 60) switch { 0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x) };
+        return Color.FromRgb((byte)Math.Round((r + m) * 255), (byte)Math.Round((g + m) * 255), (byte)Math.Round((b + m) * 255));
+    }
+
     /// <summary>Accent hex of every colored theme; the profile palette starts with these.</summary>
     public static readonly string[] ColoredAccents = [.. Colored.Select(c => c.Accent)];
 
-    static Look Tinted(string accent)
+    static Look Tinted(string name, string accent)
     {
         var a = Parse(accent);
-        var bg = Mix(Color.FromRgb(0x1C, 0x1C, 0x1E), a, 0.09);
+        var bg = Backgrounds.TryGetValue(name, out var hsv) ? FromHsv(hsv.H, hsv.S, hsv.V) : Mix(Color.FromRgb(0x1C, 0x1C, 0x1E), a, 0.09);
         var surface = Mix(bg, Colors.White, 0.04);
         var raised = Mix(Mix(bg, Colors.White, 0.07), a, 0.08);
         return new(Hex(bg), "#F2" + Hex(surface)[1..], Hex(raised), accent);
@@ -34,20 +49,21 @@ public static class Theme
         var d = new Dictionary<string, Look>
         {
             ["Dark"] = new("#1C1C1E", "#F2232326", "#2C2C2E", "#0A84FF"),
-            ["Light"] = new("#F2F2F7", "#F2FFFFFF", "#FFFFFF", "#0A84FF", true),
+            ["Light"] = new("#F2F2F7", "#F2FFFFFF", "#FFFFFF", "#2F97FF", true),
             ["Black"] = new("#000000", "#F20A0A0C", "#151517", "#0A84FF"),
         };
-        foreach (var (name, accent) in Colored) d[name] = Tinted(accent);
+        foreach (var (name, accent) in Colored) d[name] = Tinted(name, accent);
         return d;
     }
 
-    public static readonly string[] Names = [.. Looks.Keys];
+    /// <summary>The colored themes in palette order, then black, dark gray and white at the far end.</summary>
+    public static readonly string[] Names = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light"];
 
     static readonly Dictionary<string, string> Dark = new()
     {
         ["Bg"] = "#1C1C1E", ["Panel"] = "#0FFFFFFF", ["Card"] = "#14FFFFFF", ["Hover"] = "#1FFFFFFF", ["Selected"] = "#29FFFFFF",
         ["Separator"] = "#4D545458", ["Fg"] = "#FFFFFF", ["Dim"] = "#A1A1A8",
-        ["Green"] = "#30D158", ["Orange"] = "#FF9F0A", ["Red"] = "#FF453A", ["Purple"] = "#BF5AF2", ["Teal"] = "#64D2FF",
+        ["Green"] = "#30D158", ["Orange"] = "#FF9F0A", ["Red"] = "#FF453A", ["Purple"] = "#BF5AF2", ["Teal"] = "#64D2FF", ["Yellow"] = "#FFD60A",
         ["Surface"] = "#F2232326", ["Raised"] = "#2C2C2E", ["Edge"] = "#1FFFFFFF", ["EdgeFaint"] = "#14FFFFFF", ["Scrim"] = "#99000000",
         ["Tint"] = "#0DFFFFFF", ["Wash"] = "#14FFFFFF", ["WashPress"] = "#24FFFFFF", ["Highlight"] = "#1AFFFFFF",
         ["Thumb"] = "#66FFFFFF", ["ThumbHot"] = "#99FFFFFF", ["BgFadeColor"] = "#E61C1C1E", ["BgClearColor"] = "#001C1C1E",
@@ -57,7 +73,7 @@ public static class Theme
     {
         ["Bg"] = "#F2F2F7", ["Panel"] = "#0A000000", ["Card"] = "#12000000", ["Hover"] = "#14000000", ["Selected"] = "#1F000000",
         ["Separator"] = "#4D3C3C43", ["Fg"] = "#1C1C1E", ["Dim"] = "#6C6C70",
-        ["Green"] = "#248A3D", ["Orange"] = "#C46A00", ["Red"] = "#D70015", ["Purple"] = "#8944AB", ["Teal"] = "#0E8FA8",
+        ["Green"] = "#248A3D", ["Orange"] = "#C46A00", ["Red"] = "#D70015", ["Purple"] = "#8944AB", ["Teal"] = "#0E8FA8", ["Yellow"] = "#A67C00",
         ["Surface"] = "#F2FFFFFF", ["Raised"] = "#FFFFFF", ["Edge"] = "#1F000000", ["EdgeFaint"] = "#14000000", ["Scrim"] = "#66000000",
         ["Tint"] = "#0A000000", ["Wash"] = "#0F000000", ["WashPress"] = "#1A000000", ["Highlight"] = "#14000000",
         ["Thumb"] = "#55000000", ["ThumbHot"] = "#88000000", ["BgFadeColor"] = "#E6F2F2F7", ["BgClearColor"] = "#00F2F2F7",
@@ -114,7 +130,7 @@ public static class Theme
         // Fill carries white text or icons: darken just until they reach 3:1 (the light theme needs none for blue, so it stays bright).
         var fc = look.Light ? ac : Mix(ac, Colors.Black, 0.2);
         while (Contrast(fc, Colors.White) < 3 && fc != Colors.Black) fc = Mix(fc, Colors.Black, 0.08);
-        if (look.Light) ac = Mix(ac, Colors.Black, 0.15); // accent text on white
+        if (look.Light) ac = Mix(ac, Colors.Black, 0.08); // accent text on white
         var bg = Parse(look.Bg);
         // Mica shows through the wash on Dark and Light; the colored themes are opaque so the theme color is what shows.
         var colored = theme is not ("Dark" or "Light" or "Black");

@@ -66,7 +66,7 @@ public partial class StatsView
     BenchmarkProgress WithLocal(BenchmarkProgress p) =>
         p.WithLocalBests(n =>
         {
-            double? local = _lib.Runs(n) is { Count: > 0 } r ? r.Max(x => x.Score) : null;
+            double? local = _book.For(n).Best is > 0 and var best ? best : null;
             return _deletedBest.TryGetValue(n, out var d) && (local == null || d > local) ? d : local;
         });
 

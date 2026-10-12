@@ -101,13 +101,17 @@ public sealed class ScoreChart : FrameworkElement
     }
 
     Brush? _miniBrush;
+    double _miniLineDown;
+    /// <summary>Card mode: pushes the line (not the watermark or tag) this many px down from the top.</summary>
+    public double MiniLineDown { get => _miniLineDown; set { if (Math.Abs(_miniLineDown - value) < 0.01) return; _miniLineDown = value; InvalidateVisual(); } }
     string _watermark = "";
     bool _complete;
+    string? _progress;
 
     /// <summary>Card mode: only the line over a gradient (tier colour at the bottom, transparent on top), with the tier name as a card-high watermark behind it. No axes, bands, labels or hover.</summary>
-    public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName, bool complete = false)
+    public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName, bool complete = false, string? progress = null)
     {
-        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _hover = -1;
+        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _progress = progress; _hover = -1;
         IsHitTestVisible = false;
         AttachVisuals(true);
         InvalidateVisual();
@@ -136,27 +140,51 @@ public sealed class ScoreChart : FrameworkElement
         if (_marquee && IsLoaded) StartDrift(pitch); else StopDrift();
     }
 
+    static readonly Typeface TagFace = new(new FontFamily("Segoe UI Semibold, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+    /// <summary>Bottom right tag: COMPLETE once the top tier is reached, else the progress number plus a "%" at 3/4 size on the same baseline. Null when there is nothing to show.</summary>
+    (FormattedText Text, Point TextAt, FormattedText? Pct, Point PctAt)? TagLayout(double w, double h)
+    {
+        var tagText = _watermark.Length > 0 && _complete ? L.T("Complete").ToUpperInvariant() : _progress;
+        if (string.IsNullOrEmpty(tagText)) return null;
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var probe = new FormattedText(_watermark.Length > 0 ? _watermark : "A", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
+        var tagBrush = new SolidColorBrush(Color.FromArgb(0xD0, 255, 255, 255)); tagBrush.Freeze();
+        // Scales with the card height, up to twice the watermark's height cap.
+        var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
+        var tag = new FormattedText(tagText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, TagFace, tagSize, tagBrush, dpi);
+        FormattedText? pct = null;
+        var width = tag.Width;
+        if (tagText == _progress)
+        {
+            pct = new FormattedText("%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, TagFace, tagSize * 0.75, tagBrush, dpi);
+            width += pct.Width;
+        }
+        var x0 = w - width - 8;
+        var at = new Point(x0, h - tag.Baseline - 6);
+        var pctAt = pct == null ? default : new Point(x0 + tag.Width, h - pct.Baseline - 6);
+        return (tag, at, pct, pctAt);
+    }
+
     void RenderMini(DrawingContext dc, double w, double h, Brush tier)
     {
         var c = ColorOf(tier);
-        if (_watermark.Length > 0 && _complete)
+        // Drawn last, so the line's gradient never tints it (a card without a line would otherwise show it brighter).
+        void DrawTag()
         {
-            var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            var probe = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
-            var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
-            // Scales with the card height, up to twice the watermark's height cap.
-            var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
-            var tag = new FormattedText(L.T("Complete").ToUpperInvariant(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize, tagBrush, dpi);
-            dc.DrawText(tag, new Point(w - tag.Width - 8, h - tag.Baseline - 6));
+            if (TagLayout(w, h) is not { } t) return;
+            dc.DrawText(t.Text, t.TextAt);
+            if (t.Pct != null) dc.DrawText(t.Pct, t.PctAt);
         }
-        if (_points.Count < 2) return;
+        if (_points.Count < 2) { DrawTag(); return; }
         var lo = _points.Min(p => p.Value);
         var hi = _points.Max(p => p.Value);
         var pad = Math.Max((hi - lo) * 0.08, 1e-6);
         lo -= pad; hi += pad;
         const double m = 6;
+        var top = m + _miniLineDown;
         var n = _points.Count;
-        var pts = _points.Select((p, i) => new Point(i / (double)(n - 1) * w, m + (1 - (p.Value - lo) / (hi - lo)) * (h - 2 * m))).ToList();
+        var pts = _points.Select((p, i) => new Point(i / (double)(n - 1) * w, top + (1 - (p.Value - lo) / (hi - lo)) * (h - top - m))).ToList();
         // 90° runs top-to-bottom: transparent on top, tier colour at the bottom.
         var grad = new LinearGradientBrush(Color.FromArgb(0, c.R, c.G, c.B), Color.FromArgb(0x99, c.R, c.G, c.B), 90);
         grad.Freeze();
@@ -176,6 +204,7 @@ public sealed class ScoreChart : FrameworkElement
         halo.Freeze();
         dc.DrawEllipse(halo, null, last, 8, 8);
         dc.DrawEllipse(tier, null, last, 2.5, 2.5);
+        DrawTag();
     }
 
     static Brush Res(string key) => (Brush)Application.Current.FindResource(key);
