@@ -16,7 +16,7 @@ namespace KovaaksCompanion.App;
 public partial class StatsView
 {
     sealed record PlaylistCtx(BrowserItem Item, Difficulty D, BenchmarkProgress P, PlaylistReport Report, List<BenchCategory> Cats, List<string> Names, List<Brush> Brushes,
-        List<(DateTime Day, double Value)> History, int[] Counts, List<(string Scenario, int Rank, double Fraction)> Blocks, List<RadarEntry> Entries, DateTime Cutoff, Brush Theme, string Note)
+        List<(DateTime Day, double Value)> History, int[] Counts, List<(string Scenario, int Rank, double Fraction)> Blocks, List<RadarEntry> Entries, DateTime Cutoff, Brush Theme)
     {
         public Dictionary<DateTime, int> Plays { get; } = Report.PlaysPerDay().GroupBy(x => x.Day.Date).ToDictionary(g => g.Key, g => g.Sum(x => x.Plays));
     }
@@ -39,9 +39,8 @@ public partial class StatsView
     const string Icons = "Segoe Fluent Icons, Segoe MDL2 Assets";
     PlaylistCtx? _ctx;
     BenchmarkTable? _bench;
-    FrameworkElement? _hero, _tiles, _activity;
+    FrameworkElement? _hero;
     BalanceUi? _bal;
-    TextBlock? _noteBlock;
 
     Brush DimB => (Brush)FindResource("Dim");
     Brush FgB => (Brush)FindResource("Fg");
@@ -60,25 +59,57 @@ public partial class StatsView
     /// <summary>Renders the overall header, category tiles and the full scenario table (not just the visible part) to a bitmap on the clipboard.</summary>
     async void OnCopyImageClick(object sender, RoutedEventArgs e)
     {
-        if (_bench is not { } t || t.ActualWidth <= 0 || t.ActualHeight <= 0) return;
+        if (await CaptureImage(null)) await FlashCopyImage();
+    }
+
+    /// <summary>Opaque background of the theme currently applied, for the image captures.</summary>
+    Brush CaptureBg()
+    {
+        var c = FindResource("Bg") is SolidColorBrush b ? b.Color : Theme.Swatch(Theme.Current).Bg;
+        var r = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B));
+        r.Freeze();
+        return r;
+    }
+
+    /// <summary>Same capture for one category: its header and all its scenarios, in a table as wide as the page's, under the playlist header with the category name.</summary>
+    void OnCategoryCaptureRequested(BenchCategory cat)
+    {
+        if (_ctx is not { } c || _bench is not { ActualWidth: > 0 } t) return;
+        var one = new BenchmarkTable { ShowCaptureButton = false, Width = t.ActualWidth };
+        one.Set([cat], c.Names, c.Brushes);
+        one.Measure(new Size(t.ActualWidth, double.PositiveInfinity));
+        one.Arrange(new Rect(0, 0, t.ActualWidth, one.DesiredSize.Height));
+        one.UpdateLayout();
+        _ = CaptureImage(one, cat.Name.Trim());
+    }
+
+    async Task FlashCopyImage()
+    {
+        var icon = CopyImage.Content;
+        CopyImage.Content = "";
+        await Task.Delay(1200);
+        CopyImage.Content = icon;
+    }
+
+    async Task<bool> CaptureImage(BenchmarkTable? only, string? subName = null)
+    {
+        if ((only ?? _bench) is not { } t || t.ActualWidth <= 0 || t.ActualHeight <= 0) return false;
         var heroAlign = HorizontalAlignment.Stretch;
         List<(FrameworkElement, HorizontalAlignment)> heroLines = [];
         try
         {
-            var dpi = VisualTreeHelper.GetDpi(t);
-            var body = new List<FrameworkElement>();
-            if (_tiles is { ActualHeight: > 0 } tiles) body.Add(tiles);
-            if (_activity is { ActualHeight: > 0 } activity) body.Add(activity);
-            body.Add(t);
+            var dpi = VisualTreeHelper.GetDpi(only == null ? t : this);
+            var body = new List<FrameworkElement> { t };
             var title = new FormattedText(Heading.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize, Heading.Foreground, dpi.PixelsPerDip);
+                new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize * 0.7, Heading.Foreground, dpi.PixelsPerDip);
             // Header row: dot, name and difficulty on the left, then the overall tier.
             const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28, pad = 15, dotInset = 18, heroInset = 18;
             var pill = HeadPill.Visibility == Visibility.Visible && HeadPill.ActualWidth > 0 ? HeadPill : null;
             var diffName = DiffTrack.Visibility == Visibility.Visible ? DiffBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string : null;
+            if (subName != null) diffName = string.IsNullOrEmpty(diffName) ? subName : $"{diffName}  ·  {subName}";
             var diff = string.IsNullOrEmpty(diffName) ? null : new FormattedText(diffName, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                new Typeface(Heading.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 20, DimB, dpi.PixelsPerDip);
-            var hero = _hero is { ActualHeight: > 0 } ? _hero : null;
+                new Typeface(Heading.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 14, DimB, dpi.PixelsPerDip);
+            var hero = only == null && _hero is { ActualHeight: > 0 } ? _hero : null;
             // Shrink the hero to its text and right-align its lines for the capture; restored in finally.
             if (hero != null)
             {
@@ -86,12 +117,13 @@ public partial class StatsView
                 heroLines = (hero as Panel)?.Children.OfType<FrameworkElement>().Select(l => (l, l.HorizontalAlignment)).ToList() ?? [];
                 hero.HorizontalAlignment = HorizontalAlignment.Right;
                 foreach (var (l, _) in heroLines) l.HorizontalAlignment = HorizontalAlignment.Right;
+                foreach (var (l, _) in heroLines.Skip(1)) l.Visibility = Visibility.Collapsed; // meta line ("n of n scenarios played ...")
                 hero.UpdateLayout();
             }
             var heroW = hero?.ActualWidth ?? 0;
             var leftW = (pill != null ? dotInset + dot + dotGap : 0) + title.Width + (diff != null ? diffGap + diff.Width : 0);
             var headH = Math.Max(Math.Max(title.Height, diff?.Height ?? 0), hero?.ActualHeight ?? 0);
-            var width = Math.Max(body.Max(x => x.ActualWidth), leftW + (hero != null ? tierGap + heroW + heroInset : 0)) + pad * 2;
+            var width = Math.Max(body.Max(x => x.ActualWidth), hero != null ? heroW + 2 * (leftW + tierGap + dotInset) : leftW) + pad * 2;
             var height = headH + CardGap + body.Sum(x => x.ActualHeight) + CardGap * (body.Count - 1) + pad * 2;
             var w = (int)Math.Ceiling(width * dpi.DpiScaleX);
             var h = (int)Math.Ceiling(height * dpi.DpiScaleY);
@@ -115,7 +147,7 @@ public partial class StatsView
                         Viewport = rect,
                     }, null, rect);
                 }
-                dc.DrawRectangle(Solid("#FF101114"), null, new Rect(0, 0, width, height));
+                dc.DrawRectangle(CaptureBg(), null, new Rect(0, 0, width, height));
                 var x = pad;
                 if (pill != null)
                 {
@@ -130,7 +162,7 @@ public partial class StatsView
                     dc.DrawText(diff, new Point(x, pad + (headH - diff.Height) / 2));
                     x += diff.Width;
                 }
-                if (hero != null) Draw(hero, width - pad - heroInset - heroW, pad + (headH - hero.ActualHeight) / 2, heroW);
+                if (hero != null) Draw(hero, (width - heroW) / 2, pad + (headH - hero.ActualHeight) / 2, heroW);
                 var y = pad + headH + CardGap;
                 foreach (var part in body)
                 {
@@ -143,25 +175,22 @@ public partial class StatsView
             Clipboard.SetImage(rtb);
             var dir = _host.Settings.CapturesFolder;
             Directory.CreateDirectory(dir);
-            var name = string.Concat(Heading.Text.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
+            var name = string.Concat((subName == null ? Heading.Text : $"{Heading.Text}_{subName}").Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
             using var fs = File.Create(Path.Combine(dir, $"{(name.Length == 0 ? "playlist" : name)}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
             enc.Save(fs);
         }
-        catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); return; }
+        catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); return false; }
         finally
         {
-            if (_hero is { } h0)
+            if (only == null && _hero is { } h0)
             {
                 h0.HorizontalAlignment = heroAlign;
-                foreach (var (l, a) in heroLines) l.HorizontalAlignment = a;
+                foreach (var (l, a) in heroLines) { l.HorizontalAlignment = a; l.Visibility = Visibility.Visible; }
             }
         }
-        var icon = CopyImage.Content;
-        CopyImage.Content = "";
-        await Task.Delay(1200);
-        CopyImage.Content = icon;
+        return true;
     }
 
     async void OnCodeClick(object sender, MouseButtonEventArgs e)
@@ -169,7 +198,7 @@ public partial class StatsView
         if (_code.Length == 0) return;
         try { Clipboard.SetText(_code); } catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); return; }
         var tok = ++_codeTok;
-        CodeText.Text = "Copied";
+        CodeText.Text = L.T("Copied");
         await Task.Delay(1200);
         if (tok == _codeTok) CodeText.Text = _code;
     }
@@ -206,7 +235,7 @@ public partial class StatsView
             var st = BenchmarkTable.Summarize(cat, tiers);
             Brush? rb = st.Rank >= 1 && st.Rank <= c.Brushes.Count ? c.Brushes[st.Rank - 1] : null;
             var nb = st.Rank < tiers && st.Rank < c.Brushes.Count ? c.Brushes[st.Rank] : rb ?? DimB;
-            return new CatInfo(cat, st, rb == null ? "UNRANKED" : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
+            return new CatInfo(cat, st, rb == null ? L.T("UNRANKED") : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
         }).ToList();
     }
 
@@ -223,7 +252,7 @@ public partial class StatsView
     Border TitledCard(string title, string? subtitle, params UIElement[] body)
     {
         var sp = new StackPanel();
-        sp.Children.Add(Text(title, 17, FgB, FontWeights.SemiBold, new Thickness(16, 12, 16, subtitle == null ? 4 : 0)));
+        sp.Children.Add(Text(L.T(title), 17, FgB, FontWeights.SemiBold, new Thickness(16, 12, 16, subtitle == null ? 4 : 0)));
         if (subtitle != null) sp.Children.Add(new TextBlock { Text = subtitle, FontSize = 12.5, Foreground = DimB, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 2, 16, 6) });
         foreach (var e in body) sp.Children.Add(e);
         return Card(sp);
@@ -267,9 +296,9 @@ public partial class StatsView
     }
 
     /// <summary>Large section title fading to transparent at the bottom, overlapping the card below it.</summary>
-    TextBlock FadeTitle(string text)
+    TextBlock FadeTitle(string text, double top = 8)
     {
-        var t = Text(text, 34, FgB, FontWeights.SemiBold, new Thickness(4, 8, 0, -5));
+        var t = Text(L.T(text), 34, FgB, FontWeights.SemiBold, new Thickness(4, top, 0, -5));
         t.IsHitTestVisible = false;
         t.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.White, 0.2), new GradientStop(Colors.Transparent, 0.95) }, new Point(0, 0), new Point(0, 1));
         return t;
@@ -283,8 +312,10 @@ public partial class StatsView
         var p = c.P;
         var r = c.Report;
         var ranked = p.OverallRank > 0;
-        _hero = Hero(ranked ? TierText.Label(p.OverallRankName) : "UNRANKED", ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {(p.PlayedProgressShare is { } s ? $"{s * 100:0.00}%" : $"{p.Progress:#,0} pts")}",
-            $"{r.PlayedCount} of {r.ScenarioCount} scenarios played · {r.TotalPlays} plays · {Dur(r.TimePlayed)}");
+        var tierText = ranked ? TierText.Label(p.OverallRankName) : L.T("UNRANKED");
+        if (ranked && p.IsTierComplete(p.OverallRank)) tierText += " " + L.T("Complete");
+        _hero = Hero(tierText, ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {p.OverallFraction * 100:0.00}%",
+            L.F("{0} of {1} scenarios played · {2} plays · {3}", r.PlayedCount, r.ScenarioCount, r.TotalPlays, Dur(r.TimePlayed)));
         page.Children.Add(_hero);
 
         var tiers = c.Names.Count;
@@ -302,7 +333,7 @@ public partial class StatsView
             var bar = BenchmarkTable.NextBar(st.Fraction, ci.NextBrush, 6);
             bar.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 10, 0, 0));
             stack.Children.Add(bar);
-            stack.Children.Add(Text(st.Rank >= tiers ? "Max" : $"{st.Fraction * 100:0}% to {ci.NextName}", 11.5, DimB, null, new Thickness(0, 6, 0, 0)));
+            stack.Children.Add(Text(st.Rank >= tiers ? L.T("Max") : L.F("{0}% to {1}", $"{st.Fraction * 100:0}", ci.NextName), 11.5, DimB, null, new Thickness(0, 6, 0, 0)));
             var cell = new Grid();
             cell.Children.Add(stack);
             var chev = Chevron(HorizontalAlignment.Right);
@@ -324,10 +355,6 @@ public partial class StatsView
                 el.Margin = new Thickness(0, 0, k % cols == cols - 1 ? 0 : TileGap, TileGap);
             }
         };
-        grid.Margin = new Thickness(0, 0, 0, CardGap - TileGap);
-        page.Children.Add(grid);
-        _tiles = grid;
-
         page.Children.Add(BuildActivity(c));
 
         // Scenarios
@@ -337,6 +364,8 @@ public partial class StatsView
         // Charts
         page.Children.Add(FadeTitle("Charts"));
         page.Children.Add(BuildBalance(c, cats));
+        grid.Margin = new Thickness(0, 0, 0, CardGap - TileGap);
+        page.Children.Add(grid);
         page.Children.Add(BuildBlocks(c));
         return page;
     }
@@ -345,6 +374,7 @@ public partial class StatsView
     {
         var bench = _bench ?? new BenchmarkTable();
         bench.ScenarioOpened += (n, o) => _host.ShowScenario(n, o);
+        bench.CategoryCaptureRequested += OnCategoryCaptureRequested;
         bench.Set(c.Cats, c.Names, c.Brushes);
         // Scrolls sideways only when the tier columns no longer fit; the wheel goes to the page scroll.
         var sv = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Content = bench, Margin = new Thickness(0, 0, 0, CardGap) };
@@ -359,12 +389,12 @@ public partial class StatsView
         var blocks = new RankBlocksChart { Margin = new Thickness(16, 4, 16, 12) };
         blocks.SizeChanged += (_, ev) => { var h = Math.Clamp(ev.NewSize.Width * 0.3, 220, 400); if (double.IsNaN(blocks.Height) || Math.Abs(blocks.Height - h) > 1) blocks.Height = h; };
         blocks.Set(c.Blocks, c.Names, c.Brushes);
-        return TitledCard("Scenarios by rank", r == 0 ? $"{total - c.Counts[0]} of {total} ranked" : $"{c.Counts.Skip(r).Sum()} of {total} at {c.Names[r - 1]}+", blocks);
+        return TitledCard("Scenarios by rank", r == 0 ? L.F("{0} of {1} ranked", total - c.Counts[0], total) : L.F("{0} of {1} at {2}+", c.Counts.Skip(r).Sum(), total, c.Names[r - 1]), blocks);
     }
 
     FrameworkElement ProgressChart(PlaylistCtx c)
     {
-        if (c.History.Count == 0) return Text("No runs", 13, DimB);
+        if (c.History.Count == 0) return Text(L.T("No plays"), 13, DimB);
         var chart = new ScoreChart();
         chart.Set(c.History, "0.00", ChartKind.Line, false, c.Names.Select((n, i) => new ChartBand(i + 1, n, c.Brushes[i])).ToList());
         return chart;
@@ -373,12 +403,10 @@ public partial class StatsView
     /// <summary>Activity calendar (left) and progress chart (right) in one card; stacked when narrower than 820px.</summary>
     UIElement BuildActivity(PlaylistCtx c)
     {
-        var card = ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), c.Note);
-        _activity = card as FrameworkElement;
-        return card;
+        return ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c));
     }
 
-    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, string? note = null, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0, double maxCell = 16, int maxWeeks = 53)
+    UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0, double maxCell = 16, int maxWeeks = 53)
     {
         var cal = new ActivityCalendar { FixedWeeks = weeks, MaxCell = maxCell, MaxWeeks = maxWeeks, Margin = new Thickness(0, 0, 0, 12) };
         cal.Set(plays, tone);
@@ -389,11 +417,6 @@ public partial class StatsView
         chart.Margin = new Thickness(0, 0, 0, 12);
         var right = new StackPanel();
         right.Children.Add(chart);
-        if (note != null)
-        {
-            _noteBlock = new TextBlock { Style = (Style)FindResource("Caption"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), Text = note, Visibility = note.Length == 0 ? Visibility.Collapsed : Visibility.Visible };
-            right.Children.Add(_noteBlock);
-        }
 
         var divider = new Border { Width = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(0, 8, 0, 8) };
         var body = new Grid();
@@ -440,7 +463,7 @@ public partial class StatsView
         var axes = new UniformGrid { Rows = 1 };
         foreach (var n in new[] { "Categories", "Subcategories", "Scenarios" })
         {
-            var rb = new RadioButton { Style = (Style)FindResource("Segment"), Content = n, Tag = n, IsChecked = n == _host.Ui.RadarAxes };
+            var rb = new RadioButton { Style = (Style)FindResource("Segment"), Content = L.T(n), Tag = n, IsChecked = n == _host.Ui.RadarAxes };
             rb.Checked += OnAxesChecked;
             axes.Children.Add(rb);
         }
@@ -448,7 +471,7 @@ public partial class StatsView
         head.Children.Add(new Border { Style = (Style)FindResource("SegmentTrack"), Child = axes, Margin = new Thickness(0, 0, 20, 0) });
         var legend = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         legend.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0x93)), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-        legend.Children.Add(new TextBlock { Text = "30 days ago", FontSize = 12.5, Foreground = DimB, VerticalAlignment = VerticalAlignment.Center });
+        legend.Children.Add(new TextBlock { Text = L.T("30 days ago"), FontSize = 12.5, Foreground = DimB, VerticalAlignment = VerticalAlignment.Center });
         head.Children.Add(legend);
 
         var ui = new BalanceUi();
@@ -530,7 +553,7 @@ public partial class StatsView
         {
             var f = g.First();
             var label = mode == "Scenarios" ? f.Scenario : mode == "Subcategories" ? Join(f.Category, f.Sub) : f.Category;
-            return new RadarAxis(label.Length > 0 ? label : "Other", g.Average(r => r.Value), g.Average(r => r.Previous));
+            return new RadarAxis(label.Length > 0 ? label : L.T("Other"), g.Average(r => r.Value), g.Average(r => r.Previous));
         }).ToList();
         ui.Radar.Set(axes, c.Names, c.Brushes, true);
         ui.Rows = RankingRows(axes, c);
@@ -561,7 +584,7 @@ public partial class StatsView
             name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = a.Label;
             g.Children.Add(name);
             var right = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0) };
-            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : "UNRANKED", 12, tb, FontWeights.SemiBold));
+            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : L.T("UNRANKED"), 12, tb, FontWeights.SemiBold));
             Grid.SetColumn(right, 1);
             g.Children.Add(right);
             var f = v / max;

@@ -6,7 +6,7 @@
         >
     <UserControl.Resources>
         <Style x:Key="PopupClose" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -16,8 +16,8 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Selected}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Selected}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -27,20 +27,40 @@
     <Grid>
         <!-- Home: the whole page -->
         <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0" Margin="0,0,8,0">
-            <Grid x:Name="HomeHost" HorizontalAlignment="Center" Margin="0,60,0,24"/>
+            <StackPanel>
+                <!-- Profile card: laid out at one fixed design size (23:9); the Viewbox scales everything in it together like a single image. -->
+                <Viewbox x:Name="ProfileBox" Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" Margin="0,60,0,0">
+                    <Grid Width="1753">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
+                        <Border x:Name="ProfileEditor" Grid.Row="1" Visibility="Collapsed" Margin="0,0,0,8" Padding="16" Background="#E61E1E22" BorderBrush="#14FFFFFF" BorderThickness="1"/>
+                        <Border x:Name="ProfileCard" Grid.Row="2" Width="1753" Height="686" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="{DynamicResource Surface}"
+                                BorderBrush="{DynamicResource Edge}" BorderThickness="0">
+                            <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
+                        </Border>
+                        <UniformGrid x:Name="CelebrationHost" Grid.Row="3" Columns="2" HorizontalAlignment="Center" Margin="0,16,0,0" Visibility="Collapsed"/>
+                    </Grid>
+                </Viewbox>
+                <Grid x:Name="HomeHost" HorizontalAlignment="Center" Margin="0,24,0,24"/>
+            </StackPanel>
         </ScrollViewer>
         <!-- Scroll edge under the title bar -->
         <Border Height="48" VerticalAlignment="Top" IsHitTestVisible="False">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#E61C1C1E" Offset="0"/>
-                    <GradientStop Color="#001C1C1E" Offset="1"/>
+                    <GradientStop Color="{DynamicResource BgFadeColor}" Offset="0"/>
+                    <GradientStop Color="{DynamicResource BgClearColor}" Offset="1"/>
                 </LinearGradientBrush>
             </Border.Background>
         </Border>
 
         <!-- Floating jump-to-live pill -->
-        <Border x:Name="LivePill" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24" Padding="14,7,12,7" CornerRadius="16" Background="#FF453A"
+        <Border x:Name="LivePill" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24" Padding="14,7,12,7" CornerRadius="16" Background="{DynamicResource Red}"
                 Opacity="0" Visibility="Collapsed" IsHitTestVisible="False" Cursor="Hand" MouseLeftButtonUp="OnLivePill">
             <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.45" Color="Black"/></Border.Effect>
             <StackPanel Orientation="Horizontal">
@@ -50,11 +70,29 @@
             </StackPanel>
         </Border>
 
+        <!-- Playlists list popup: below the playlist detail popup so a clicked playlist opens on top -->
+        <Grid x:Name="ListPopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnListKey">
+            <Border x:Name="ListScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnListScrim"/>
+            <Border x:Name="ListCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+                    BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><ScaleTransform x:Name="ListScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
+                <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
+                <Grid Margin="28,20,28,18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="ListTitle" Text="{app:Loc 'Playlists'}" Style="{StaticResource LargeTitle}"/>
+                    <ScrollViewer x:Name="ListScroll" Grid.Row="1" Focusable="False" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" CanContentScroll="False"/>
+                </Grid>
+            </Border>
+        </Grid>
         <!-- Playlist popup: scrim + card below the title bar -->
         <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
-            <Border x:Name="Scrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="#F2232326"
-                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+                    BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
                 <Grid x:Name="Detail" Margin="28,20,28,18">
@@ -76,22 +114,22 @@
                                 <Border x:Name="HeadPill" Width="10" Height="10" CornerRadius="5" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Favorite" Click="OnStarClick" Visibility="Collapsed"/>
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Favorite'}" Click="OnStarClick" Visibility="Collapsed"/>
                                 <Button x:Name="CopyImage" Content="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Copy scenarios as image" Click="OnCopyImageClick" Visibility="Collapsed"/>
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Copy scenarios as image'}" Click="OnCopyImageClick" Visibility="Collapsed"/>
                                 <Button x:Name="Pin" Content="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="Show tier on Home" Click="OnPinClick" Visibility="Collapsed"/>
+                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Show tier on Home'}" Click="OnPinClick" Visibility="Collapsed"/>
                                 <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                <Border x:Name="CodeChip" Background="#14FFFFFF" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
-                                        ToolTip="Copy sharecode" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
-                                    <TextBlock x:Name="CodeText" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Dim}"/>
+                                <Border x:Name="CodeChip" Background="{DynamicResource Wash}" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
+                                        ToolTip="{app:Loc 'Copy sharecode'}" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
+                                    <TextBlock x:Name="CodeText" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Dim}"/>
                                 </Border>
-                                <Button x:Name="PlayList" Content="Play" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="8,0,0,0" VerticalAlignment="Center"
-                                        ToolTip="Start in KovaaK's" Click="OnPlayListClick" Visibility="Collapsed"/>
+                                <Button x:Name="PlayList" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="8,0,0,0" VerticalAlignment="Center"
+                                        ToolTip="{app:Loc 'Start in KovaaK\'s'}" Click="OnPlayListClick" Visibility="Collapsed"/>
                             </StackPanel>
                         </DockPanel>
                     </Grid>
-                    <TextBlock x:Name="Summary" Grid.Row="1" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{StaticResource Dim}"/>
+                    <TextBlock x:Name="Summary" Grid.Row="1" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{DynamicResource Dim}"/>
                     <ScrollViewer x:Name="PlaylistScroll" Focusable="False" Grid.Row="2" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Visibility="Collapsed">
                         <Grid x:Name="PageHost" HorizontalAlignment="Center" Margin="0,0,0,12"/>
@@ -102,9 +140,9 @@
 
         <!-- Search popup: scrim + command-palette card near the top -->
         <Grid x:Name="SearchPopup" Visibility="Collapsed" PreviewKeyDown="OnSearchKey">
-            <Border x:Name="SearchScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnSearchScrim"/>
-            <Border x:Name="SearchCard" Width="640" MaxWidth="1200" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="48,72,48,48" CornerRadius="18" Background="#F2232326"
-                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Border x:Name="SearchScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnSearchScrim"/>
+            <Border x:Name="SearchCard" Width="640" MaxWidth="1200" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+                    BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="SearchScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
                 <StackPanel>
@@ -115,36 +153,17 @@
             </Border>
         </Grid>
 
-        <!-- Profile popup: scrim + card below the title bar -->
-        <Grid x:Name="ProfilePopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnProfileKey">
-            <Border x:Name="ProfileScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnProfileScrim"/>
-            <!-- The card is laid out at one fixed design size (23:9); the Viewbox scales everything in it together like a single image. -->
-            <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="48,40,48,48">
-            <Grid Width="1753">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
-                <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="686" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="#F2232326"
-                        BorderBrush="#1FFFFFFF" BorderThickness="0" Opacity="0" RenderTransformOrigin="0.5,0.5">
-                    <Border.RenderTransform><ScaleTransform x:Name="ProfileScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
-                    <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
-                    <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
-                </Border>
-            </Grid>
-            </Viewbox>
-        </Grid>
-
         <!-- Session popup: scrim + card centered on screen -->
         <Grid x:Name="SessionPopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnSessionKey">
-            <Border x:Name="SessionScrim" Background="#99000000" Opacity="0" MouseLeftButtonDown="OnSessionScrim"/>
-            <Border x:Name="SessionCardBorder" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="80,64,80,80" CornerRadius="18" Background="#F2232326"
-                    BorderBrush="#1FFFFFFF" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+            <Border x:Name="SessionScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnSessionScrim"/>
+            <Border x:Name="SessionCardBorder" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="80,64,80,80" CornerRadius="18" Background="{DynamicResource Surface}"
+                    BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="SessionScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
                 <Grid x:Name="SessionHost"/>
             </Border>
         </Grid>
+        <!-- Confetti over everything -->
+        <app:Confetti x:Name="ConfettiLayer" IsHitTestVisible="False"/>
     </Grid>
 </UserControl>

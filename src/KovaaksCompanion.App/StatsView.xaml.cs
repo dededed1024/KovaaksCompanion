@@ -1,4 +1,4 @@
-using System.Net.Http;
+﻿using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -28,8 +28,14 @@ public partial class StatsView : UserControl
     readonly KovaaksApi _api = new();
     readonly Dictionary<int, BenchmarkProgress> _progress = [];
     readonly Dictionary<int, BenchmarkProgress> _rawProgress = [];
-    readonly Dictionary<string, double> _serverBest = new(StringComparer.OrdinalIgnoreCase);
-    RunLibrary _lib = new([]);
+    /// <summary>Best score of the deleted runs per scenario; counted like a server score.</summary>
+    Dictionary<string, double> _deletedBest = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Deleted runs (lower-case scenario, end): they still count in statistics but are left out of session and replay lists.</summary>
+    HashSet<(string Scenario, DateTime End)> _hidden = [];
+    bool IsHidden(RunRecord r) => _hidden.Contains((r.Scenario.ToLowerInvariant(), r.End));
+    /// <summary>Local runs joined with server scores; every score-based statistic comes from here.</summary>
+    ScoreBook _book = new(new RunLibrary([]));
+    RunLibrary _lib => _book.Lib;
     List<SessionInfo> _sessions = [];
     readonly PlaylistIndex _index;
     readonly Dictionary<string, int> _diffChoice = new(StringComparer.OrdinalIgnoreCase);
@@ -45,7 +51,7 @@ public partial class StatsView : UserControl
         InitializeComponent();
         _host = host;
         _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
-        Heading.Text = "Loading…";
+        Heading.Text = L.T("Loading…");
         host.SessionSaved += OnSessionSaved;
         host.RunFinished += OnRunFinished;
         host.GameStateChanged += OnGameStateChanged;
@@ -64,6 +70,7 @@ public partial class StatsView : UserControl
         MiddleScroll.Started += _ => StopEase();
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
         PlaylistScroll.IsVisibleChanged += (_, _) => CopyImage.Visibility = PlaylistScroll.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        Popups.AddBase(HomeScroll);
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); };
         HomeScroll.ScrollChanged += (_, _) => UpdateLivePill();
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
@@ -79,7 +86,7 @@ public partial class StatsView : UserControl
         {
             if (SessionPopup.ActualWidth > 0 && SessionPopup.ActualHeight > 0)
             {
-                SessionCardBorder.Width = Math.Min(1100, SessionPopup.ActualWidth - 160);
+                SessionCardBorder.Width = Math.Min(1200, SessionPopup.ActualWidth - 160);
                 SessionCardBorder.MaxHeight = Math.Max(0, SessionPopup.ActualHeight - 128);
             }
         };
@@ -94,7 +101,7 @@ public partial class StatsView : UserControl
     readonly System.Diagnostics.Stopwatch _clock = new();
     TimeSpan _lastTick;
 
-    /// <summary>Smooth wheel scrolling over the whole page: ease towards a target offset (about 40px per notch). Inner scrollers that can still move get the wheel first; otherwise it chains to the outer one.</summary>
+    /// <summary>Smooth wheel scrolling over the whole page: ease towards a target offset (about 96px per notch). Inner scrollers that can still move get the wheel first; otherwise it chains to the outer one.</summary>
     void OnWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
     {
         e.Handled = true;
@@ -114,7 +121,7 @@ public partial class StatsView : UserControl
         if (_easing && sv != _ws) StopEase();
         _ws = sv;
         if (!_easing) _target = sv.VerticalOffset;
-        _target = Math.Clamp(_target - e.Delta / 3.0, 0, sv.ScrollableHeight);
+        _target = Math.Clamp(_target - e.Delta * 0.8, 0, sv.ScrollableHeight);
         StartEase(sv);
     }
 
@@ -137,7 +144,7 @@ public partial class StatsView : UserControl
         var cur = _ws.VerticalOffset;
         var diff = _target - cur;
         if (Math.Abs(diff) < 0.5) { _lastSet = _target; _ws.ScrollToVerticalOffset(_target); StopEase(); return; }
-        _lastSet = cur + diff * (1 - Math.Exp(-dt / 0.035));
+        _lastSet = cur + diff * (1 - Math.Exp(-dt / 0.05));
         _ws.ScrollToVerticalOffset(_lastSet);
     }
 
@@ -176,10 +183,14 @@ public partial class StatsView : UserControl
         PageHost.Width = Math.Max(0, Math.Min(1100, PlaylistScroll.ActualWidth - 14));
     }
 
-    /// <summary>Home page: up to 1100px wide, centred.</summary>
+    const double HomeMaxWidth = 1100;
+
+    /// <summary>Home page: profile card and tiles share one max width, centred.</summary>
     void FitHome()
     {
-        HomeHost.Width = Math.Max(0, Math.Min(1100, HomeScroll.ActualWidth - 64 - 14));
+        var avail = Math.Max(0, HomeScroll.ActualWidth - 64 - 14);
+        HomeHost.Width = Math.Min(HomeMaxWidth, avail);
+        ProfileBox.Width = Math.Min(HomeMaxWidth, avail);
     }
 
 
@@ -240,7 +251,7 @@ public partial class StatsView : UserControl
         {
             Pin.Content = ((char)(pinned ? 0xE842 : 0xE718)).ToString();
             Pin.Foreground = (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim");
-            Pin.ToolTip = pinned ? "Remove tier from Home" : "Show tier on Home";
+            Pin.ToolTip = pinned ? L.T("Remove tier from Home") : L.T("Show tier on Home");
             Pin.Visibility = Visibility.Visible;
         }
         else
@@ -250,22 +261,17 @@ public partial class StatsView : UserControl
         var fav = _host.Ui.IsFavorite(key);
         Star.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
         Star.Foreground = (System.Windows.Media.Brush)FindResource(fav ? "Orange" : "Dim");
-        Star.ToolTip = fav ? "Remove from favorites" : _host.Ui.FavoritesFull ? "Up to 6 favorites" : "Add to favorites";
+        Star.ToolTip = fav ? L.T("Remove from favorites") : _host.Ui.FavoritesFull ? L.T("Up to 6 favorites") : L.T("Add to favorites");
         Star.Visibility = Visibility.Visible;
     }
 
     /// <summary>The run's CSV is complete: show it now, without waiting for the clip to be cut.</summary>
-    void OnRunFinished() => Dispatcher.InvokeAsync(() => { if (_loaded) Reload(); });
+    void OnRunFinished() => Dispatcher.InvokeAsync(() => { if (_loaded) { _celebrateNext = true; Reload(); } });
 
     void OnGameStateChanged() => Dispatcher.InvokeAsync(() =>
     {
         var active = _host.GameActive;
-        if (_gameWasActive && !active) _gameClosed = true;
-        else if (active)
-        {
-            if (!_gameWasActive) _liveSince = DateTime.Now;
-            _gameClosed = false;
-        }
+        if (active && !_gameWasActive) _liveSince = DateTime.Now;
         _gameWasActive = active;
         CheckLive();
     });
@@ -279,7 +285,7 @@ public partial class StatsView : UserControl
 
     void OnSessionSaved(SessionInfo info, string folder) => Dispatcher.InvokeAsync(() =>
     {
-        if (_popupOpen && int.TryParse(_playlist, out var id)) _progress.Remove(id); // refetched when the popup re-renders
+        _celebrateNext = true;
         Reload();
     });
 
@@ -288,21 +294,23 @@ public partial class StatsView : UserControl
         var folder = _host.Settings.StatsFolder;
         var sessionsFolder = _host.SessionsFolder;
         var cache = Cache;
-        var (lib, sessions, cached) = await Task.Run(() => {
+        var (lib, sessions, serverBest, deletedBest, hidden, scores) = await Task.Run(() => {
             var infos = SessionStore.List(sessionsFolder).Select(s => s.Info).ToList();
-            return (RunLibrary.Scan(folder).Verified(infos), infos, LoadCachedProgress(cache, _host.Settings.EffectiveSteamId));
+            return (RunLibrary.Scan(folder).Verified(infos), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
         });
-        (_lib, _sessions) = (lib, sessions);
-        foreach (var c in cached)
-        {
-            if (_progress.ContainsKey(c.D.KovaaksBenchmarkId)) continue;
-            ApplyProgress(c.D, c.P);
-            _fetched[c.D.KovaaksBenchmarkId] = c.At;
-        }
-        ReapplyLocal();
+        _book = _book.WithLibrary(lib);
+        (_sessions, _deletedBest, _hidden) = (sessions, deletedBest, hidden);
+        foreach (var (n, c) in scores) { _book.SetCloud(n, c.Scores); _cloudFetched[n] = c.FetchedAt; }
+        foreach (var (n, v) in deletedBest) _book.RaiseServerBest(n, v);
+        if (_rawProgress.Count == 0 || serverBest.Count != _serverBest.Count) { _serverBest = serverBest; RebuildProgress(); }
+        else ReapplyLocal();
+        var celebrate = _celebrateNext;
+        _celebrateNext = false;
+        UpdateTierMarks(celebrate);
         ShowHome();
+        if (_confettiPending) Dispatcher.BeginInvoke(DispatcherPriority.Loaded, FireConfetti);
         if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
-        _ = RefreshProgressAsync();
+        _ = SyncServerAsync();
     }
 
     // Session popup
@@ -315,6 +323,7 @@ public partial class StatsView : UserControl
     {
         if (_sessionOpen) return;
         _sessionOpen = true;
+        Register("session", SessionPopup, CloseSession, () => SessionPopup.Focus());
         _sessionTok++;
         SessionScrim.BeginAnimation(OpacityProperty, null); SessionScrim.Opacity = 0;
         SessionCardBorder.BeginAnimation(OpacityProperty, null); SessionCardBorder.Opacity = 0;
@@ -339,6 +348,7 @@ public partial class StatsView : UserControl
     {
         if (!_sessionOpen) return;
         _sessionOpen = false;
+        Popups.Closed((this, "session"));
         var tok = ++_sessionTok;
         Animate(false, () =>
         {
@@ -362,15 +372,13 @@ public partial class StatsView : UserControl
     /// <summary>True while the playlist popup is open.</summary>
     public bool IsPopupOpen => _popupOpen;
 
-    /// <summary>Closes the topmost popup (search, then session, then playlist); false when none was open.</summary>
-    public bool CloseOverlay()
+    int _z = 10;
+
+    /// <summary>Puts a popup of this page on the popup stack, above the ones opened before it.</summary>
+    void Register(string key, Grid layer, Action close, Action focus)
     {
-        if (_searchOpen) { CloseSearch(); return true; }
-        if (_sessionOpen) { CloseSession(); return true; }
-        if (_profileOpen) { CloseProfile(); return true; }
-        if (!_popupOpen) return false;
-        ClosePopup();
-        return true;
+        Panel.SetZIndex(layer, ++_z);
+        Popups.Opened((this, key), layer, () => { close(); return true; }, focus);
     }
 
     void OnScrim(object sender, MouseButtonEventArgs e) => ClosePopup();
@@ -392,7 +400,6 @@ public partial class StatsView : UserControl
     /// <summary>Opens a playlist (at <paramref name="d"/> when given, else the remembered difficulty) in the popup.</summary>
     void OpenPlaylist(Benchmark b, Difficulty? d = null)
     {
-        CloseProfile(true);
         if (d != null) _diffChoice[b.BenchmarkName] = d.KovaaksBenchmarkId;
         _popupItem = MakeItem(b);
         OpenPopup();
@@ -403,6 +410,7 @@ public partial class StatsView : UserControl
     {
         if (_popupOpen) return;
         _popupOpen = true; UpdateLivePill();
+        Register("playlist", Popup, ClosePopup, () => Popup.Focus());
         _popTok++;
         Scrim.BeginAnimation(OpacityProperty, null); Scrim.Opacity = 0;
         PopupCard.BeginAnimation(OpacityProperty, null); PopupCard.Opacity = 0;
@@ -418,6 +426,7 @@ public partial class StatsView : UserControl
     {
         if (!_popupOpen) return;
         _popupOpen = false; UpdateLivePill();
+        Popups.Closed((this, "playlist"));
         _token++; // drops in-flight loads
         _playlist = null;
         var tok = ++_popTok;
@@ -427,7 +436,7 @@ public partial class StatsView : UserControl
             if (tok != _popTok) return;
             Popup.Visibility = Visibility.Collapsed;
             PageHost.Children.Clear();
-            _ctx = null; _bal = null; _bench = null; _hero = null; _tiles = null;
+            _ctx = null; _bal = null; _bench = null; _hero = null;
         });
     }
 
@@ -449,7 +458,7 @@ public partial class StatsView : UserControl
     string ItemSubtitle(Benchmark b)
     {
         var d0 = b.Difficulties[0];
-        var text = b.Difficulties.Count > 1 ? $"{b.Difficulties.Count} difficulties · {d0.ScenarioCount} scenarios" : $"{d0.ScenarioCount} scenarios";
+        var text = b.Difficulties.Count > 1 ? L.F("{0} difficulties · {1} scenarios", b.Difficulties.Count, d0.ScenarioCount) : L.F("{0} scenarios", d0.ScenarioCount);
         if (_progress.TryGetValue(Chosen(b).KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0) text += $" · {TierText.Label(p.OverallRankName)}";
         return text;
     }
@@ -524,25 +533,18 @@ public partial class StatsView : UserControl
         var steam = _host.Settings.EffectiveSteamId;
         if (steam.Length == 0)
         {
-            SetSummary("No Steam ID\n" + Structure(d));
+            SetSummary(L.T("No Steam ID") + "\n" + Structure(d));
             return;
         }
 
         if (!_progress.TryGetValue(d.KovaaksBenchmarkId, out var p))
         {
-            SetSummary("Loading…");
-            try { p = await FetchProgressAsync(d, steam); }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException or KeyNotFoundException)
-            {
-                if (tok == _token) SetSummary($"{ex.Message}\n" + Structure(d));
-                return;
-            }
-            ApplyProgress(d, p);
-            p = _progress[d.KovaaksBenchmarkId];
+            SetSummary(Structure(d));
+            return;
         }
         if (tok != _token) return;
 
-        var report = PlaylistReport.Build(item.Title, p.Scenarios.Select(s => s.Scenario), _lib);
+        var report = PlaylistReport.Build(item.Title, p.Scenarios.Select(s => s.Scenario), _book);
         var byName = report.Scenarios.ToDictionary(s => s.Scenario, StringComparer.OrdinalIgnoreCase);
         SetSummary("");
 
@@ -551,7 +553,7 @@ public partial class StatsView : UserControl
         if (p.RankNames.Count > 1) maxRank = Math.Min(maxRank, p.RankNames.Count - 1);
         var tierNames = Enumerable.Range(1, maxRank).Select(p.RankName).ToList();
         var tierBrushes = tierNames.Select(n => RankBrush(d, n)).ToList();
-        var history = Tier.History(p.Scenarios.Select(sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, (IReadOnlyList<double>)sc.RankMaxes)));
+        var history = Tier.History(p.Scenarios.Select(sc => (byName[sc.Scenario], (IReadOnlyList<double>)sc.RankMaxes)));
         var entries = new List<RadarEntry>();
         var blocks = new List<(string Scenario, int Rank, double Fraction)>();
         var counts = new int[maxRank + 1];
@@ -565,9 +567,9 @@ public partial class StatsView : UserControl
                 var rows = sub.Scenarios.Select(sc =>
                 {
                     var local = byName[sc.Scenario];
-                    var best = KovaaksApi.Reconcile(local.Plays > 0 ? local.Best : null, sc.Score);
-                    var fromServer = best != null && (local.Plays == 0 || Math.Abs(best.Value - local.Best) > 0.005);
-                    var old = Tier.BestAsOf(ScenarioStats.For(_lib, sc.Scenario).Runs, cutoff);
+                    var best = KovaaksApi.Reconcile(local.Best > 0 ? local.Best : null, sc.Score);
+                    var fromServer = best != null && (local.LocalBest == 0 || Math.Abs(best.Value - local.LocalBest) > 0.005);
+                    var old = local.BaselineAt(cutoff);
                     entries.Add(new RadarEntry(CatOf(sub), sub.Name, sc.Scenario, Tier.ValueOf(best ?? 0, sc.RankMaxes), Tier.ValueOf(old ?? 0, sc.RankMaxes)));
                     var pos = Tier.TierOf(best ?? 0, sc.RankMaxes);
                     var rank = sc.RankMaxes.Count == 0 ? 0 : Math.Min(pos.Rank, maxRank);
@@ -579,13 +581,21 @@ public partial class StatsView : UserControl
             }).ToList();
             cats.Add(new BenchCategory(g.Key, ParseBrush(def?.Color), subs));
         }
-        _ctx = new PlaylistCtx(item, d, p, report, cats, tierNames.Select(TierText.Label).ToList(), tierBrushes, history, counts, blocks, entries, cutoff, item.Theme, "");
+        _ctx = new PlaylistCtx(item, d, p, report, cats, tierNames.Select(TierText.Label).ToList(), tierBrushes, history, counts, blocks, entries, cutoff, item.Theme);
         SetLayout("playlist");
         ShowPlaylist(keep);
-        _ = LoadCloudAsync(tok, d, p);
+        _ = LoadCloudAsync(tok, item, p);
     }
 
     static Brush Solid(string hex)
+    {
+        var b = new SolidColorBrush(Theme.Ink((Color)ColorConverter.ConvertFromString(hex)));
+        b.Freeze();
+        return b;
+    }
+
+    /// <summary>A literal color that stays as written on every theme (cards with their own look).</summary>
+    static Brush SolidFixed(string hex)
     {
         var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
         b.Freeze();
@@ -595,9 +605,9 @@ public partial class StatsView : UserControl
     /// <summary>Fades a border's background between two colours in 120ms on hover.</summary>
     static void HoverFade(Border b, string from, string to)
     {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(from));
+        var brush = new SolidColorBrush(Theme.Ink((Color)ColorConverter.ConvertFromString(from)));
         b.Background = brush;
-        void Go(string c) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new System.Windows.Media.Animation.ColorAnimation((Color)ColorConverter.ConvertFromString(c), TimeSpan.FromMilliseconds(120)));
+        void Go(string c) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new System.Windows.Media.Animation.ColorAnimation(Theme.Ink((Color)ColorConverter.ConvertFromString(c)), TimeSpan.FromMilliseconds(120)));
         b.MouseEnter += (_, _) => Go(to);
         b.MouseLeave += (_, _) => Go(from);
     }
@@ -625,7 +635,8 @@ public partial class StatsView : UserControl
 
     /// <summary>
     /// Tier thresholds of a scenario as chart bands, from the cached progress of the selected playlist's benchmark that contains it.
-    /// Outside a playlist, the containing playlist is chosen by: favorite, played in the live session, most recently played, then catalog (difficulty) order.
+    /// Outside a playlist, the containing playlist is chosen by: favorite, played in the live session, most recently played, then the lowest index
+    /// (the earliest in the playlist list) among the playlists that contain the scenario.
     /// </summary>
     (BenchmarkProgress P, int Id)? TierSource(string scenario)
     {
@@ -642,7 +653,7 @@ public partial class StatsView : UserControl
             .OrderByDescending(x => _host.Ui.IsFavorite($"{x.Id}"))
             .ThenByDescending(x => _index.Scenarios(x.Id).Any(live.Contains))
             .ThenByDescending(x => LastPlayed(x.Id) ?? DateTime.MinValue)
-            .ThenBy(x => x.Order)
+            .ThenBy(x => x.Order) // lowest playlist index
             .Select(x => x.Hit)
             .FirstOrDefault();
     }
@@ -664,7 +675,9 @@ public partial class StatsView : UserControl
     static Brush Lighten(Brush b, double t)
     {
         var c = b is SolidColorBrush s ? s.Color : Colors.Gray;
-        byte L(byte v) => (byte)(v + (255 - v) * t);
+        var target = Theme.IsLight ? 0 : 255; // on the light theme "lighten" means a stronger, darker tone
+        if (Theme.IsLight) t *= 0.6;
+        byte L(byte v) => (byte)(v + (target - v) * t);
         var r = new SolidColorBrush(Color.FromRgb(L(c.R), L(c.G), L(c.B)));
         r.Freeze();
         return r;
@@ -678,8 +691,11 @@ public partial class StatsView : UserControl
         return r;
     }
 
-    /// <summary>The sheet's data: library, sessions (replays), server bests and tier bands.</summary>
-    public ScenarioData SheetData() => new(_lib, _sessions, _serverBest, TierBands);
+    /// <summary>The sheet's data: the score book, sessions (replays) and tier bands.</summary>
+    public ScenarioData SheetData() => new(_book, _sessions, TierBands, LoadCloudScoresAsync, _hidden);
 
-    internal static string Dur(TimeSpan t) => t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m" : $"{t.Minutes}m {t.Seconds}s";
+    /// <summary>Brings one scenario's server scores up to date in the score book (the sheet re-reads it afterwards).</summary>
+    Task<bool> LoadCloudScoresAsync(string scenario) => EnsureCloudAsync([scenario]);
+
+    internal static string Dur(TimeSpan t) => t.TotalHours >= 1 ? L.F("{0}h {1}m", (int)t.TotalHours, t.Minutes) : L.F("{0}m {1}s", t.Minutes, t.Seconds);
 }

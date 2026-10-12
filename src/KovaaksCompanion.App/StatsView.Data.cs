@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Windows.Threading;
 using KovaaksCompanion.Core.Benchmarks;
@@ -6,39 +6,44 @@ using KovaaksCompanion.Core.Library;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>Server data: playlist progress for every difficulty and cloud score history, both cached as JSON and refreshed in the background.</summary>
+/// <summary>Server data: the player's server bests (fetched once, cached) and cloud score history. Playlist progress is calculated locally from the bundled thresholds.</summary>
 public partial class StatsView
 {
-    static readonly TimeSpan CacheTtl = TimeSpan.FromHours(12);
     const int MaxParallel = 4;
 
-    sealed record CachedLoad(Difficulty D, BenchmarkProgress P, DateTime At);
-
     readonly CancellationTokenSource _cts = new();
-    readonly Dictionary<int, DateTime> _fetched = [];
     StatsCache? _cacheStore;
-    bool _refreshing;
+    bool _syncing;
     DispatcherTimer? _refreshTimer;
+    Dictionary<string, ServerBest> _serverBest = new(StringComparer.OrdinalIgnoreCase);
 
-    StatsCache Cache => _cacheStore ??= new StatsCache(Path.Combine(_host.Settings.DataRoot, "cache"));
+    StatsCache Cache => _cacheStore ??= new StatsCache(_host.Settings.CacheFolder);
 
     static IEnumerable<(Benchmark B, Difficulty D)> AllDifficulties() =>
         BenchmarkCatalog.All.SelectMany(b => b.Difficulties.Select(d => (B: b, D: d))).DistinctBy(x => x.D.KovaaksBenchmarkId);
 
-    /// <summary>Cache key of a difficulty's progress: per Steam account, so switching accounts never shows another player's data.</summary>
-    static string ProgressKey(string steam, int benchmarkId) => $"{steam}:{benchmarkId}";
-
-    /// <summary>Every cached progress entry that still parses (runs off the UI thread).</summary>
-    static List<CachedLoad> LoadCachedProgress(StatsCache cache, string steam)
+    /// <summary>
+    /// The cached server bests of the account (runs off the UI thread). Caches written before bests were synced separately hold the
+    /// scores of the progress responses; those are carried over once so no new sync is needed.
+    /// </summary>
+    static Dictionary<string, ServerBest> LoadServerBests(StatsCache cache, string steam)
     {
-        var all = cache.LoadAllProgress();
-        var res = new List<CachedLoad>();
-        if (all.Count == 0) return res;
-        foreach (var (_, d) in AllDifficulties())
-            if (all.TryGetValue(ProgressKey(steam, d.KovaaksBenchmarkId), out var c))
-                try { res.Add(new(d, BenchmarkProgress.Parse(c.Json, d), c.FetchedAt)); }
-                catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException) { }
-        return res;
+        if (steam.Length == 0) return new(StringComparer.OrdinalIgnoreCase);
+        var bests = cache.LoadServerBests(steam);
+        if (bests.Count > 0) return bests;
+        var legacy = new Dictionary<string, ServerBest>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, c) in cache.LoadAllProgress())
+        {
+            if (!key.StartsWith(steam + ":", StringComparison.Ordinal)) continue;
+            try
+            {
+                foreach (var s in BenchmarkProgress.Parse(c.Json).Scenarios)
+                    if (s.Score > 0 && (!legacy.TryGetValue(s.Scenario, out var old) || s.Score > old.Score)) legacy[s.Scenario] = new(s.Score, 0);
+            }
+            catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException) { }
+        }
+        if (legacy.Count > 0) try { cache.SaveServerBests(steam, legacy); } catch (IOException) { }
+        return legacy;
     }
 
     /// <summary>Stores a difficulty's progress and feeds the server-best and playlist-scenario lookups.</summary>
@@ -46,13 +51,24 @@ public partial class StatsView
     {
         _rawProgress[d.KovaaksBenchmarkId] = p;
         _progress[d.KovaaksBenchmarkId] = WithLocal(p);
-        foreach (var s in p.Scenarios) if (s.Score > 0) _serverBest[s.Scenario] = s.Score;
+        foreach (var s in p.Scenarios) if (s.Score > 0) _book.RaiseServerBest(s.Scenario, Math.Max(s.Score, _deletedBest.GetValueOrDefault(s.Scenario)));
         _index.Set(d.KovaaksBenchmarkId, p.Scenarios.Select(s => s.Scenario));
+    }
+
+    /// <summary>Builds every difficulty's progress from the bundled thresholds and the cached server bests.</summary>
+    void RebuildProgress()
+    {
+        foreach (var (_, d) in AllDifficulties())
+            if (BenchmarkProgress.FromBundle(d, n => _serverBest.TryGetValue(n, out var b) ? b.Score : null) is { } p) ApplyProgress(d, p);
     }
 
     /// <summary>The server progress with the local bests folded in, so tiers reflect runs the server does not have yet.</summary>
     BenchmarkProgress WithLocal(BenchmarkProgress p) =>
-        p.WithLocalBests(n => _lib.Runs(n) is { Count: > 0 } r ? r.Max(x => x.Score) : null);
+        p.WithLocalBests(n =>
+        {
+            double? local = _lib.Runs(n) is { Count: > 0 } r ? r.Max(x => x.Score) : null;
+            return _deletedBest.TryGetValue(n, out var d) && (local == null || d > local) ? d : local;
+        });
 
     /// <summary>Re-applies the local bests after the run library changed.</summary>
     void ReapplyLocal()
@@ -60,64 +76,41 @@ public partial class StatsView
         foreach (var (id, raw) in _rawProgress) _progress[id] = WithLocal(raw);
     }
 
-    /// <summary>Fetches one difficulty's progress and caches the raw JSON.</summary>
-    async Task<BenchmarkProgress> FetchProgressAsync(Difficulty d, string steam)
-    {
-        var json = await _api.GetProgressJsonAsync(d, steam, _cts.Token);
-        var p = BenchmarkProgress.Parse(json, d);
-        _fetched[d.KovaaksBenchmarkId] = DateTime.Now;
-        var cache = Cache;
-        _ = Task.Run(() => { try { cache.SaveProgress(ProgressKey(steam, d.KovaaksBenchmarkId), json); } catch (IOException) { } });
-        return p;
-    }
-
-    /// <summary>Refreshes, with at most <see cref="MaxParallel"/> requests at a time, every difficulty that is missing or older than 12 hours. Favourites go first.</summary>
-    async Task RefreshProgressAsync()
+    /// <summary>
+    /// Downloads the player's server bests (and webapp username) once, when none are cached. After that the server is not asked
+    /// for scores again: new runs come from the local library.
+    /// </summary>
+    async Task SyncServerAsync()
     {
         var steam = _host.Settings.EffectiveSteamId;
-        if (steam.Length == 0 || _refreshing) return;
-        _refreshing = true;
+        if (steam.Length == 0 || _syncing || _serverBest.Count > 0) return;
+        _syncing = true;
         var ct = _cts.Token;
         try
         {
-            var now = DateTime.Now;
-            var todo = AllDifficulties()
-                .Where(x => !_progress.ContainsKey(x.D.KovaaksBenchmarkId) || !_fetched.TryGetValue(x.D.KovaaksBenchmarkId, out var at) || now - at > CacheTtl)
-                .OrderByDescending(x => _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}")).ToList();
-            if (todo.Count == 0) return;
-            var gate = new SemaphoreSlim(MaxParallel);
-            var pending = new Dictionary<string, string>();
             var cache = Cache;
-            void Flush()
+            var user = await Task.Run(() => cache.LoadUsername(steam));
+            if (string.IsNullOrEmpty(user))
             {
-                if (pending.Count == 0) return;
-                var batch = new Dictionary<string, string>(pending);
-                pending.Clear();
-                _ = Task.Run(() => { try { cache.SaveProgressBatch(batch); } catch (IOException) { } });
+                var likely = AllDifficulties().Select(x => x.D)
+                    .OrderByDescending(d => KovaaksCompanion.Core.Benchmarks.RankData.Get(d.KovaaksBenchmarkId) is { } b ? b.Categories.Sum(c => c.Scenarios.Count(s => _lib.Runs(s.Name).Count > 0)) : 0).ToList();
+                user = await _api.ResolveUsernameAsync(steam, likely, 6, ct);
+                if (string.IsNullOrEmpty(user)) return;
+                var name = user;
+                await Task.Run(() => cache.SaveUsername(steam, name));
             }
-            await Task.WhenAll(todo.Select(async x =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    var json = await _api.GetProgressJsonAsync(x.D, steam, ct);
-                    var p = BenchmarkProgress.Parse(json, x.D);
-                    var id = x.D.KovaaksBenchmarkId;
-                    _fetched[id] = DateTime.Now;
-                    ApplyProgress(x.D, p);
-                    pending[ProgressKey(steam, id)] = json;
-                    if (pending.Count >= 10) Flush();
-                    ScheduleRefresh();
-                    if (_popupOpen && _playlist == $"{id}" && _popupItem is { } open && _ctx is { } c && !ReferenceEquals(c.P, p) && c.P.Progress != p.Progress) ShowBenchmark(open, true);
-                }
-                catch (Exception) when (!ct.IsCancellationRequested) { } // offline, rate limited or an unexpected payload: keep the cached data
-                finally { gate.Release(); }
-            }));
-            Flush();
+            var bests = await _api.GetTotalPlaysAsync(user, ct);
+            if (bests.Count == 0) return;
+            var settings = _host.Settings;
+            await Task.Run(() => { try { cache.SaveServerBests(steam, bests); CacheMigration.CleanLegacy(settings); } catch (IOException) { } });
+            _serverBest = bests;
+            RebuildProgress();
             ScheduleRefresh();
+            if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         }
         catch (OperationCanceledException) { }
-        finally { _refreshing = false; }
+        catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: the next start tries again
+        finally { _syncing = false; UpdateTierMarks(false); } // server-side changes are no celebration
     }
 
     /// <summary>Redraws the hero and the playlist lists at most every 400 ms while progress updates arrive in a burst (a debounce would starve the redraw until the whole burst ends, leaving favourite cards empty).</summary>
@@ -136,45 +129,38 @@ public partial class StatsView
         RefreshHome();
     }
 
-    // Cloud score history for the playlist progress chart
+    // Server score history, kept in the score book
+
+    readonly Dictionary<string, DateTime> _cloudFetched = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _cloudInflight = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Puts a scenario's server scores into the score book; Home is redrawn when they changed. Returns whether they changed.</summary>
+    bool RememberCloud(string scenario, IReadOnlyList<CloudScore> scores)
+    {
+        if (!_book.SetCloud(scenario, scores)) return false;
+        ScheduleRefresh();
+        return true;
+    }
 
     /// <summary>
-    /// Scenarios of the open playlist without local runs get their last server scores: cached ones first, then (12 h or older, or
-    /// missing) fetched with at most <see cref="MaxParallel"/> requests at a time. The chart is rebuilt as data arrives.
+    /// Brings the server scores of the scenarios up to date: only those never fetched are requested with at most
+    /// <see cref="MaxParallel"/> requests at a time, cached and put into the score book. Scenarios the server has no plays
+    /// of are skipped, and nothing is requested before the username is known. Returns whether any scores changed.
     /// </summary>
-    async Task LoadCloudAsync(int tok, Difficulty d, BenchmarkProgress p)
+    async Task<bool> EnsureCloudAsync(IEnumerable<string> scenarios)
     {
         var steam = _host.Settings.EffectiveSteamId;
-        if (steam.Length == 0) return;
-        var missing = p.Scenarios.Where(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0)
-            .Select(sc => sc.Scenario).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (missing.Count == 0) return;
+        if (steam.Length == 0) return false;
+        var stale = scenarios.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(n => (_serverBest.Count == 0 || _serverBest.ContainsKey(n)) && !_cloudFetched.ContainsKey(n) && _cloudInflight.Add(n)).ToList();
+        if (stale.Count == 0) return false;
         var ct = _cts.Token;
         var cache = Cache;
+        var changed = false;
         try
         {
-            SetNote(tok, "Loading…");
-            var (all, user) = await Task.Run(() => (cache.LoadAllScores(), cache.LoadUsername(steam)));
-            if (tok != _token) return;
-            var cloud = new Dictionary<string, IReadOnlyList<CloudScore>>(StringComparer.OrdinalIgnoreCase);
-            var stale = new List<string>();
-            var now = DateTime.Now;
-            foreach (var n in missing)
-            {
-                if (all.TryGetValue(n, out var c)) { cloud[n] = c.Scores; if (now - c.FetchedAt > CacheTtl) stale.Add(n); }
-                else stale.Add(n);
-            }
-            if (cloud.Count > 0) ApplyCloud(tok, d, cloud);
-            if (stale.Count == 0) return;
-
-            if (string.IsNullOrEmpty(user))
-            {
-                user = await _api.ResolveUsernameAsync(steam, p.Scenarios, ct);
-                if (tok != _token) return;
-                if (string.IsNullOrEmpty(user)) return;
-                var name = user;
-                await Task.Run(() => cache.SaveUsername(steam, name));
-            }
+            var user = await Task.Run(() => cache.LoadUsername(steam));
+            if (string.IsNullOrEmpty(user)) return false;
             var gate = new SemaphoreSlim(MaxParallel);
             var fresh = new Dictionary<string, List<CloudScore>>();
             await Task.WhenAll(stale.Select(async n =>
@@ -184,43 +170,24 @@ public partial class StatsView
                 {
                     var l = await _api.GetLastScoresAsync(user, n, ct);
                     fresh[n] = l;
-                    cloud[n] = l;
+                    _cloudFetched[n] = DateTime.Now;
+                    changed |= RememberCloud(n, cache.WithDeleted(n, l));
                 }
-                catch (Exception) when (!ct.IsCancellationRequested) { }
+                catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: keep what is cached
                 finally { gate.Release(); }
             }));
-            if (fresh.Count > 0)
-            {
-                var batch = new Dictionary<string, List<CloudScore>>(fresh);
-                _ = Task.Run(() => { try { cache.SaveScoresBatch(batch); } catch (IOException) { } });
-            }
-            ApplyCloud(tok, d, cloud);
+            if (fresh.Count > 0) _ = Task.Run(() => { try { cache.SaveScoresBatch(fresh); } catch (IOException) { } });
         }
-        catch (Exception) when (!ct.IsCancellationRequested) { } // keep whatever is shown
         catch (OperationCanceledException) { }
-        finally { SetNote(tok, _ctx?.Note ?? ""); }
+        catch (Exception) when (!ct.IsCancellationRequested) { }
+        finally { foreach (var n in stale) _cloudInflight.Remove(n); }
+        return changed;
     }
 
-    /// <summary>Rebuilds the open playlist page with a progress history that includes the cloud scores.</summary>
-    void ApplyCloud(int tok, Difficulty d, IReadOnlyDictionary<string, IReadOnlyList<CloudScore>> cloud)
+    /// <summary>Refreshes the server scores of the open playlist's scenarios and re-renders the page when they changed.</summary>
+    async Task LoadCloudAsync(int tok, BrowserItem item, BenchmarkProgress p)
     {
-        if (tok != _token || _ctx is not { } c || c.D.KovaaksBenchmarkId != d.KovaaksBenchmarkId) return;
-        IReadOnlyList<CloudScore> CloudOf(string n) => cloud.TryGetValue(n, out var l) ? l : [];
-        var history = Tier.HistoryWithCloud(c.P.Scenarios.Select<ScenarioProgress, (IReadOnlyList<RunRecord>, IReadOnlyList<CloudScore>, IReadOnlyList<double>)>(
-            sc => (ScenarioStats.For(_lib, sc.Scenario).Runs, CloudOf(sc.Scenario), sc.RankMaxes)));
-        var used = c.P.Scenarios.Where(sc => sc.RankMaxes.Count > 0 && _lib.Runs(sc.Scenario).Count == 0 && CloudOf(sc.Scenario).Count > 0).Select(sc => sc.Scenario).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        var note = used > 0 ? $"{used} from server" : "";
-        if (note == c.Note && history.SequenceEqual(c.History)) return;
-        _ctx = c with { History = history, Note = note };
-        ShowPlaylist(PlaylistScroll.VerticalOffset);
+        var changed = await EnsureCloudAsync(p.Scenarios.Where(sc => sc.RankMaxes.Count > 0).Select(sc => sc.Scenario));
+        if (changed && tok == _token && _popupOpen) ShowBenchmark(item, true);
     }
-
-    /// <summary>Sets the chart caption in place (no rebuild).</summary>
-    void SetNote(int tok, string text)
-    {
-        if (tok != _token || _noteBlock is not { } n) return;
-        n.Text = text;
-        n.Visibility = text.Length == 0 ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-    }
-
 }

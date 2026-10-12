@@ -11,60 +11,36 @@ using KovaaksCompanion.Core.Benchmarks;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>The profile popup: Steam avatar and name, the Home stats and calendar, and the favorite playlist cards.</summary>
+/// <summary>The profile card at the top of Home: Steam avatar and name, the Home stats and calendar, and the favorite playlist cards.</summary>
 public partial class StatsView
 {
-    bool _profileOpen;
-    int _profileTok;
-
-    public void OpenProfile()
+    /// <summary>Rebuilds the profile card at the top of Home.</summary>
+    void RefreshProfile()
     {
-        if (_profileOpen) return;
-        _profileOpen = true;
-        _profileTok++;
-        ProfileScrim.BeginAnimation(OpacityProperty, null); ProfileScrim.Opacity = 0;
-        ProfileCard.BeginAnimation(OpacityProperty, null); ProfileCard.Opacity = 0;
-        ProfileScale.BeginAnimation(ScaleTransform.ScaleXProperty, null); ProfileScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-        ProfileScale.ScaleX = ProfileScale.ScaleY = 0.94;
         ApplyProfileAccent();
         BuildProfileTools();
-        ProfileTools.BeginAnimation(OpacityProperty, null); ProfileTools.Opacity = 0;
-        ProfileTools.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
         FillProfile();
-        ProfilePopup.Visibility = Visibility.Visible;
-        Animate(true, null, ProfileScrim, ProfileCard, ProfileScale);
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_profileOpen) { ProfilePopup.Focus(); RefitProfile(); } });
+        FillCelebration();
+        BuildProfileEditor();
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, RefitProfile);
     }
 
-    public void CloseProfile(bool instant = false)
-    {
-        if (!_profileOpen) return;
-        _profileOpen = false;
-        var tok = ++_profileTok;
-        ProfileTools.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(180)), HandoffBehavior.SnapshotAndReplace);
-        void Done()
-        {
-            if (tok != _profileTok) return;
-            ProfilePopup.Visibility = Visibility.Collapsed;
-            ProfileHost.Children.Clear();
-        }
-        if (instant) Done();
-        else Animate(false, Done, ProfileScrim, ProfileCard, ProfileScale);
-    }
-
-    static readonly string[] ProfileColors = ["#FF375F", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#BF5AF2", "#000000", "#FFFFFF"];
+    /// <summary>The app's colored themes, then black and white; the app theme colors and the profile colors are one palette.</summary>
+    static readonly string[] ProfileColors = [.. Theme.ColoredAccents, "#000000", "#FFFFFF"];
 
     /// <summary>A near-white accent makes the card background light, so text and the calendar switch to dark ink.</summary>
     bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb && sb.Color.R + sb.Color.G + sb.Color.B > 720;
-    Brush ProfileInk => ProfileLight ? Solid("#FF1C1C1E") : FgB;
-    Brush ProfileDim => ProfileLight ? Solid("#FF5A5A60") : DimB;
-    Brush ProfileLine => Solid(ProfileLight ? "#22000000" : "#14FFFFFF");
+    Brush ProfileInk => ProfileLight ? SolidFixed("#FF1C1C1E") : SolidFixed("#FFFFFFFF");
+    Brush ProfileDim => ProfileLight ? SolidFixed("#FF5A5A60") : SolidFixed("#FFA1A1A8");
+    /// <summary>Text tone of the profile theme: the calendar's tone on a dark card, dark ink on a light one.</summary>
+    Brush ProfileTone => ProfileLight ? SolidFixed("#FF2A2A2E") : ChartPaths.TextToneOnDark(ProfileAccent);
+    Brush ProfileLine => SolidFixed(ProfileLight ? "#22000000" : "#14FFFFFF");
 
-    Brush ProfileAccent => _host.Ui.ProfileAccent.Length > 0 ? Solid(_host.Ui.ProfileAccent) : (Brush)FindResource("Accent");
+    Brush ProfileAccent => _host.Ui.ProfileAccent.Length > 0 ? SolidFixed(_host.Ui.ProfileAccent) : (Brush)FindResource("Accent");
 
     void ApplyProfileAccent()
     {
-        ProfileCard.BorderBrush = _host.Ui.ProfileAccent.Length > 0 ? Alpha(ProfileAccent, 0.5) : Solid("#1FFFFFFF");
+        ProfileCard.BorderBrush = _host.Ui.ProfileAccent.Length > 0 ? Alpha(ProfileAccent, 0.5) : SolidFixed("#1FFFFFFF");
         ProfileCard.Background = ProfileBg(ProfileLight ? (byte)0xFF : (byte)0xF5);
     }
 
@@ -78,6 +54,12 @@ public partial class StatsView
     {
         var b = Color.FromRgb(0x23, 0x23, 0x26);
         Color c1 = Color.FromRgb(0x38, 0x38, 0x3E), c2 = Color.FromRgb(0x18, 0x18, 0x1B);
+        // With no profile color the card takes the app theme's background (the light theme keeps the dark card).
+        if (!Theme.IsLight && FindResource("Bg") is SolidColorBrush themeBg)
+        {
+            c1 = MixColor(themeBg.Color, Colors.White, 0.12);
+            c2 = MixColor(themeBg.Color, Colors.Black, 0.15);
+        }
         if (_host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb)
         {
             var light = ProfileLight;
@@ -109,6 +91,8 @@ public partial class StatsView
     Action<double, double>? _profileFit;
     readonly List<Action> _profileFits = [];
     Border? _profileAddBox;
+    readonly HashSet<ScoreChart> _profileCharts = [];
+    bool _profileCapturing;
     StackPanel? _profileBody;
     double _profilePicWidth;
     /// <summary>The left column is this fraction wider than the picture; the stats and calendar are BodyFrac of the picture width, so the line never touches them.</summary>
@@ -177,14 +161,14 @@ public partial class StatsView
         void Dot(string hex)
         {
             var on = _host.Ui.ProfileAccent.Equals(hex, StringComparison.OrdinalIgnoreCase);
-            var fill = hex.Length > 0 ? Solid(hex) : (Brush)FindResource("Accent");
+            var fill = hex.Length > 0 ? SolidFixed(hex) : (Brush)FindResource("Accent");
             var inner = new Ellipse { Width = 16, Height = 16, Fill = fill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            if (hex.Length == 0) inner.Fill = Solid("#8E8E93");
+            if (hex.Length == 0) inner.Fill = SolidFixed("#8E8E93");
             var ring = new Ellipse { Width = 22, Height = 22, Stroke = on ? FgB : Brushes.Transparent, StrokeThickness = 2 };
             var g = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
             g.Children.Add(ring);
             g.Children.Add(inner);
-            g.MouseEnter += (_, _) => { if (!on) ring.Stroke = Solid("#66FFFFFF"); };
+            g.MouseEnter += (_, _) => { if (!on) ring.Stroke = SolidFixed("#66FFFFFF"); };
             g.MouseLeave += (_, _) => { if (!on) ring.Stroke = Brushes.Transparent; };
             g.MouseLeftButtonUp += (_, _) =>
             {
@@ -202,6 +186,37 @@ public partial class StatsView
             Dot(c);
         }
 
+        // Motion toggle: on = drifting watermark, off = the static look a capture has.
+        var anim = _host.Ui.ProfileAnimated;
+        var track = new Border { Width = 34, Height = 20, CornerRadius = new CornerRadius(10), Background = anim ? (Brush)FindResource("AccentFill") : SolidFixed("#33FFFFFF"), VerticalAlignment = VerticalAlignment.Center };
+        var knob = new Ellipse { Width = 16, Height = 16, Fill = Brushes.White, HorizontalAlignment = anim ? HorizontalAlignment.Right : HorizontalAlignment.Left, Margin = new Thickness(2, 0, 2, 0) };
+        track.Child = knob;
+        var toggle = new Border { Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(0, 4, 0, 4), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = track, ToolTip = anim ? L.T("Motion on") : L.T("Motion off") };
+        toggle.MouseLeftButtonUp += (_, _) =>
+        {
+            _host.Ui.ProfileAnimated = !_host.Ui.ProfileAnimated;
+            _host.SaveUi();
+            foreach (var ch0 in _profileCharts) ch0.Marquee = _host.Ui.ProfileAnimated;
+            BuildProfileTools();
+        };
+        ProfileTools.Children.Add(toggle);
+
+        if (_celebrated.Count > 0)
+        {
+            var replay = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Replay"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, Foreground = FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+            replay.Click += (_, _) => { _confettiPending = true; FireConfetti(); };
+            ProfileTools.Children.Add(replay);
+        }
+
+        var edit = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Edit"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 24, Foreground = _profileEditing ? (Brush)FindResource("Accent") : FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        edit.Click += (_, _) =>
+        {
+            _profileEditing = !_profileEditing;
+            BuildProfileTools();
+            BuildProfileEditor();
+        };
+        ProfileTools.Children.Add(edit);
+
         var copy = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         copy.Click += async (_, _) =>
         {
@@ -209,6 +224,9 @@ public partial class StatsView
             try
             {
                 ProfileTools.Visibility = Visibility.Hidden;
+                // The screen-only watermark drift is switched off so the image keeps the static look.
+                _profileCapturing = true;
+                foreach (var ch0 in _profileCharts) ch0.Marquee = false;
                 if (_profileAddBox != null) { _profileAddBox.Visibility = Visibility.Collapsed; RefitProfile(); }
                 ProfileCard.UpdateLayout();
                 var dpi = VisualTreeHelper.GetDpi(ProfileCard);
@@ -244,7 +262,7 @@ public partial class StatsView
                 });
             }
             catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); return; }
-            finally { ProfileTools.Visibility = Visibility.Visible; if (_profileAddBox != null) { _profileAddBox.Visibility = Visibility.Visible; RefitProfile(); } }
+            finally { _profileCapturing = false; foreach (var ch0 in _profileCharts) ch0.Marquee = _host.Ui.ProfileAnimated; ProfileTools.Visibility = Visibility.Visible; if (_profileAddBox != null) { _profileAddBox.Visibility = Visibility.Visible; RefitProfile(); } }
             var tb = (TextBlock)copy.Content;
             tb.Text = "";
             await Task.Delay(1200);
@@ -253,20 +271,12 @@ public partial class StatsView
         ProfileTools.Children.Add(copy);
     }
 
-    void OnProfileScrim(object sender, MouseButtonEventArgs e) => CloseProfile();
-
-    void OnProfileKey(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape) return;
-        e.Handled = true;
-        CloseProfile();
-    }
-
     void FillProfile()
     {
         ProfileHost.Children.Clear();
         ProfileHost.ColumnDefinitions.Clear();
         _profileFits.Clear();
+        _profileCharts.Clear();
         ProfileHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.7, GridUnitType.Star) });
         ProfileHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
         ProfileHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -290,13 +300,13 @@ public partial class StatsView
             // Stats and calendar share one width, set to the picture's width.
             var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
             _profileBody = body;
-            var stats = BuildPlayStats(runs, plays, 22, 13, FontWeights.SemiBold, ProfileInk);
+            var stats = BuildPlayStats(runs, plays, 26, 16, FontWeights.SemiBold, ProfileInk);
             ((FrameworkElement)stats).Margin = new Thickness(4, 12, 4, 12);
             body.Children.Add(stats);
-            var cal = new ActivityCalendar { MaxCell = 42, MaxWeeks = 22, Margin = new Thickness(4, 0, 4, 4) };
+            var cal = new ActivityCalendar { MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 4) };
             cal.Light = ProfileLight;
-            cal.Set(plays, ProfileLight ? Solid("#FF2A2A2E") : ChartPaths.TextTone(ProfileAccent));
-            cal.PbDays = PbSet().OfType<KovaaksCompanion.Core.Library.RunRecord>().Select(r => r.End.Date).ToHashSet();
+            cal.Set(_book.PlaysPerDay, ProfileTone);
+            cal.PbDays = _book.PersonalBestDays;
             body.Children.Add(cal);
             body.VerticalAlignment = VerticalAlignment.Bottom;
             Grid.SetRow(body, 1);
@@ -308,7 +318,7 @@ public partial class StatsView
         Col(leftHost, 0);
         // The divider is a straight diagonal line from the top left to the bottom right; the favorite cards are indented to follow it.
         var curve = new System.Windows.Shapes.Path { StrokeThickness = 1.5, IsHitTestVisible = false, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
-        var inkC = ProfileLight ? Colors.Black : _host.Ui.ProfileAccent.Length > 0 && ChartPaths.TextTone(ProfileAccent) is SolidColorBrush ab ? ab.Color : Colors.White;
+        var inkC = ProfileLight ? Colors.Black : _host.Ui.ProfileAccent.Length > 0 && ChartPaths.TextToneOnDark(ProfileAccent) is SolidColorBrush ab ? ab.Color : Colors.White;
         curve.Stroke = new LinearGradientBrush(new GradientStopCollection
         {
             new GradientStop(Color.FromArgb(0, inkC.R, inkC.G, inkC.B), 0),
@@ -324,36 +334,33 @@ public partial class StatsView
         curveHost.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
         ProfileHost.Children.Add(curveHost);
 
-        // 3: favorite playlists
-        var favs = AllDifficulties()
-            .Where(x => _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}"))
-            .OrderByDescending(x => _host.Ui.FavoriteIndex($"{x.D.KovaaksBenchmarkId}")).ToList();
+        // 3: the chosen playlists, subcategories and scenarios, top first
+        var favs = ProfileKeys().Select(BuildProfileCard).OfType<(UIElement Card, Color? Tier)>().ToList();
         var right = new StackPanel();
-        if (favs.Count == 0) right.Children.Add(Text("No favorites", 13, ProfileDim, null, new Thickness(6, 0, 0, 0)));
         var favCards = new List<FrameworkElement>();
-        foreach (var (b, d) in favs)
+        // The vertical gap between cards shrinks as cards are added: 4 up to 3 cards, then 3, 2, 1.
+        var gap = Math.Max(1, 7 - favs.Count);
+        foreach (var (card, tint) in favs)
         {
             // Opaque underlay with its own tier tint: the card's own wash is faint and translucent, and would otherwise pick up the popup tint.
-            var card = FavoriteCard(b, d);
             ((FrameworkElement)card).Margin = new Thickness(0);
             ((FrameworkElement)card).LayoutTransform = new ScaleTransform(1.875, 1.875);
             favCards.Add((FrameworkElement)card);
             if (card is Border cb) { cb.BorderThickness = new Thickness(0); cb.CornerRadius = new CornerRadius(0); }
-            Brush under = Solid("#CC34343A"), edge = Brushes.Transparent;
-            if (_progress.TryGetValue(d.KovaaksBenchmarkId, out var pr) && pr.OverallRankName.Length > 0 && RankBrush(d, pr.OverallRankName) is SolidColorBrush tb)
+            Brush under = SolidFixed("#CC34343A"), edge = Brushes.Transparent;
+            if (tint is { } c)
             {
-                var c = tb.Color;
                 var baseC = Color.FromRgb(0x2A, 0x2A, 0x2F);
                 under = new LinearGradientBrush(new GradientStopCollection { new GradientStop(WithAlpha(MixColor(baseC, c, 0.42), 0xCC), 0), new GradientStop(WithAlpha(MixColor(baseC, c, 0.12), 0xCC), 1) }, new Point(0, 0), new Point(1, 1));
             }
-            right.Children.Add(new Border { Background = under, BorderBrush = edge, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0), Margin = new Thickness(0, 0, 0, 4), IsHitTestVisible = false, Child = card });
+            right.Children.Add(new Border { Background = under, BorderBrush = edge, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0), Margin = new Thickness(0, 0, 0, Math.Min(4, gap)), Child = card });
         }
         // No gap to the line and none to the card edge: the column reaches out over the host's right margin.
         // The cards share the column height equally, whatever their number. Only the text scale is capped (1.875); the card height stretches to fill.
         var rightHost = FitHeight(right, false, h =>
         {
             if (favCards.Count == 0) return;
-            var slot = Math.Max(20, (h - 4 * favCards.Count) / favCards.Count);
+            var slot = Math.Max(20, (h - Math.Min(4, gap) * favCards.Count) / favCards.Count);
             var s = Math.Min(1.875, slot / 100);
             foreach (var c in favCards)
             {
@@ -364,6 +371,8 @@ public partial class StatsView
                 {
                     sch.MiniTextCap = ProfileHost.ActualHeight / 3.7 / s;
                     sch.MiniStackAbove = favCards.Count <= 3 ? 0 : double.PositiveInfinity;
+                    if (!_profileCapturing) sch.Marquee = _host.Ui.ProfileAnimated;
+                    _profileCharts.Add(sch);
                 }
             }
         });
@@ -438,8 +447,7 @@ public partial class StatsView
         }
         _profileFits.Add(LayoutCurve);
         leftHost.SizeChanged += (_, _) => LayoutCurve();
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_profileOpen) RefitProfile(); });
-    }
+            }
 
     static BitmapImage? LoadAvatar(string? path, double size)
     {
@@ -465,11 +473,11 @@ public partial class StatsView
         var steam = _host.Settings.EffectiveSteamId;
         var ui = _host.Ui;
         var (persona, steamAvatar) = SteamAccount.Profile(_host.Settings.KovaaksPath, steam);
-        string DefaultName() => persona ?? (steam.Length == 0 ? null : Cache.LoadUsername(steam)) ?? (steam.Length == 0 ? "Profile" : steam);
+        string DefaultName() => persona ?? (steam.Length == 0 ? null : Cache.LoadUsername(steam)) ?? (steam.Length == 0 ? L.T("Profile") : steam);
 
         void Pick()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|All files|*.*" };
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = L.T("Images") + "|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|" + L.T("All files") + "|*.*" };
             if (dlg.ShowDialog() != true) return;
             try
             {
@@ -507,9 +515,9 @@ public partial class StatsView
                 if (_profileBody != null) _profileBody.Width = holder.Width * BodyFrac;
             }
             _profileFit = FitPic;
-            var wash = new Border { CornerRadius = new CornerRadius(4), Background = Solid("#66000000"), Opacity = 0, IsHitTestVisible = false };
+            var wash = new Border { CornerRadius = new CornerRadius(4), Background = SolidFixed("#66000000"), Opacity = 0, IsHitTestVisible = false };
             var cam = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 28, Foreground = Brushes.White, Opacity = 0, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-            var xbg = new Border { Margin = new Thickness(10, 10, 0, 0), Width = 32, Height = 32, CornerRadius = new CornerRadius(0), Background = Solid("#99000000"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Opacity = 0 };
+            var xbg = new Border { Margin = new Thickness(10, 10, 0, 0), Width = 32, Height = 32, CornerRadius = new CornerRadius(0), Background = SolidFixed("#99000000"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Opacity = 0 };
             var x = new Button
             {
                 Style = (Style)FindResource("PopupClose"), Width = 32, Height = 32, Margin = new Thickness(10, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Opacity = 0,
@@ -540,11 +548,11 @@ public partial class StatsView
             // No picture: a quiet placeholder to click, no avatar.
             var add = new Border
             {
-                CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Background = Solid("#0DFFFFFF"), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 10),
-                Child = new TextBlock { Text = "\uE722", FontFamily = new FontFamily(Icons), FontSize = 26, Foreground = DimB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Background = SolidFixed("#0DFFFFFF"), BorderBrush = SolidFixed("#14FFFFFF"), BorderThickness = new Thickness(1), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 10),
+                Child = new TextBlock { Text = "\uE722", FontFamily = new FontFamily(Icons), FontSize = 26, Foreground = ProfileDim, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
-            add.MouseEnter += (_, _) => add.Background = Solid("#14FFFFFF");
-            add.MouseLeave += (_, _) => add.Background = Solid("#0DFFFFFF");
+            add.MouseEnter += (_, _) => add.Background = SolidFixed("#14FFFFFF");
+            add.MouseLeave += (_, _) => add.Background = SolidFixed("#0DFFFFFF");
             add.MouseLeftButtonUp += (_, _) => Pick();
             _profileAddBox = add;
             _profileFit = (_, sc) =>
@@ -565,7 +573,7 @@ public partial class StatsView
         nameText.TextTrimming = TextTrimming.CharacterEllipsis;
         var nameBox = new TextBox { FontSize = 38, FontWeight = FontWeights.SemiBold, FontFamily = ui2, Foreground = ProfileInk, CaretBrush = ProfileInk, MaxLength = 32, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, MinWidth = 220 };
         var namePill = new Border { CornerRadius = new CornerRadius(0), Padding = new Thickness(8, 2, 8, 2), Background = Brushes.Transparent, Cursor = Cursors.IBeam, Child = nameText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-        namePill.MouseEnter += (_, _) => namePill.Background = Solid("#14FFFFFF");
+        namePill.MouseEnter += (_, _) => namePill.Background = SolidFixed("#14FFFFFF");
         namePill.MouseLeave += (_, _) => namePill.Background = Brushes.Transparent;
         var editing = false;
         void Commit(bool save)
