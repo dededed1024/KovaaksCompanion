@@ -1,4 +1,4 @@
-using KovaaksCompanion.Core.Perf;
+﻿using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Session;
 using KovaaksCompanion.Core.Stats;
 
@@ -29,6 +29,10 @@ public sealed class RunLibrary
     /// </summary>
     public RunLibrary Verified(IReadOnlyList<SessionInfo> sessions) => new(AllRuns.Where(r =>
         SessionStore.FindRun(sessions, r.Scenario, r.End) is var i && (i < 0 || Math.Abs(sessions[i].Score - r.Score) < 1e-6)));
+
+    /// <summary>Drops the deleted runs (lower-case scenario, end time) given by <see cref="Benchmarks.StatsCache.HiddenRuns"/>.</summary>
+    public RunLibrary Without(IReadOnlySet<(string Scenario, DateTime End)> hidden) =>
+        hidden.Count == 0 ? this : new(AllRuns.Where(r => !hidden.Contains((r.Scenario.ToLowerInvariant(), r.End))));
 
     /// <summary>Summary of the run's .perf, or null when it is missing or unreadable (older runs may have none).</summary>
     static PerfSummary? ReadPerf(string statsCsv)

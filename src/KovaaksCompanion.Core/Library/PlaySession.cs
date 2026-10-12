@@ -18,7 +18,13 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     public int ScenarioCount => Scenarios.Count;
     public double AverageAccuracy => Runs.Average(r => r.Accuracy);
 
+    /// <summary>Gap that splits sessions of runs that were not finished in a live session (legacy runs).</summary>
     public static readonly TimeSpan DefaultGap = TimeSpan.FromMinutes(20);
+
+    /// <summary>Live session id per run key (<see cref="LiveRunLog"/>). Runs with the same id are one session, whatever the gap.</summary>
+    public static IReadOnlyDictionary<string, long> LiveIds { get; set; } = new Dictionary<string, long>();
+
+    static long? LiveId(string scenario, DateTime end) => LiveIds.TryGetValue(UiState.RunKey(scenario, end), out var id) ? id : null;
 
     /// <summary>
     /// The candidate whose scenario set covers the most runs of this session (a scenario in several sets counts for each);
@@ -44,18 +50,14 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     /// <summary>
     /// Groups runs into sessions (a new one starts when next.Start - previous.End exceeds <paramref name="maxGap"/>),
     /// newest session first. A run is a personal best when it beat every earlier run of its scenario in
-    /// <paramref name="all"/> (defaults to <paramref name="runs"/>).
+    /// <paramref name="all"/> (defaults to <paramref name="runs"/>); pass <paramref name="personalBests"/> (<see cref="ScoreBook.PersonalBestRuns"/>)
+    /// to count against server scores too.
     /// </summary>
-    public static List<PlaySession> Group(IEnumerable<RunRecord> runs, TimeSpan? maxGap = null, IEnumerable<RunRecord>? all = null)
+    public static List<PlaySession> Group(IEnumerable<RunRecord> runs, TimeSpan? maxGap = null, IEnumerable<RunRecord>? all = null, IReadOnlySet<RunRecord>? personalBests = null)
     {
         var gap = maxGap ?? DefaultGap;
         var ordered = runs.OrderBy(r => r.Start).ToList();
-        var pbs = new HashSet<RunRecord>(ReferenceEqualityComparer.Instance);
-        foreach (var g in (all ?? ordered).GroupBy(r => r.Scenario))
-        {
-            var stats = new ScenarioStats(g.Key, g.OrderBy(r => r.Start).ToList());
-            foreach (var i in stats.PersonalBestIndexes()) pbs.Add(stats.Runs[i]);
-        }
+        var pbs = personalBests ?? LocalPersonalBests(all ?? ordered);
         var sessions = Split(ordered, gap).Select(c => new PlaySession(c, c.Count(pbs.Contains))).ToList();
         // Number by the full set's chronological grouping so a session keeps its number whichever subset is shown.
         var starts = Split((all ?? ordered).OrderBy(r => r.Start).ToList(), gap).Select(c => c[0].Start).ToList();
@@ -65,15 +67,33 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
         return sessions;
     }
 
+    static HashSet<RunRecord> LocalPersonalBests(IEnumerable<RunRecord> all)
+    {
+        var pbs = new HashSet<RunRecord>(ReferenceEqualityComparer.Instance);
+        foreach (var g in all.GroupBy(r => r.Scenario))
+        {
+            var stats = new ScenarioStats(g.Key, g.OrderBy(r => r.Start).ToList());
+            foreach (var i in stats.PersonalBestRunIndexes()) pbs.Add(stats.Runs[i]);
+        }
+        return pbs;
+    }
+
+    /// <summary>Runs finished in a live session stay with it and never join another; runs outside any live session (legacy) split by the time gap.</summary>
+    public static bool NewSession(string prevScenario, DateTime prevEnd, string nextScenario, DateTime nextStart, DateTime nextEnd, TimeSpan gap)
+    {
+        long? prev = LiveId(prevScenario, prevEnd), next = LiveId(nextScenario, nextEnd);
+        return prev != null || next != null ? prev != next : nextStart - prevEnd > gap;
+    }
+
     static List<List<RunRecord>> Split(List<RunRecord> ordered, TimeSpan gap)
     {
         var result = new List<List<RunRecord>>();
         var cur = new List<RunRecord>();
-        var end = DateTime.MinValue;
+        RunRecord? last = null;
         foreach (var r in ordered)
         {
-            if (cur.Count > 0 && r.Start - end > gap) { result.Add(cur); cur = []; }
-            end = cur.Count == 0 || r.End > end ? r.End : end;
+            if (cur.Count > 0 && NewSession(last!.Scenario, last.End, r.Scenario, r.Start, r.End, gap)) { result.Add(cur); cur = []; }
+            if (cur.Count == 0 || r.End > last!.End) last = r;
             cur.Add(r);
         }
         if (cur.Count > 0) result.Add(cur);

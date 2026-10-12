@@ -1,13 +1,55 @@
+using KovaaksCompanion.Core.Benchmarks;
+
 namespace KovaaksCompanion.Core.Library;
 
-/// <summary>Score history of one scenario.</summary>
-public sealed record ScenarioStats(string Scenario, IReadOnlyList<RunRecord> Runs)
+/// <summary>One score of a scenario: a local run, or a server score the local library lacks (<see cref="Run"/> is null).</summary>
+public sealed record ScoreRecord(DateTime Time, double Score, RunRecord? Run);
+
+/// <summary>
+/// Score history of one scenario: the local runs plus the server scores the library lacks (a server score within 5 minutes
+/// of a local run is that same run), oldest first. Everything score-based works on <see cref="Records"/>; accuracy, duration and
+/// drift exist only for the local <see cref="Runs"/>. Built and cached by <see cref="ScoreBook"/>.
+/// </summary>
+public sealed class ScenarioStats
 {
-    public int Plays => Runs.Count;
-    public double Best => Runs.Count == 0 ? 0 : Runs.Max(r => r.Score);
-    public double Average => Runs.Count == 0 ? 0 : Runs.Average(r => r.Score);
-    public double? Latest => Runs.Count == 0 ? null : Runs[^1].Score;
-    public DateTime? LastPlayed => Runs.Count == 0 ? null : Runs[^1].End;
+    readonly double[] _bestSoFar;
+    readonly HashSet<RunRecord> _pbRuns = new(ReferenceEqualityComparer.Instance);
+
+    /// <param name="runs">Local runs, oldest first.</param>
+    /// <param name="cloud">Server scores of the scenario.</param>
+    /// <param name="serverBest">The server's all-time best, which can be older than the scores in <paramref name="cloud"/>.</param>
+    public ScenarioStats(string scenario, IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore>? cloud = null, double serverBest = 0)
+    {
+        Scenario = scenario;
+        Runs = runs;
+        ServerBest = serverBest;
+        Records = Merge(runs, cloud ?? []);
+        _bestSoFar = new double[Records.Count];
+        var best = double.MinValue;
+        for (var i = 0; i < Records.Count; i++)
+        {
+            if (Records[i].Score > best) { PersonalBests.Add(Records[i]); if (Records[i].Run is { } r) _pbRuns.Add(r); }
+            best = Math.Max(best, Records[i].Score);
+            _bestSoFar[i] = best;
+        }
+    }
+
+    public string Scenario { get; }
+    public IReadOnlyList<RunRecord> Runs { get; }
+    public IReadOnlyList<ScoreRecord> Records { get; }
+    public double ServerBest { get; }
+
+    /// <summary>Records that beat every earlier record (the first counts), local or from the server.</summary>
+    public List<ScoreRecord> PersonalBests { get; } = [];
+
+    public int Plays => Records.Count;
+    /// <summary>The best of all records and the server's all-time best.</summary>
+    public double Best => Math.Max(Records.Count == 0 ? 0 : _bestSoFar[^1], ServerBest);
+    /// <summary>The best score of a local run; 0 without any.</summary>
+    public double LocalBest => Runs.Count == 0 ? 0 : Runs.Max(r => r.Score);
+    public double Average => Records.Count == 0 ? 0 : Records.Average(r => r.Score);
+    public double? Latest => Records.Count == 0 ? null : Records[^1].Score;
+    public DateTime? LastPlayed => Records.Count == 0 ? null : Records[^1].Time;
     public double AverageAccuracy => Runs.Count == 0 ? 0 : Runs.Average(r => r.Accuracy);
     public TimeSpan TimePlayed => TimeSpan.FromTicks(Runs.Sum(r => r.Duration.Ticks));
 
@@ -26,34 +68,62 @@ public sealed record ScenarioStats(string Scenario, IReadOnlyList<RunRecord> Run
 
     /// <summary>
     /// Mean of the last <paramref name="n"/> scores minus the mean of the <paramref name="n"/> before them, as a
-    /// fraction of the older mean. Null with fewer than 2n runs.
+    /// fraction of the older mean. Null with fewer than 2n records.
     /// </summary>
     public double? Trend(int n = 5)
     {
-        if (n < 1 || Runs.Count < 2 * n) return null;
-        var recent = Runs.Skip(Runs.Count - n).Average(r => r.Score);
-        var before = Runs.Skip(Runs.Count - 2 * n).Take(n).Average(r => r.Score);
+        if (n < 1 || Records.Count < 2 * n) return null;
+        var recent = Records.Skip(Records.Count - n).Average(r => r.Score);
+        var before = Records.Skip(Records.Count - 2 * n).Take(n).Average(r => r.Score);
         return before > 0 ? (recent - before) / before : null;
     }
 
-    /// <summary>Best score so far after each run, oldest first.</summary>
-    public IReadOnlyList<double> BestSoFar()
+    /// <summary>Best score so far after each record, oldest first.</summary>
+    public IReadOnlyList<double> BestSoFar() => _bestSoFar;
+
+    /// <summary>Indexes into <see cref="Records"/> of the records that beat every earlier one (the first counts).</summary>
+    public IReadOnlyList<int> PersonalBestIndexes() =>
+        Enumerable.Range(0, Records.Count).Where(i => PersonalBests.Contains(Records[i])).ToList();
+
+    /// <summary>Indexes into <see cref="Runs"/> of the local runs that are personal bests.</summary>
+    public IReadOnlyList<int> PersonalBestRunIndexes() =>
+        Enumerable.Range(0, Runs.Count).Where(i => _pbRuns.Contains(Runs[i])).ToList();
+
+    /// <summary>True when the local run beat every earlier record, server scores included.</summary>
+    public bool IsPersonalBest(RunRecord run) => _pbRuns.Contains(run);
+
+    /// <summary>Best score among records at or before the cutoff; null when none is that old.</summary>
+    public double? BestAsOf(DateTime cutoff)
     {
-        var res = new List<double>(Runs.Count);
-        var best = double.MinValue;
-        foreach (var r in Runs) { best = Math.Max(best, r.Score); res.Add(best); }
-        return res;
+        int lo = 0, hi = Records.Count; // first record after the cutoff
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (Records[mid].Time <= cutoff) lo = mid + 1; else hi = mid;
+        }
+        return lo == 0 ? null : _bestSoFar[lo - 1];
     }
 
-    /// <summary>Indexes of runs that beat every earlier run (the first run counts).</summary>
-    public IReadOnlyList<int> PersonalBestIndexes()
-    {
-        var res = new List<int>();
-        var best = double.MinValue;
-        for (var i = 0; i < Runs.Count; i++)
-            if (Runs[i].Score > best) { best = Runs[i].Score; res.Add(i); }
-        return res;
-    }
+    /// <summary>Baseline for comparing with now: the best score as of the cutoff, or, when nothing is that old, the oldest record's
+    /// score (so the baseline reaches back at most to the cutoff). Null without records.</summary>
+    public double? BaselineAt(DateTime cutoff) => BestAsOf(cutoff) ?? (Records.Count == 0 ? null : Records[0].Score);
 
-    public static ScenarioStats For(RunLibrary lib, string scenario) => new(scenario, lib.Runs(scenario));
+    static IReadOnlyList<ScoreRecord> Merge(IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore> cloud)
+    {
+        var all = new List<ScoreRecord>(runs.Count + cloud.Count);
+        foreach (var r in runs) all.Add(new(r.End, r.Score, r));
+        if (cloud.Count == 0) return all;
+        var ends = runs.Select(r => r.End).Order().ToArray();
+        var added = false;
+        foreach (var c in cloud)
+        {
+            var i = Array.BinarySearch(ends, c.Time);
+            if (i < 0) i = ~i; // first end at or after the score
+            var same = (i < ends.Length && (ends[i] - c.Time).TotalMinutes < 5) || (i > 0 && (c.Time - ends[i - 1]).TotalMinutes < 5);
+            if (same) continue;
+            all.Add(new(c.Time, c.Score, null));
+            added = true;
+        }
+        return added ? all.OrderBy(r => r.Time).ToList() : all;
+    }
 }
