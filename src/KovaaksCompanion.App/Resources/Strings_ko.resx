@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="Search" xml:space="preserve"><value>검색</value></data>
+  <data name="Settings" xml:space="preserve"><value>설정</value></data>
+  <data name="Minimize" xml:space="preserve"><value>최소화</value></data>
+  <data name="Maximize" xml:space="preserve"><value>최대화</value></data>
+  <data name="Restore" xml:space="preserve"><value>이전 크기로</value></data>
+  <data name="Close" xml:space="preserve"><value>닫기</value></data>
+  <data name="Play" xml:space="preserve"><value>플레이</value></data>
+  <data name="Start in KovaaK's" xml:space="preserve"><value>KovaaK's에서 시작</value></data>
+  <data name="Show video file in Explorer" xml:space="preserve"><value>탐색기에서 영상 파일 보기</value></data>
+  <data name="Add to favorites" xml:space="preserve"><value>즐겨찾기에 추가</value></data>
+  <data name="Remove from favorites" xml:space="preserve"><value>즐겨찾기에서 제거</value></data>
+  <data name="Up to 6 favorites" xml:space="preserve"><value>즐겨찾기는 최대 6개</value></data>
+  <data name="Overlay the previous local play" xml:space="preserve"><value>이전 플레이 겹쳐 보기</value></data>
+  <data name="Prev play" xml:space="preserve"><value>이전 플레이</value></data>
+  <data name="Trail" xml:space="preserve"><value>궤적</value></data>
+  <data name="Show or hide the trail (T)" xml:space="preserve"><value>궤적 표시/숨김 (T)</value></data>
+  <data name="Trail sync" xml:space="preserve"><value>궤적 싱크</value></data>
+  <data name="Trail earlier 10 ms ([)" xml:space="preserve"><value>궤적 10 ms 앞당기기 ([)</value></data>
+  <data name="Trail sync (click to reset)" xml:space="preserve"><value>궤적 싱크 (클릭하여 초기화)</value></data>
+  <data name="Trail later 10 ms (])" xml:space="preserve"><value>궤적 10 ms 늦추기 (])</value></data>
+  <data name="Step back 1/60 s (←)" xml:space="preserve"><value>1/60초 뒤로 (←)</value></data>
+  <data name="Play / pause (Space)" xml:space="preserve"><value>재생 / 일시정지 (Space)</value></data>
+  <data name="Step forward 1/60 s (→)" xml:space="preserve"><value>1/60초 앞으로 (→)</value></data>
+  <data name="Playback speed" xml:space="preserve"><value>재생 속도</value></data>
+  <data name="Fullscreen (F)" xml:space="preserve"><value>전체 화면 (F)</value></data>
+  <data name="Exit fullscreen (F)" xml:space="preserve"><value>전체 화면 해제 (F)</value></data>
+  <data name="No local plays yet" xml:space="preserve"><value>아직 로컬 플레이가 없어요</value></data>
+  <data name="KovaaK's must be closed to change settings" xml:space="preserve"><value>설정을 바꾸려면 KovaaK's를 종료해야 해요</value></data>
+  <data name="General" xml:space="preserve"><value>일반</value></data>
+  <data name="KovaaK's folder" xml:space="preserve"><value>KovaaK's 폴더</value></data>
+  <data name="Browse…" xml:space="preserve"><value>찾아보기…</value></data>
+  <data name="Output folder" xml:space="preserve"><value>저장 폴더</value></data>
+  <data name="Steam ID" xml:space="preserve"><value>Steam ID</value></data>
+  <data name="Start with Windows" xml:space="preserve"><value>Windows 시작 시 실행</value></data>
+  <data name="Send error reports automatically (anonymous)" xml:space="preserve"><value>오류 보고서 자동 전송 (익명)</value></data>
+  <data name="Your OS information is collected with this report." xml:space="preserve"><value>이 신고에는 OS 정보가 함께 수집됩니다.</value></data>
+  <data name="Send" xml:space="preserve"><value>보내기</value></data>
+  <data name="Cancel" xml:space="preserve"><value>취소</value></data>
+  <data name="Recording" xml:space="preserve"><value>녹화</value></data>
+  <data name="Recording quality" xml:space="preserve"><value>녹화 화질</value></data>
+  <data name="Low" xml:space="preserve"><value>낮음</value></data>
+  <data name="Medium" xml:space="preserve"><value>보통</value></data>
+  <data name="High" xml:space="preserve"><value>높음</value></data>
+  <data name="Ultra" xml:space="preserve"><value>최고</value></data>
+  <data name="Max FPS" xml:space="preserve"><value>최대 FPS</value></data>
+  <data name="Storage" xml:space="preserve"><value>저장 공간</value></data>
+  <data name="Max storage (0 GB = unlimited)" xml:space="preserve"><value>최대 용량 (0 GB = 무제한)</value></data>
+  <data name="Keep only the best run video in a session" xml:space="preserve"><value>세션 내 최고 기록만 영상 남기기</value></data>
+  <data name="Keep personal best replays" xml:space="preserve"><value>PB 기록 보관</value></data>
+  <data name="Webcam" xml:space="preserve"><value>웹캠</value></data>
+  <data name="Video save" xml:space="preserve"><value>영상 저장</value></data>
+  <data name="One video (game + webcam)" xml:space="preserve"><value>단일 영상 (게임 + 웹캠)</value></data>
+  <data name="Separate videos (game and webcam)" xml:space="preserve"><value>영상 분리 (게임, 웹캠)</value></data>
+  <data name="Add webcam" xml:space="preserve"><value>웹캠 추가</value></data>
+  <data name="About" xml:space="preserve"><value>정보</value></data>
+  <data name="Check for updates" xml:space="preserve"><value>업데이트 확인</value></data>
+  <data name="Report a bug" xml:space="preserve"><value>버그 신고</value></data>
+  <data name="Unofficial. Not affiliated with KovaaK Games." xml:space="preserve"><value>KovaaK Games와 관련 없는 비공식 앱입니다.</value></data>
+  <data name="Playlists from " xml:space="preserve"><value>플레이리스트 출처: </value></data>
+  <data name=" (EviL)." xml:space="preserve"><value> (EviL).</value></data>
+  <data name="Video by " xml:space="preserve"><value>영상 처리: </value></data>
+  <data name=" (libobs, GPL v2, " xml:space="preserve"><value> (libobs, GPL v2, </value></data>
+  <data name="Appearance" xml:space="preserve"><value>화면</value></data>
+  <data name="Language" xml:space="preserve"><value>언어</value></data>
+  <data name="Theme" xml:space="preserve"><value>테마</value></data>
+  <data name="UI size" xml:space="preserve"><value>UI 크기</value></data>
+  <data name="Playlists" xml:space="preserve"><value>플레이리스트</value></data>
+  <data name="Favorite" xml:space="preserve"><value>즐겨찾기</value></data>
+  <data name="Copy scenarios as image" xml:space="preserve"><value>시나리오를 이미지로 복사</value></data>
+  <data name="Show tier on Home" xml:space="preserve"><value>홈에 티어 표시</value></data>
+  <data name="Remove tier from Home" xml:space="preserve"><value>홈에서 티어 제거</value></data>
+  <data name="Copy sharecode" xml:space="preserve"><value>공유 코드 복사</value></data>
+  <data name="Update available" xml:space="preserve"><value>새 버전이 있어요</value></data>
+  <data name="Later" xml:space="preserve"><value>나중에</value></data>
+  <data name="Update" xml:space="preserve"><value>업데이트</value></data>
+  <data name="Mon" xml:space="preserve"><value>월</value></data>
+  <data name="Wed" xml:space="preserve"><value>수</value></data>
+  <data name="Fri" xml:space="preserve"><value>금</value></data>
+  <data name="More" xml:space="preserve"><value>많음</value></data>
+  <data name="Less" xml:space="preserve"><value>적음</value></data>
+  <data name="Personal best" xml:space="preserve"><value>개인 최고</value></data>
+  <data name="Open" xml:space="preserve"><value>열기</value></data>
+  <data name="Exit" xml:space="preserve"><value>종료</value></data>
+  <data name="Copy as image" xml:space="preserve"><value>이미지로 복사</value></data>
+  <data name="No scenarios" xml:space="preserve"><value>시나리오 없음</value></data>
+  <data name="UNRANKED" xml:space="preserve"><value>UNRANKED</value></data>
+  <data name="Max" xml:space="preserve"><value>최대</value></data>
+  <data name="SCENARIO" xml:space="preserve"><value>시나리오</value></data>
+  <data name="Last played {0}" xml:space="preserve"><value>마지막 플레이 {0}</value></data>
+  <data name="Not played yet" xml:space="preserve"><value>아직 플레이하지 않음</value></data>
+  <data name="+{0} to {1}" xml:space="preserve"><value>{1}까지 +{0}</value></data>
+  <data name="Need at least 3 axes" xml:space="preserve"><value>축이 3개 이상 필요해요</value></data>
+  <data name="No data" xml:space="preserve"><value>데이터 없음</value></data>
+  <data name="Max tier" xml:space="preserve"><value>최고 티어</value></data>
+  <data name="+{0}% to next" xml:space="preserve"><value>다음까지 +{0}%</value></data>
+  <data name="{0}h {1}m" xml:space="preserve"><value>{0}시간 {1}분</value></data>
+  <data name="{0}m {1}s" xml:space="preserve"><value>{0}분 {1}초</value></data>
+  <data name="just now" xml:space="preserve"><value>방금</value></data>
+  <data name="{0} min ago" xml:space="preserve"><value>{0}분 전</value></data>
+  <data name="{0} h ago" xml:space="preserve"><value>{0}시간 전</value></data>
+  <data name="{0} d ago" xml:space="preserve"><value>{0}일 전</value></data>
+  <data name="Tier" xml:space="preserve"><value>티어</value></data>
+  <data name="Today" xml:space="preserve"><value>오늘</value></data>
+  <data name="Yesterday" xml:space="preserve"><value>어제</value></data>
+  <data name="PB" xml:space="preserve"><value>PB</value></data>
+  <data name="Best" xml:space="preserve"><value>최고</value></data>
+  <data name="Average" xml:space="preserve"><value>평균</value></data>
+  <data name="Plays" xml:space="preserve"><value>플레이</value></data>
+  <data name="Last played" xml:space="preserve"><value>마지막 플레이</value></data>
+  <data name="Last {0} avg" xml:space="preserve"><value>최근 {0}회 평균</value></data>
+  <data name="vs overall avg" xml:space="preserve"><value>전체 평균 대비</value></data>
+  <data name="Accuracy" xml:space="preserve"><value>정확도</value></data>
+  <data name="Time" xml:space="preserve"><value>시간</value></data>
+  <data name="Trend" xml:space="preserve"><value>추세</value></data>
+  <data name="Drift" xml:space="preserve"><value>변화</value></data>
+  <data name=" pts" xml:space="preserve"><value>점</value></data>
+  <data name="Score per play" xml:space="preserve"><value>플레이별 점수</value></data>
+  <data name="Top tier reached" xml:space="preserve"><value>최고 티어 달성</value></data>
+  <data name="{0} to {1} ({2})" xml:space="preserve"><value>{1}까지 {0} ({2})</value></data>
+  <data name="TIER THRESHOLDS" xml:space="preserve"><value>티어 기준</value></data>
+  <data name="No recording for this play" xml:space="preserve"><value>이 플레이는 녹화되지 않았어요</value></data>
+  <data name="No video for this session" xml:space="preserve"><value>이 세션은 영상이 없어요</value></data>
+  <data name="Video failed to load: " xml:space="preserve"><value>영상을 불러오지 못했어요: </value></data>
+  <data name="Previous play · {0}" xml:space="preserve"><value>이전 플레이 · {0}</value></data>
+  <data name="Damage eff." xml:space="preserve"><value>데미지 효율</value></data>
+  <data name="Enter 0 or more" xml:space="preserve"><value>0 이상 입력</value></data>
+  <data name="Must be 17 digits" xml:space="preserve"><value>17자리 숫자여야 해요</value></data>
+  <data name="Enter 30–1000" xml:space="preserve"><value>30–1000 사이로 입력</value></data>
+  <data name="Width" xml:space="preserve"><value>너비</value></data>
+  <data name="Height" xml:space="preserve"><value>높이</value></data>
+  <data name="From right" xml:space="preserve"><value>오른쪽 여백</value></data>
+  <data name="From top" xml:space="preserve"><value>위쪽 여백</value></data>
+  <data name="Webcam {0}" xml:space="preserve"><value>웹캠 {0}</value></data>
+  <data name="Checking…" xml:space="preserve"><value>확인 중…</value></data>
+  <data name="Could not check" xml:space="preserve"><value>확인 실패</value></data>
+  <data name="Up to date" xml:space="preserve"><value>최신 버전</value></data>
+  <data name="Wait a minute" xml:space="preserve"><value>잠시 후 다시 시도</value></data>
+  <data name="Sending…" xml:space="preserve"><value>전송 중…</value></data>
+  <data name="Sent" xml:space="preserve"><value>전송됨</value></data>
+  <data name="Could not send" xml:space="preserve"><value>전송 실패</value></data>
+  <data name="Version {0}" xml:space="preserve"><value>버전 {0}</value></data>
+  <data name="Days" xml:space="preserve"><value>일</value></data>
+  <data name="Not played" xml:space="preserve"><value>플레이 안 함</value></data>
+  <data name="{0} plays · best {1}" xml:space="preserve"><value>{0}회 플레이 · 최고 {1}</value></data>
+  <data name="No matches" xml:space="preserve"><value>결과 없음</value></data>
+  <data name="{0} pts" xml:space="preserve"><value>{0}점</value></data>
+  <data name="{0} session" xml:space="preserve"><value>세션 {0}개</value></data>
+  <data name="{0} sessions" xml:space="preserve"><value>세션 {0}개</value></data>
+  <data name="{0} play" xml:space="preserve"><value>{0}회</value></data>
+  <data name="{0} plays" xml:space="preserve"><value>{0}회</value></data>
+  <data name="{0} scenario" xml:space="preserve"><value>시나리오 {0}개</value></data>
+  <data name="{0} scenarios" xml:space="preserve"><value>시나리오 {0}개</value></data>
+  <data name="PB ×{0}" xml:space="preserve"><value>PB ×{0}</value></data>
+  <data name="{0} · {1} · {2} scenarios · {3} plays · " xml:space="preserve"><value>{0} · {1} · 시나리오 {2}개 · {3}회 · </value></data>
+  <data name="{0} PBs" xml:space="preserve"><value>PB {0}개</value></data>
+  <data name="Copy session as image" xml:space="preserve"><value>세션을 이미지로 복사</value></data>
+  <data name="Delete play" xml:space="preserve"><value>플레이 삭제</value></data>
+  <data name="Click again to delete the replay for good" xml:space="preserve"><value>한 번 더 누르면 리플레이가 완전히 삭제돼요</value></data>
+    <data name="Copied" xml:space="preserve"><value>복사됨</value></data>
+  <data name="{0} of {1} scenarios played · {2} plays · {3}" xml:space="preserve"><value>시나리오 {1}개 중 {0}개 플레이 · 플레이 {2}회 · {3}</value></data>
+  <data name="{0}% to {1}" xml:space="preserve"><value>{1}까지 {0}%</value></data>
+  <data name="{0} of {1} ranked" xml:space="preserve"><value>{1}개 중 {0}개 랭크</value></data>
+  <data name="{0} of {1} at {2}+" xml:space="preserve"><value>{1}개 중 {0}개가 {2} 이상</value></data>
+  <data name="No plays" xml:space="preserve"><value>플레이 없음</value></data>
+  <data name="30 days ago" xml:space="preserve"><value>30일 전</value></data>
+  <data name="Other" xml:space="preserve"><value>기타</value></data>
+  <data name="Motion on" xml:space="preserve"><value>모션 켜짐</value></data>
+  <data name="Motion off" xml:space="preserve"><value>모션 꺼짐</value></data>
+  <data name="Replay" xml:space="preserve"><value>다시 재생</value></data>
+  <data name="No favorites" xml:space="preserve"><value>즐겨찾기 없음</value></data>
+  <data name="Profile" xml:space="preserve"><value>프로필</value></data>
+  <data name="Images" xml:space="preserve"><value>이미지</value></data>
+  <data name="All files" xml:space="preserve"><value>모든 파일</value></data>
+  <data name="Loading…" xml:space="preserve"><value>불러오는 중…</value></data>
+  <data name="{0} difficulties · {1} scenarios" xml:space="preserve"><value>난이도 {0}개 · 시나리오 {1}개</value></data>
+  <data name="No Steam ID" xml:space="preserve"><value>Steam ID 없음</value></data>
+  <data name="Dark" xml:space="preserve"><value>다크</value></data>
+  <data name="Light" xml:space="preserve"><value>라이트</value></data>
+  <data name="Black" xml:space="preserve"><value>블랙</value></data>
+  <data name="Violet" xml:space="preserve"><value>바이올렛</value></data>
+  <data name="Rose" xml:space="preserve"><value>로즈</value></data>
+  <data name="Forest" xml:space="preserve"><value>포레스트</value></data>
+  <data name="Ember" xml:space="preserve"><value>엠버</value></data>
+  <data name="Ocean" xml:space="preserve"><value>오션</value></data>
+  <data name="Gold" xml:space="preserve"><value>골드</value></data>
+  <data name="Score" xml:space="preserve"><value>점수</value></data>
+  <data name="Kills" xml:space="preserve"><value>킬</value></data>
+  <data name="Shots" xml:space="preserve"><value>발사</value></data>
+  <data name="Hits" xml:space="preserve"><value>명중</value></data>
+  <data name="Categories" xml:space="preserve"><value>카테고리</value></data>
+  <data name="Subcategories" xml:space="preserve"><value>하위 카테고리</value></data>
+  <data name="Scenarios" xml:space="preserve"><value>시나리오</value></data>
+  <data name="Replays" xml:space="preserve"><value>리플레이</value></data>
+  <data name="Sessions" xml:space="preserve"><value>세션</value></data>
+  <data name="Charts" xml:space="preserve"><value>차트</value></data>
+  <data name="Skill balance" xml:space="preserve"><value>스킬 밸런스</value></data>
+  <data name="Scenarios by rank" xml:space="preserve"><value>랭크별 시나리오</value></data>
+  <data name="Open Settings" xml:space="preserve"><value>설정 열기</value></data>
+  <data name="No ranked playlist" xml:space="preserve"><value>랭크 플레이리스트 없음</value></data>
+  <data name="Favorite scenarios" xml:space="preserve"><value>즐겨찾는 시나리오</value></data>
+  <data name="Favorite plays" xml:space="preserve"><value>즐겨찾는 플레이</value></data>
+  <data name="All time" xml:space="preserve"><value>전체</value></data>
+  <data name="Last 10" xml:space="preserve"><value>최근 10회</value></data>
+  <data name="Last 30 days" xml:space="preserve"><value>최근 30일</value></data>
+  <data name="Median" xml:space="preserve"><value>중앙값</value></data>
+  <data name="Consistency (CV)" xml:space="preserve"><value>일관성 (변동계수)</value></data>
+  <data name="Score distribution" xml:space="preserve"><value>점수 분포</value></data>
+  <data name="Personal best history" xml:space="preserve"><value>개인 최고 기록 추이</value></data>
+  <data name="Accuracy vs score" xml:space="preserve"><value>정확도와 점수</value></data>
+  <data name="Time of day" xml:space="preserve"><value>시간대</value></data>
+  <data name="Play order in a session" xml:space="preserve"><value>세션 내 플레이 순서</value></data>
+  <data name="1st" xml:space="preserve"><value>첫 번째</value></data>
+  <data name="2nd" xml:space="preserve"><value>두 번째</value></data>
+  <data name="3rd or later" xml:space="preserve"><value>세 번째 이후</value></data>
+  <data name="avg" xml:space="preserve"><value>평균</value></data>
+</root>

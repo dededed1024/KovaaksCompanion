@@ -19,13 +19,13 @@ public static class Backdrop
     public static void Apply(Window w) => w.SourceInitialized += (_, _) =>
     {
         var hwnd = new WindowInteropHelper(w).Handle;
-        int on = 1, mica = MicaBackdrop;
+        int on = Theme.IsLight ? 0 : 1, mica = MicaBackdrop;
         DwmSetWindowAttribute(hwnd, DwmUseImmersiveDarkMode, ref on, sizeof(int));
-        if (Environment.OSVersion.Version.Build < 22621) return; // keep opaque Bg
+        if (Theme.Current == "Black" || Environment.OSVersion.Version.Build < 22621) return; // keep opaque Bg
         if (DwmSetWindowAttribute(hwnd, DwmSystemBackdropType, ref mica, sizeof(int)) != 0) return;
         var m = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
         if (DwmExtendFrameIntoClientArea(hwnd, ref m) != 0) return;
         if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } ct) ct.BackgroundColor = Colors.Transparent;
-        w.Background = Brushes.Transparent;
+        w.SetResourceReference(Window.BackgroundProperty, "BgWash"); // theme tint over the Mica
     };
 }

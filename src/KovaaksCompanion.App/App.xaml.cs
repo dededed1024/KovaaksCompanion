@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Update;
 
 namespace KovaaksCompanion.App;
@@ -31,6 +32,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
         MiddleScroll.Register();
+        DispatcherUnhandledException += (_, a) => Unhandled("ui thread", a.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, a) => Unhandled("unhandled", a.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, a) => Unhandled("background task", a.Exception);
         _single =new Mutex(true, @"Local\KovaaksCompanion.SingleInstance", out var first);
         if (!first)
         {
@@ -58,6 +62,13 @@ public partial class App : Application
         _host = new AppHost(this);
         // Autostart launches with --tray; a manual launch opens the Stats window.
         _host.Start(showMain: !e.Args.Contains(Autostart.TrayArg));
+    }
+
+    static void Unhandled(string title, Exception? ex)
+    {
+        if (ex == null) return;
+        AppLog.Write("crash", $"{title}: {ex}");
+        ErrorReporter.Report(title, ex);
     }
 
     /// <summary>Waits for the previous instance to release the mutex; abandoned counts as acquired.</summary>
