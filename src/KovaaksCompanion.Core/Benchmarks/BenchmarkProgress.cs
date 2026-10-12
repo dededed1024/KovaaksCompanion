@@ -14,7 +14,8 @@ public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOn
     /// <summary>Progress (0..1) toward the next overall tier, from the playlist's rank calculation.</summary>
     public double OverallProgress { get; init; }
     public string RankName(int rank) => rank >= 0 && rank < RankNames.Count ? RankNames[rank] : "";
-    public string OverallRankName => RankName(OverallRank);
+    /// <summary>Empty while unranked, so the API's own label for tier 0 ("No Rank") never reaches the UI.</summary>
+    public string OverallRankName => OverallRank > 0 ? RankName(OverallRank) : "";
     public IEnumerable<ScenarioProgress> Scenarios => Subcategories.SelectMany(s => s.Scenarios);
 
     /// <summary>evxl's "Complete": every scenario is at or above the tier (lowest scenario rank), independent of the playlist's overall rank calculation.</summary>

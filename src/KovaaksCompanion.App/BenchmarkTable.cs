@@ -70,8 +70,22 @@ public sealed class BenchmarkTable : UserControl
 
     public BenchmarkTable() => Content = _stack;
 
-    /// <summary>Narrowest width at which every column keeps its minimum (scenario 170, score 76, % 44, tiers 44 each).</summary>
+    /// <summary>Narrowest width at which every column keeps its minimum (the longest scenario name, score 76, % 44, tiers 44 each).</summary>
     public double MinTableWidth { get; private set; }
+
+    /// <summary>Width of the scenario column: the longest scenario name of the table plus its margins, so no name is ever cut.</summary>
+    double _nameWidth = 170;
+
+    const double NameMargins = 16 + 8;
+
+    /// <summary>The width a scenario name needs at the table's own text size and weight. The text font is set on the window and inherited, so a loose element is measured with it explicitly.</summary>
+    static double NameWidth(string name)
+    {
+        var t = Cell(name, 12.5, Brushes.Transparent, HorizontalAlignment.Left, FontWeights.SemiBold, null, false);
+        t.FontFamily = (FontFamily)Application.Current.FindResource("UiFont");
+        t.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return t.DesiredSize.Width;
+    }
 
     static Brush Res(string key) => (Brush)Application.Current.FindResource(key);
 
@@ -156,9 +170,10 @@ public sealed class BenchmarkTable : UserControl
     {
         _stack.Children.Clear();
         _cards.Clear();
-        MinTableWidth = 170 + 76 + 44 + 44 * tierNames.Count + 2;
         var dim = Res("Dim");
         var shown = cats.Where(c => c.Subs.Any(s => s.Rows.Count > 0)).ToList();
+        _nameWidth = Math.Max(170, Math.Ceiling(shown.SelectMany(c => c.Subs).SelectMany(s => s.Rows).Select(r => NameWidth(r.Scenario)).DefaultIfEmpty(0).Max()) + NameMargins + 2);
+        MinTableWidth = _nameWidth + 76 + 44 + 44 * tierNames.Count + 2;
         if (shown.Count == 0)
         {
             _stack.Children.Add(new TextBlock { Text = L.T("No scenarios"), Foreground = dim, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 24) });
@@ -194,7 +209,7 @@ public sealed class BenchmarkTable : UserControl
         var stat = Summarize(cat, tiers);
         var subs = cat.Subs.Where(s => s.Rows.Count > 0).ToList();
         var g = new Grid();
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.2, GridUnitType.Star), MinWidth = 170 });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.2, GridUnitType.Star), MinWidth = _nameWidth });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
         for (var i = 0; i < tiers; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 44 });
@@ -215,13 +230,13 @@ public sealed class BenchmarkTable : UserControl
             {
                 CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Background = WithAlpha(rankBrush ?? dim, 0.15),
-                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANKED") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = ChartPaths.TextTone(rankBrush ?? dim) },
+                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANK") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = rankBrush == null ? Res("Fg") : ChartPaths.TextTone(rankBrush) },
             }, 1);
             var bar = new Grid { Width = 120, Height = 4, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
-            H(Cell(stat.Rank >= tiers ? L.T("Max") : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
+            H(Cell(stat.Rank >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
             if (ShowCaptureButton) H(CaptureButton(() => CategoryCaptureRequested?.Invoke(cat)), 5);
             Put(g, head, hr, 0, cols);
         }
@@ -278,6 +293,43 @@ public sealed class BenchmarkTable : UserControl
         return g;
     }
 
+    /// <summary>Slant of the seam between two tiers: how far the top edge sits right of the bottom edge.</summary>
+    const double TierSlant = 8;
+
+    /// <summary>Fill of one reached tier in a cell of the given size. A side shared with a neighbour is a diagonal (top right to bottom left) that may reach past the cell; an outer end is rounded.</summary>
+    static Geometry TierShape(double w, double h, bool first, bool last)
+    {
+        const double top = 3, round = 6;
+        var bottom = h - top;
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(new Point(first ? 2 + round : 1 + TierSlant, top), true, true);
+            if (last)
+            {
+                c.LineTo(new Point(w - 2 - round, top), true, false);
+                c.ArcTo(new Point(w - 2, top + round), new Size(round, round), 0, false, SweepDirection.Clockwise, true, false);
+                c.LineTo(new Point(w - 2, bottom - round), true, false);
+                c.ArcTo(new Point(w - 2 - round, bottom), new Size(round, round), 0, false, SweepDirection.Clockwise, true, false);
+            }
+            else
+            {
+                c.LineTo(new Point(w - 1 + TierSlant, top), true, false);
+                c.LineTo(new Point(w - 1, bottom), true, false);
+            }
+            if (first)
+            {
+                c.LineTo(new Point(2 + round, bottom), true, false);
+                c.ArcTo(new Point(2, bottom - round), new Size(round, round), 0, false, SweepDirection.Clockwise, true, false);
+                c.LineTo(new Point(2, top + round), true, false);
+                c.ArcTo(new Point(2 + round, top), new Size(round, round), 0, false, SweepDirection.Clockwise, true, false);
+            }
+            else c.LineTo(new Point(1, bottom), true, false);
+        }
+        g.Freeze();
+        return g;
+    }
+
     void BuildRow(Grid g, int r, BenchRow row, IReadOnlyList<string> tierNames, IReadOnlyList<Brush> tierBrushes, int cols)
     {
         var dim = Res("Dim");
@@ -290,15 +342,9 @@ public sealed class BenchmarkTable : UserControl
 
         void Add(UIElement e, int col) { e.IsHitTestVisible = false; Put(g, e, r, col); }
 
-        Add(Cell(row.Scenario, 12.5, unplayed ? dim : fg, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 8, 0)), 0);
+        Add(Cell(row.Scenario, 12.5, unplayed ? dim : fg, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 8, 0), false), 0);
 
         var score = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        if (row.Best != null && row.FromServer)
-            score.Children.Add(new TextBlock
-            {
-                Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = dim,
-                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0),
-            });
         score.Children.Add(Tab(new TextBlock
         {
             Text = row.Best is { } b ? b.ToString("0.#", CultureInfo.InvariantCulture) : "–", FontSize = 13, FontWeight = FontWeights.SemiBold,
@@ -306,7 +352,7 @@ public sealed class BenchmarkTable : UserControl
         }));
         Add(score, 1);
 
-        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? L.T("Max").ToUpperInvariant() : $"{pos.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
+        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100%" : $"{pos.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
 
         var sepText = Argb("#66FFFFFF");
         var nextText = Argb("#B3FFFFFF");
@@ -318,15 +364,14 @@ public sealed class BenchmarkTable : UserControl
             var next = has && k == rank + 1;
             if (reached && k <= tierBrushes.Count)
             {
-                // Only the outer ends are rounded and inset: neighbouring reached tiers meet square.
+                // The outer ends are rounded and inset by 2; where a tier continues into the next, the seam runs as a thin diagonal from top right to bottom left, so the middle tiers are parallelograms.
                 var first = k == 1;
                 var last = k == rank;
-                cell.Children.Add(new Border
-                {
-                    Margin = new Thickness(first ? 2 : 0, 3, last ? 2 : 0, 3),
-                    CornerRadius = new CornerRadius(first ? 6 : 0, last ? 6 : 0, last ? 6 : 0, first ? 6 : 0),
-                    Background = Vivid(tierBrushes[k - 1], Theme.IsLight ? 0.6 : 0.5),
-                });
+                var path = new System.Windows.Shapes.Path { Fill = Vivid(tierBrushes[k - 1], Theme.IsLight ? 0.6 : 0.5), IsHitTestVisible = false };
+                cell.SizeChanged += (_, e) => path.Data = TierShape(e.NewSize.Width, e.NewSize.Height, first, last);
+                var canvas = new Canvas { IsHitTestVisible = false };
+                canvas.Children.Add(path);
+                cell.Children.Add(canvas);
             }
             if (next && row.Best != null)
             {

@@ -34,7 +34,8 @@ await Promise.all(Array.from({ length: 4 }, async () => {
       const j = await get(id);
       if (!j || j.error || !j.categories) { failed.push(id); continue; }
       out[id] = {
-        r: (j.ranks ?? []).map(x => x.name.trim()),
+        // Tier 0 is the unranked label; the API calls it "No Rank" and the apps own UNRANK text replaces it.
+        r: (j.ranks ?? []).map((x, i) => i === 0 ? "Unrank" : x.name.trim()),
         c: Object.entries(j.categories).map(([name, c]) => ({
           n: name.trim(),
           s: Object.entries(c.scenarios).map(([sn, s]) => [sn, Number(s.leaderboard_id ?? 0) || 0, (s.rank_maxes ?? []).map(Number)]),

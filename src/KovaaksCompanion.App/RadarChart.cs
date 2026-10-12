@@ -55,7 +55,7 @@ public sealed class RadarChart : FrameworkElement
     {
         var v = Math.Clamp(value, 0, Rings);
         var rank = (int)Math.Floor(v + 1e-9);
-        var name = rank >= 1 && rank <= _tierNames.Count ? _tierNames[rank - 1] : L.T("UNRANKED");
+        var name = rank >= 1 && rank <= _tierNames.Count ? _tierNames[rank - 1] : L.T("UNRANK");
         return (name, rank >= Rings ? "" : $"+{(v - rank) * 100:0}%", rank >= 1 && rank <= _tierBrushes.Count ? ChartPaths.TextTone(_tierBrushes[rank - 1]) : dim);
     }
 
