@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
@@ -58,6 +58,16 @@ public static class SessionStore
             if (gap < bestGap) { best = i; bestGap = gap; }
         }
         return best;
+    }
+
+    /// <summary>Permanently deletes the session folder (video, trajectory, session.dat) of the run; false when it has none.</summary>
+    public static bool Delete(string root, string scenario, DateTime end)
+    {
+        var all = List(root);
+        var i = FindRun(all.Select(s => s.Info).ToList(), scenario, end);
+        if (i < 0) return false;
+        Directory.Delete(all[i].Folder, true);
+        return true;
     }
 
     /// <summary>Throws <see cref="SessionFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>

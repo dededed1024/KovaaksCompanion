@@ -48,6 +48,35 @@ public static class SignedFile
         File.Move(tmp, path, overwrite: true);
     }
 
+    /// <summary>XOR keystream over the whole container (magic, MAC and body): hides the structure from casual inspection at near-zero cost. Self-inverse.</summary>
+    static void Mask(byte[] data)
+    {
+        for (var i = 0; i < data.Length; i++) data[i] ^= (byte)(Key[i & 31] + (i >> 5));
+    }
+
+    /// <summary>Like <see cref="Write"/>, but the file is also masked so no part of it is recognizable. Read it back with <see cref="TryReadMasked"/>.</summary>
+    public static void WriteMasked(string path, byte[] payload)
+    {
+        var data = Pack(payload);
+        Mask(data);
+        var tmp = path + ".tmp";
+        File.WriteAllBytes(tmp, data);
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    /// <summary>Null when the file is missing, unreadable, unmasked (older format) or tampered.</summary>
+    public static byte[]? TryReadMasked(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var data = File.ReadAllBytes(path);
+            Mask(data);
+            return Unpack(data);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
     /// <summary>Null when the file is missing, unreadable or tampered.</summary>
     public static byte[]? TryRead(string path)
     {

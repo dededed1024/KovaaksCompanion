@@ -16,14 +16,16 @@ public sealed class SessionSaver
     readonly MouseRingBuffer _buffer;
     readonly Func<ClockAnchor> _anchor;
     readonly ClipExtractor _extract;
+    readonly Func<RunStats, bool> _isPersonalBest;
 
     public event Action<SessionInfo, string>? Saved;
     public event Action<string>? Error;
 
     /// <param name="anchor">Called once per run: QPC and the wall clock drift apart (sleep, clock sync), so a startup anchor misplaces the mouse window.</param>
-    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract)
+    /// <param name="isPersonalBest">Whether the run beat every earlier run of its scenario; marks the folder name with PB.</param>
+    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest)
     {
-        _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract;
+        _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest;
     }
 
     /// <summary>Fire-and-forget save on a thread-pool thread; failures go to <see cref="Error"/>.</summary>
@@ -55,7 +57,7 @@ public sealed class SessionSaver
 
     public async Task<string> SaveAsync(RunStats run, string csvPath, Action<double>? progress = null)
     {
-        var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario));
+        var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario, run.Score, _isPersonalBest(run)));
         Directory.CreateDirectory(folder);
 
         var startUtc = DateTime.SpecifyKind(run.Start, DateTimeKind.Local).ToUniversalTime();
