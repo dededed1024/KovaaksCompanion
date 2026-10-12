@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Benchmarks/playlists.json" LogicalName="playlists.json" />
+    <EmbeddedResource Include="Benchmarks/rank-data.json" LogicalName="rank-data.json" />
   </ItemGroup>
 
 </Project>

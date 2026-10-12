@@ -30,29 +30,16 @@ public static class Tier
     public static double ValueOf(double score, IReadOnlyList<double> maxes) =>
         maxes.Count == 0 ? 0 : Math.Clamp(TierOf(score, maxes).Value, 0, maxes.Count);
 
-    /// <summary>Best local score among runs that ended on or before the cutoff; null when there is none.</summary>
-    public static double? BestAsOf(IEnumerable<RunRecord> runs, DateTime cutoff)
-    {
-        double? best = null;
-        foreach (var r in runs)
-            if (r.End <= cutoff && (best == null || r.Score > best)) best = r.Score;
-        return best;
-    }
-
-    /// <summary>Like the local-only overload, but a scenario without local runs uses its cloud scores instead.</summary>
-    public static List<(DateTime Day, double Value)> HistoryWithCloud(IEnumerable<(IReadOnlyList<RunRecord> Runs, IReadOnlyList<CloudScore> Cloud, IReadOnlyList<double> Maxes)> scenarios) =>
-        History(scenarios.Select(s => (Runs: s.Runs.Count > 0 ? s.Runs : s.Cloud.Select(c => new RunRecord("", c.Time, c.Time, c.Score, 0, 0)).ToList(), s.Maxes)));
-
-    /// <summary>Average tier progress (<see cref="ValueOf"/>) over the given scenarios after each day with a local run of any of them; scenarios not yet played count as 0. Uses local runs only.</summary>
-    public static List<(DateTime Day, double Value)> History(IEnumerable<(IReadOnlyList<RunRecord> Runs, IReadOnlyList<double> Maxes)> scenarios)
+    /// <summary>Average tier progress (<see cref="ValueOf"/>) over the given scenarios after each day with a record (local or server) of any of them; scenarios not yet played count as 0.</summary>
+    public static List<(DateTime Day, double Value)> History(IEnumerable<(ScenarioStats Stats, IReadOnlyList<double> Maxes)> scenarios)
     {
         var included = scenarios.Where(s => s.Maxes.Count > 0).ToList();
-        var days = included.SelectMany(s => s.Runs).Select(r => r.End.Date).Distinct().Order().ToList();
+        var days = included.SelectMany(s => s.Stats.Records).Select(r => r.Time.Date).Distinct().Order().ToList();
         if (included.Count == 0 || days.Count == 0) return [];
         return days.Select(day =>
         {
             var cutoff = day.AddDays(1).AddTicks(-1);
-            return (day, included.Average(s => ValueOf(BestAsOf(s.Runs, cutoff) ?? 0, s.Maxes)));
+            return (day, included.Average(s => ValueOf(s.Stats.BestAsOf(cutoff) ?? 0, s.Maxes)));
         }).ToList();
     }
 }
