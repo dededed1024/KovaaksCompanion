@@ -54,16 +54,22 @@ public static class BugReport
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return false; }
     }
 
+    /// <summary>Lines of the log a report attaches.</summary>
+    public const int LogLines = 300;
+
+    /// <summary>The scrubbed log tail a report attaches, exactly as it is sent; null when there is no log.</summary>
+    public static string? LogPreview() => ReadLog() is { } log ? Scrub(AppLog.Tail(log, LogLines)) : null;
+
     // Best effort: the log is a separate post so a failure here never fails the report.
     static async Task SendLog(HttpClient http, CancellationToken ct)
     {
         try
         {
-            var log = ReadLog();
+            var log = LogPreview();
             if (log == null) return;
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent(JsonSerializer.Serialize(new { content = "Log" }), System.Text.Encoding.UTF8, "application/json"), "payload_json");
-            form.Add(new StringContent(Scrub(AppLog.Tail(log, 300)), System.Text.Encoding.UTF8, "text/plain"), "files[0]", "app.log");
+            form.Add(new StringContent(log, System.Text.Encoding.UTF8, "text/plain"), "files[0]", "app.log");
             using var res = await http.PostAsync(WebhookUrl, form, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { }

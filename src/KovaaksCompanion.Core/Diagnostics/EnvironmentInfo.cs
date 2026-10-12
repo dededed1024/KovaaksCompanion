@@ -5,6 +5,7 @@ using Microsoft.Win32;
 namespace KovaaksCompanion.Core.Diagnostics;
 
 /// <summary>Machine and settings summary attached to manual bug reports.</summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public static class EnvironmentInfo
 {
     /// <summary>App-supplied values (UI and settings) so Core stays UI-free.</summary>
