@@ -3,16 +3,17 @@
 KovaaksCompanion is an unofficial companion tool. It is not affiliated with, endorsed by, or sponsored by KovaaK Games, Inc.
 "KovaaK's" and related names and branding belong to KovaaK Games.
 
-## FFmpeg
+## OBS Studio (libobs)
 
-The app embeds an unmodified FFmpeg build and runs it as a separate process to record video.
+The app embeds parts of an unmodified OBS Studio build and loads libobs in its own process to capture the game window, record its audio, encode video and mix in hand cams.
 
-- Build: BtbN FFmpeg-Builds, FFmpeg n9.0.2 (`n9.0.2-22-g46d8f462ee`), win64 **LGPL** variant (built without GPL and nonfree libraries; no libx264).
-- License: GNU Lesser General Public License v3 (the build is configured with `--enable-version3`). License text: https://www.gnu.org/licenses/lgpl-3.0.html
-- This software uses code of FFmpeg licensed under the LGPLv3. FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
-- Binary used: https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-07-13-07 (file `ffmpeg-n9.0.2-22-g46d8f462ee-win64-lgpl-9.0.zip`, SHA-256 `3aa4a8161a29866fba8f8c87f07dc0a57c4c9bab42c0db84510b046ca80d41cd`).
-- Corresponding source: https://github.com/FFmpeg/FFmpeg at tag `n9.0.2`; build scripts and configuration: https://github.com/BtbN/FFmpeg-Builds
-- You can replace the embedded `ffmpeg.exe` (extracted to `%LOCALAPPDATA%\KovaaksCompanion\ffmpeg\`) with another build; the app prefers its own extracted copy, so remove that folder to make it fall back to an `ffmpeg.exe` found on your system.
+- Build: OBS Studio 32.2.2 for Windows x64, `OBS-Studio-32.2.2-Windows-x64.zip`, SHA-256 `4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1`, https://github.com/obsproject/obs-studio/releases/tag/32.2.2
+- Parts used: `obs.dll`, the Direct3D 11 graphics module, the window-capture, WASAPI, DirectShow, NVENC, Intel QSV and AMD AMF/AAC (obs-ffmpeg) plugins, their libraries and effect files. Nothing else from the release is shipped; `scripts/fetch-libobs.ps1` selects the files and checks the hash.
+- License: GNU General Public License v2 or later. License text: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html. KovaaksCompanion is therefore licensed under the GPL as well (see LICENSE).
+- Corresponding source: https://github.com/obsproject/obs-studio at tag `32.2.2`; this app's own source is in this repository.
+- OBS Studio is a trademark of its authors; this app is not affiliated with or endorsed by the OBS Project.
+- The release bundles FFmpeg libraries (LGPL v2.1 or later, `avcodec`, `avformat`, `avutil`, `swscale`, `swresample`, `avfilter`, `avdevice`) and x264 (GPL v2 or later): https://ffmpeg.org, https://www.videolan.org/developers/x264.html. Their sources are linked from the OBS build dependencies: https://github.com/obsproject/obs-deps
+- The runtime is unpacked to `%LOCALAPPDATA%\KovaaksCompanion\libobs\<key>\` where you can inspect it.
 - Hardware H.264 encoders are used (NVIDIA NVENC, AMD AMF, Intel QuickSync). There is no software encoding.
 
 ## Playlists

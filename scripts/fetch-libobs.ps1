@@ -18,7 +18,7 @@ if ((Test-Path $pack) -and (Test-Path $marker) -and -not $Force) {
 # Entries kept from the OBS zip: core, the D3D11 graphics module, FFmpeg libs the plugins link, the GPU probes the encoder plugins launch,
 # the effect files, and only the plugins used (window capture, WASAPI, DirectShow, NVENC, QSV, AMF + AAC in obs-ffmpeg).
 $keep = @(
-    '^bin/64bit/(avcodec-62|avdevice-62|avfilter-11|avformat-62|avutil-60|libobs-d3d11|libobs-winrt|librist|libx264-164|obs|srt|swresample-6|swscale-9|w32-pthreads|zlib)\.dll$',
+    '^bin/64bit/(avcodec-62|avdevice-62|avfilter-11|avformat-62|avutil-60|libcurl|libobs-d3d11|libobs-winrt|librist|libx264-164|obs|srt|swresample-6|swscale-9|w32-pthreads|zlib)\.dll$',
     '^bin/64bit/obs-(amf|nvenc|qsv)-test\.exe$',
     '^data/libobs/[^/]+\.effect$',
     '^obs-plugins/64bit/(obs-ffmpeg|obs-nvenc|obs-qsv11|win-capture|win-dshow|win-wasapi)\.dll$'

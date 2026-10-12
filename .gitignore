@@ -485,8 +485,8 @@ $RECYCLE.BIN/
 dist/
 samples/
 
-# fetched ffmpeg copy (embedded at build)
-src/KovaaksCompanion.App/ffmpeg/
+# fetched libobs pack (embedded at build)
+src/KovaaksCompanion.App/libobs/
 dist-release/
 
 # demo build output

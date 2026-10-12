@@ -26,12 +26,12 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
 
-  <!-- Bundled ffmpeg: fetched (pinned, hash-checked) by scripts/fetch-ffmpeg.ps1, embedded, unpacked at runtime by FfmpegBundle. A build without it fails. -->
-  <Target Name="EmbedFfmpeg" BeforeTargets="AssignTargetPaths;CreateManifestResourceNames">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\fetch-ffmpeg.ps1&quot;" ContinueOnError="true" />
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)\ffmpeg\ffmpeg.exe')" Text="ffmpeg\ffmpeg.exe is missing and scripts/fetch-ffmpeg.ps1 could not fetch it; the app must embed ffmpeg." />
+  <!-- Bundled libobs: OBS Studio's capture/encode parts, fetched (pinned, hash-checked) by scripts/fetch-libobs.ps1, embedded, unpacked at runtime by ObsBundle. A build without it fails. -->
+  <Target Name="EmbedLibobs" BeforeTargets="AssignTargetPaths;CreateManifestResourceNames">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\fetch-libobs.ps1&quot;" ContinueOnError="true" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\libobs\libobs.zip')" Text="libobs\libobs.zip is missing and scripts/fetch-libobs.ps1 could not fetch it; the app must embed libobs." />
     <ItemGroup>
-      <EmbeddedResource Include="ffmpeg\ffmpeg.exe" LogicalName="ffmpeg.exe" />
+      <EmbeddedResource Include="libobs\libobs.zip" LogicalName="libobs.zip" />
     </ItemGroup>
   </Target>
 

@@ -1,9 +1,9 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace KovaaksCompanion.Core;
 
-/// <summary>Finds the KovaaK's folder and ffmpeg.exe without user input. Environment access goes through seams for tests.</summary>
+/// <summary>Finds the KovaaK's folder without user input. Environment access goes through seams for tests.</summary>
 public static partial class PathDetector
 {
     [GeneratedRegex("\"path\"\\s+\"(?<p>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.IgnoreCase)]
@@ -56,48 +56,5 @@ public static partial class PathDetector
             if (IsKovaaks(dir, dirExists, fileExists)) return dir;
         }
         return null;
-    }
-
-    public static string? FindFfmpeg() => FindFfmpeg(File.Exists, Environment.GetEnvironmentVariable, FindWinGetPackages);
-
-    /// <summary>Ordered candidates: app-managed copy, next to the app, PATH, WinGet, scoop, chocolatey, C:\ffmpeg.</summary>
-    public static IEnumerable<string> FfmpegCandidates(Func<string, string?> env, Func<string, IEnumerable<string>> wingetPackages)
-    {
-        var local = env("LOCALAPPDATA") ?? "";
-        yield return Path.Combine(local, "KovaaksCompanion", "ffmpeg", "bin", "ffmpeg.exe");
-        yield return Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-        if (Environment.ProcessPath is { } exe && Path.GetDirectoryName(exe) is { } d) yield return Path.Combine(d, "ffmpeg.exe");
-        foreach (var p in (env("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            yield return Path.Combine(p.Trim('"'), "ffmpeg.exe");
-        yield return Path.Combine(local, "Microsoft", "WinGet", "Links", "ffmpeg.exe");
-        foreach (var w in wingetPackages(Path.Combine(local, "Microsoft", "WinGet", "Packages"))) yield return w;
-        yield return Path.Combine(env("USERPROFILE") ?? "", "scoop", "shims", "ffmpeg.exe");
-        yield return @"C:\ProgramData\chocolatey\bin\ffmpeg.exe";
-        yield return @"C:\ffmpeg\bin\ffmpeg.exe";
-    }
-
-    public static string? FindFfmpeg(Func<string, bool> fileExists, Func<string, string?> env, Func<string, IEnumerable<string>> wingetPackages)
-    {
-        foreach (var c in FfmpegCandidates(env, wingetPackages))
-        {
-            try { if (c.Length > 0 && Path.IsPathRooted(c) && fileExists(c)) return c; }
-            catch (ArgumentException) { }
-        }
-        return null;
-    }
-
-    /// <summary>Packages\*ffmpeg*\bin\ffmpeg.exe and Packages\*ffmpeg*\*\bin\ffmpeg.exe (depth capped).</summary>
-    static IEnumerable<string> FindWinGetPackages(string packages)
-    {
-        if (!Directory.Exists(packages)) yield break;
-        string[] pkgs;
-        try { pkgs = Directory.GetDirectories(packages, "*ffmpeg*"); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { yield break; }
-        foreach (var pkg in pkgs)
-        {
-            yield return Path.Combine(pkg, "bin", "ffmpeg.exe");
-            string[] subs;
-            try { subs = Directory.GetDirectories(pkg); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
-            foreach (var sub in subs) yield return Path.Combine(sub, "bin", "ffmpeg.exe");
-        }
     }
 }
