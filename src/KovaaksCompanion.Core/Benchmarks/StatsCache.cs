@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using KovaaksCompanion.Core.Library;
 
 namespace KovaaksCompanion.Core.Benchmarks;
 
@@ -63,12 +64,25 @@ public sealed class StatsCache(string folder)
     const string DeletedFile = "deleted.dat";
 
     /// <summary>Remembers a deleted run: it stays in the score history like a server score, and <see cref="HiddenRuns"/> keeps it out of run lists.</summary>
-    public void HideRun(string scenario, DateTime end, double score) =>
+    public void HideRun(string scenario, DateTime end, double score, RunRecord? record = null)
+    {
         Update<List<CloudScore>>(DeletedFile, d =>
         {
             if (!d.TryGetValue(scenario, out var l)) d[scenario] = l = [];
             if (!l.Any(s => s.Time == end)) l.Add(new CloudScore(end, score));
         });
+        if (record != null)
+            Update<List<RunRecord>>(ArchivedFile, d =>
+            {
+                if (!d.TryGetValue(scenario, out var l)) d[scenario] = l = [];
+                if (!l.Any(r => r.End == end)) l.Add(record);
+            });
+    }
+
+    const string ArchivedFile = "deletedruns.dat";
+
+    /// <summary>Full statistics (accuracy, kills, drift, sens) of the deleted runs, so they still count after the session folder is gone.</summary>
+    public List<RunRecord> ArchivedRuns() => Read<List<RunRecord>>(ArchivedFile).SelectMany(p => p.Value).ToList();
 
     /// <summary>Scores of deleted runs per scenario.</summary>
     public Dictionary<string, List<CloudScore>> DeletedScores() => Read<List<CloudScore>>(DeletedFile);

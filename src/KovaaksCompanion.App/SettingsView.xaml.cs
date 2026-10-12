@@ -55,8 +55,10 @@ public partial class SettingsView : UserControl
         foreach (RadioButton r in QualityBar.Children) r.IsChecked = (string)r.Tag == s.VideoQuality.ToString();
         FpsBox.Text = s.VideoFps.ToString();
         StorageBox.Text = s.StorageLimitGb + GbSuffix;
+        AgeBox.Text = s.MaxAgeDays + DaySuffix;
         DeleteBeaten.IsChecked = s.DeleteBeatenRuns;
         KeepPb.IsChecked = s.KeepPersonalBests;
+        PbOnly.IsChecked = s.VideoPbOnly;
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
         CamOn.IsChecked = s.HandCamEnabled;
@@ -140,9 +142,26 @@ public partial class SettingsView : UserControl
         OnCommit(sender, e);
     }
 
+    const string DaySuffix = " d";
+
+    bool AgeValid(out int days) => int.TryParse(AgeBox.Text.Replace(DaySuffix, "").Trim(), out days) && days >= 0;
+
+    void OnAgeFocus(object sender, RoutedEventArgs e)
+    {
+        if (AgeBox.Text.EndsWith(DaySuffix)) AgeBox.Text = AgeBox.Text[..^DaySuffix.Length];
+        AgeBox.CaretIndex = AgeBox.Text.Length;
+    }
+
+    void OnAgeLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (AgeValid(out var days)) AgeBox.Text = days + DaySuffix;
+        OnCommit(sender, e);
+    }
+
     void Validate(object? sender, RoutedEventArgs? e)
     {
         Check(StorageBox, StorageError, StorageValid(out _), L.T("Enter 0 or more"));
+        Check(AgeBox, AgeError, AgeValid(out _), L.T("Enter 0 or more"));
         Check(Steam, SteamError, SteamValid(), L.T("Must be 17 digits"));
         Check(FpsBox, FpsError, FpsValid(out _), L.T("Enter 30–1000"));
     }
@@ -171,8 +190,10 @@ public partial class SettingsView : UserControl
                 && Enum.TryParse<VideoQuality>(t, out var q) ? q : cur.VideoQuality,
             VideoFps = FpsValid(out var fps) ? fps : cur.VideoFps,
             StorageLimitGb = StorageValid(out var gb) ? gb : cur.StorageLimitGb,
+            MaxAgeDays = AgeValid(out var days) ? days : cur.MaxAgeDays,
             DeleteBeatenRuns = DeleteBeaten.IsChecked == true,
             KeepPersonalBests = KeepPb.IsChecked == true,
+            VideoPbOnly = PbOnly.IsChecked == true,
             HandCamEnabled = CamOn.IsChecked == true,
             HandCamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
                 && Enum.TryParse<HandCamSave>(cs, out var hs) ? hs : cur.HandCamSave,
@@ -367,6 +388,7 @@ public partial class SettingsView : UserControl
     void OnAutoStartLabel(object sender, MouseButtonEventArgs e) => AutoStart.IsChecked = AutoStart.IsChecked != true;
     void OnBeatenLabel(object sender, MouseButtonEventArgs e) => DeleteBeaten.IsChecked = DeleteBeaten.IsChecked != true;
 
+    void OnPbOnlyLabel(object sender, MouseButtonEventArgs e) => PbOnly.IsChecked = PbOnly.IsChecked != true;
     void OnKeepPbLabel(object sender, MouseButtonEventArgs e) => KeepPb.IsChecked = KeepPb.IsChecked != true;
     void OnErrorReportsLabel(object sender, MouseButtonEventArgs e) => ErrorReports.IsChecked = ErrorReports.IsChecked != true;
 
@@ -411,7 +433,7 @@ public partial class SettingsView : UserControl
         _reporting = true;
         ReportBtn.IsEnabled = false;
         if (DateTime.UtcNow - _lastReport < TimeSpan.FromSeconds(60))
-            ReportBtn.Content = L.T("Wait a minute");
+            ReportBtn.Content = L.T("Please try again in a minute");
         else
         {
             ReportBtn.Content = L.T("Sending…");
@@ -430,6 +452,11 @@ public partial class SettingsView : UserControl
     void OnReportOpen(object sender, RoutedEventArgs e)
     {
         ResetReport();
+        // The information exactly as the report carries it: the header line, the environment and the scrubbed log tail.
+        ReportInfo.Text = BugReport.Scrub(L.F("Version {0}", Current.ToString(3)) + "\n" + DescribeEnvironment());
+        var log = BugReport.LogPreview();
+        ReportLog.Text = log ?? "";
+        ReportLogPanel.Visibility = string.IsNullOrWhiteSpace(log) ? Visibility.Collapsed : Visibility.Visible;
         ReportOverlay.Visibility = Visibility.Visible;
         ReportText.Focus();
     }

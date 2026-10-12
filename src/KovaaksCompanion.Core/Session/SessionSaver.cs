@@ -17,15 +17,17 @@ public sealed class SessionSaver
     readonly Func<ClockAnchor> _anchor;
     readonly ClipExtractor _extract;
     readonly Func<RunStats, bool> _isPersonalBest;
+    readonly Func<bool>? _pbOnly;
 
     public event Action<SessionInfo, string>? Saved;
     public event Action<string>? Error;
 
     /// <param name="anchor">Called once per run: QPC and the wall clock drift apart (sleep, clock sync), so a startup anchor misplaces the mouse window.</param>
     /// <param name="isPersonalBest">Whether the run beat every earlier run of its scenario; marks the folder name with PB.</param>
-    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest)
+    /// <param name="pbOnly">Read per run: when true, only a personal best keeps its video clip.</param>
+    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest, Func<bool>? pbOnly = null)
     {
-        _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest;
+        _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest; _pbOnly = pbOnly;
     }
 
     /// <summary>Fire-and-forget save on a thread-pool thread; failures go to <see cref="Error"/>.</summary>
@@ -57,16 +59,21 @@ public sealed class SessionSaver
 
     public async Task<string> SaveAsync(RunStats run, string csvPath, Action<double>? progress = null)
     {
-        var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario, run.Score, _isPersonalBest(run)));
+        var pb = _isPersonalBest(run); // asked once: it also records the run as the new best
+        var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario, run.Score, pb));
         Directory.CreateDirectory(folder);
 
         var startUtc = DateTime.SpecifyKind(run.Start, DateTimeKind.Local).ToUniversalTime();
         var endUtc = DateTime.SpecifyKind(run.End, DateTimeKind.Local).ToUniversalTime();
 
         ClipResult? clip = null;
-        try { clip = await _extract(startUtc, endUtc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
-        catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
-        var videoCovers = clip != null && clip.ClipStartUtc <= startUtc && clip.ClipStartUtc + clip.Duration >= endUtc;
+        var skipVideo = _pbOnly?.Invoke() == true && !pb; // "save video for PB only": the clip of any other run is never cut
+        if (!skipVideo)
+        {
+            try { clip = await _extract(startUtc, endUtc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
+            catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
+        }
+        var videoCovers = skipVideo || clip != null && clip.ClipStartUtc <= startUtc && clip.ClipStartUtc + clip.Duration >= endUtc;
 
         var built = TrajectoryBuilder.Build(run, _buffer, _anchor());
         if (built.Trajectory != null)

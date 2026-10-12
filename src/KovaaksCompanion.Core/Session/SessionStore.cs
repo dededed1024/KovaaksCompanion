@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using KovaaksCompanion.Core.Library;
 using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
@@ -60,14 +61,44 @@ public static class SessionStore
         return best;
     }
 
-    /// <summary>Permanently deletes the session folder (video, trajectory, session.dat) of the run; false when it has none.</summary>
-    public static bool Delete(string root, string scenario, DateTime end)
+    /// <summary>
+    /// Permanently deletes the session folder (videos, trajectory, session.dat, CSV and perf copies) of the run; false when it has none.
+    /// <paramref name="record"/> is the run's statistics read from the folder before it is gone (null when unreadable).
+    /// </summary>
+    public static bool Delete(string root, string scenario, DateTime end, out RunRecord? record)
     {
+        record = null;
         var all = List(root);
         var i = FindRun(all.Select(s => s.Info).ToList(), scenario, end);
         if (i < 0) return false;
+        record = ReadRecord(all[i].Folder);
         Directory.Delete(all[i].Folder, true);
         return true;
+    }
+
+    /// <summary>The statistics of the session's CSV copy, perf and trajectory (a stats-folder scan yields all but the speed), or null when the folder has no readable CSV.</summary>
+    public static RunRecord? ReadRecord(string folder)
+    {
+        try
+        {
+            var csv = Directory.GetFiles(folder, "*Stats.csv").FirstOrDefault();
+            if (csv is null) return null;
+            PerfSummary? perf = null;
+            if (Directory.GetFiles(folder, SessionFolder.PerfPattern).FirstOrDefault() is { } p)
+            {
+                try { perf = PerfSummary.From(PerfParser.Parse(File.ReadAllBytes(p))); }
+                catch (PerfFormatException) { }
+            }
+            RunSpeed? speed = null;
+            var trajPath = Path.Combine(folder, SessionFolder.TrajectoryFile);
+            if (File.Exists(trajPath))
+            {
+                try { speed = MouseSpeedStats.Analyze(TrajectorySerializer.Deserialize(File.ReadAllBytes(trajPath))); }
+                catch (TrajectoryFormatException) { }
+            }
+            return RunRecord.From(StatsCsvParser.Parse(csv, File.ReadAllText(csv)), perf) with { Speed = speed };
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or ArgumentException) { return null; }
     }
 
     /// <summary>Throws <see cref="SessionFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>

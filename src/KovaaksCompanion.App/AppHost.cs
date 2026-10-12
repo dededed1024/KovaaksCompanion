@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using KovaaksCompanion.Core;
@@ -131,13 +131,14 @@ public sealed class AppHost : IDisposable
             lock (_cleanGate)
             {
                 var s = _settings;
-                if (!s.DeleteBeatenRuns && s.StorageLimitGb <= 0) return false;
+                if (!s.DeleteBeatenRuns && s.StorageLimitGb <= 0 && s.MaxAgeDays <= 0) return false;
                 var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet());
                 var cache = new KovaaksCompanion.Core.Benchmarks.StatsCache(s.CacheFolder);
                 var all = StorageCleaner.Scan(s.SessionsFolder);
                 var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, cache.DeletedScores()).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
                 bool Keep(SessionInfo i) => favs.Contains(UiState.RunKey(i.Scenario, i.End)) || pbs.Contains(UiState.RunKey(i.Scenario, i.End));
                 var victims = s.DeleteBeatenRuns ? StorageCleaner.Superseded(all, Keep) : [];
+                victims.AddRange(StorageCleaner.Expired(all.Except(victims).ToList(), s.MaxAgeDays, DateTime.Now, Keep));
                 victims.AddRange(StorageCleaner.OverLimit(all.Except(victims).ToList(), StorageCleaner.LimitBytes(s.StorageLimitGb), Keep));
                 var n = StorageCleaner.Delete(victims, cache);
                 if (n > 0) AppLog.Write("storage", $"deleted {n} session folder(s)");
@@ -148,7 +149,7 @@ public sealed class AppHost : IDisposable
         catch (Exception e) { AppLog.Write("storage", "cleanup failed: " + e.Message); return false; }
     }
 
-    /// <summary>Deletes the run's session folder for good, keeps its score in the cache like a server score and hides it from the lists.</summary>
+    /// <summary>Deletes the run's session folder for good, keeps its score and statistics in the cache and hides it from the lists.</summary>
     public async void DeleteRun(string scenario, DateTime end, double score)
     {
         var s = _settings;
@@ -156,8 +157,8 @@ public sealed class AppHost : IDisposable
         {
             await Task.Run(() =>
             {
-                SessionStore.Delete(s.SessionsFolder, scenario, end);
-                new KovaaksCompanion.Core.Benchmarks.StatsCache(s.CacheFolder).HideRun(scenario, end, score);
+                SessionStore.Delete(s.SessionsFolder, scenario, end, out var record);
+                new KovaaksCompanion.Core.Benchmarks.StatsCache(s.CacheFolder).HideRun(scenario, end, score, record);
             });
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
@@ -184,7 +185,7 @@ public sealed class AppHost : IDisposable
 
         _saver = new SessionSaver(_settings.SessionsFolder, _buffer, ClockAnchor.Now,
             (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null),
-            IsPersonalBest);
+            IsPersonalBest, () => _settings.VideoPbOnly);
         _saver.Error += SetError;
         _saver.Saved += (info, folder) =>
         {
@@ -301,7 +302,7 @@ public sealed class AppHost : IDisposable
             OpenMain();
         }
         else { if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal; _main.Activate(); }
-        if (page != null) _main.ShowPage(page);
+        if (page != null) _main?.ShowPage(page);
         OfferUpdate();
     });
 
@@ -341,11 +342,11 @@ public sealed class AppHost : IDisposable
         _main!.ShowSession(session, origin);
     });
 
-    /// <summary>Opens the replay of a past run; false when that run was not recorded.</summary>
-    public bool ShowRun(string scenario, DateTime end) => _app.Dispatcher.Invoke(() =>
+    /// <summary>Opens the replay of a past run; false when that run was not recorded, unless <paramref name="withoutRecording"/> opens it selected anyway.</summary>
+    public bool ShowRun(string scenario, DateTime end, bool withoutRecording = false) => _app.Dispatcher.Invoke(() =>
     {
         ShowMain();
-        return _main!.ShowRun(scenario, end);
+        return _main!.ShowRun(scenario, end, withoutRecording);
     });
 
     public void SaveUi()
@@ -366,7 +367,7 @@ public sealed class AppHost : IDisposable
             _app.Dispatcher.BeginInvoke(RebuildMain);
         }
         else if (s.UiScale != old.UiScale) _app.Dispatcher.Invoke(() => _main?.ApplyScale(s.UiScale));
-        if (s.StorageLimitGb != old.StorageLimitGb || s.DeleteBeatenRuns != old.DeleteBeatenRuns || s.KeepPersonalBests != old.KeepPersonalBests)
+        if (s.StorageLimitGb != old.StorageLimitGb || s.MaxAgeDays != old.MaxAgeDays || s.DeleteBeatenRuns != old.DeleteBeatenRuns || s.KeepPersonalBests != old.KeepPersonalBests)
             _ = Task.Run(() => Cleanup(notify: true));
     }
 

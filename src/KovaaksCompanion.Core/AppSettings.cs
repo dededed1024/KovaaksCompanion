@@ -26,8 +26,13 @@ public sealed record AppSettings
     /// <summary>Maximum recording frame rate.</summary>
     public int VideoFps { get; init; } = Video.VideoOptions.DefaultFps;
 
+    /// <summary>Keep the video only of runs that set a personal best; the clip of any other run is not saved (its stats and mouse trail still are).</summary>
+    public bool VideoPbOnly { get; init; }
+
     /// <summary>Maximum size of the sessions folder in GB; 0 = unlimited.</summary>
     public int StorageLimitGb { get; init; }
+    /// <summary>Maximum age of a replay in days; older ones are deleted. 0 = unlimited.</summary>
+    public int MaxAgeDays { get; init; }
     /// <summary>Delete the replay of an earlier run when a later run of the same scenario in the same play session scores higher.</summary>
     public bool DeleteBeatenRuns { get; init; }
     /// <summary>Never delete the replay of a personal best, whatever the cleanup rules say.</summary>

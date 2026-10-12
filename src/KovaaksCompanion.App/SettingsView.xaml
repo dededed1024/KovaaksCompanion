@@ -97,9 +97,139 @@
                                         </UniformGrid>
                                     </Border>
                                 </Grid>
-                                <StackPanel Grid.Row="1" Margin="0,16,0,0">
-                                    <TextBlock Style="{StaticResource Caption}" Text="{app:Loc Theme}"/>
-                                    <WrapPanel x:Name="ThemeBar"/>
+                                <Grid Grid.Row="1" Grid.Column="2" Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{app:Loc Theme}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                    <WrapPanel x:Name="ThemeBar" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Recording'}"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel x:Name="RecordingSection">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource ColDivider}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{app:Loc 'Recording quality'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                    <Border Grid.Column="1" Width="300" Style="{StaticResource SegmentTrack}">
+                                        <UniformGrid x:Name="QualityBar" Rows="1">
+                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Low'}" Tag="Low" Checked="OnQuality"/>
+                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Medium'}" Tag="Medium" Checked="OnQuality"/>
+                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'High'}" Tag="High" Checked="OnQuality"/>
+                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Ultra'}" Tag="Ultra" Checked="OnQuality"/>
+                                        </UniformGrid>
+                                    </Border>
+                                </Grid>
+                                <StackPanel Grid.Column="2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{app:Loc 'Max FPS'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                        <TextBox Grid.Column="1" x:Name="FpsBox" Width="100" MaxLength="4" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
+                                    </Grid>
+                                    <TextBlock x:Name="FpsError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
+                                </StackPanel>
+                            </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Storage'}"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel x:Name="StorageSection">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource ColDivider}"/>
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{app:Loc 'Max storage (0 GB = unlimited)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                        <TextBox Grid.Column="1" x:Name="StorageBox" Width="100" MaxLength="8" TextChanged="Validate" GotKeyboardFocus="OnStorageFocus" LostFocus="OnStorageLostFocus" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
+                                    </Grid>
+                                    <TextBlock x:Name="StorageError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{app:Loc 'Max age (0 days = unlimited)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                        <TextBox Grid.Column="1" x:Name="AgeBox" Width="100" MaxLength="5" TextChanged="Validate" GotKeyboardFocus="OnAgeFocus" LostFocus="OnAgeLostFocus" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
+                                    </Grid>
+                                    <TextBlock x:Name="AgeError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{app:Loc 'Save video for PB only'}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnPbOnlyLabel"/>
+                                    <CheckBox Grid.Column="1" x:Name="PbOnly" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
+                                </Grid>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{app:Loc 'Keep personal best replays'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnKeepPbLabel"/>
+                                    <CheckBox Grid.Column="1" x:Name="KeepPb" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
+                                </Grid>
+                                <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                <TextBlock Text="{app:Loc 'Keep only the best run video in a session'}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnBeatenLabel"/>
+                                <CheckBox Grid.Column="1" x:Name="DeleteBeaten" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
+                                </Grid>
+                                </StackPanel>
+                            </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Webcam'}"/>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel x:Name="CamSection">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Border x:Name="CamDivider" Style="{StaticResource ColDivider}" Visibility="Collapsed"/>
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{app:Loc 'Webcam'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnCamLabel"/>
+                                        <CheckBox Grid.Column="1" x:Name="CamOn" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCamToggle" Unchecked="OnCamToggle"/>
+                                    </Grid>
+                                    <StackPanel x:Name="CamLeft" Visibility="Collapsed">
+                                        <Border Width="240" Height="135" Margin="0,12,0,0" HorizontalAlignment="Center" CornerRadius="6" Background="{DynamicResource Panel}" ClipToBounds="True">
+                                            <Canvas x:Name="CamCanvas"/>
+                                        </Border>
+                                        <TextBlock Text="{app:Loc 'Video save'}" Foreground="{DynamicResource Fg}" Margin="4,16,0,4"/>
+                                        <StackPanel x:Name="CamSaveBar" Margin="4,0,0,0">
+                                            <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'One video (game + webcam)'}" Tag="Composite" Checked="OnCamSave"/>
+                                            <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'Separate videos (game and webcam)'}" Tag="Separate" Checked="OnCamSave"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel x:Name="CamPanel" Grid.Column="2" Visibility="Collapsed">
+                                    <StackPanel x:Name="CamCards"/>
+                                    <Button x:Name="CamAdd" Content="{app:Loc 'Add webcam'}" Margin="0,14,0,0" HorizontalAlignment="Stretch" Click="OnCamAdd"/>
                                 </StackPanel>
                             </Grid>
                                 </StackPanel>
@@ -153,117 +283,23 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{app:Loc 'Send error reports automatically (anonymous)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnErrorReportsLabel"/>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{app:Loc 'Send anonymous error reports automatically'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnErrorReportsLabel"/>
+                                            <Border Width="18" Height="18" Margin="8,0,0,0" CornerRadius="9" BorderBrush="{DynamicResource Dim}" BorderThickness="1" Background="Transparent" Cursor="Help" VerticalAlignment="Center"
+                                                    ToolTipService.InitialShowDelay="0" ToolTipService.ShowDuration="60000">
+                                                <TextBlock Text="i" Foreground="{DynamicResource Dim}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Border.ToolTip>
+                                                    <StackPanel MaxWidth="420">
+                                                        <TextBlock Text="{app:Loc 'Example of a sent report'}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                                        <TextBlock FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                                                                   Text="**Error** v1.7.0 · replay media&#10;System.InvalidOperationException: Cannot play the file.&#10;   at KovaaksCompanion.App.ReplayView.OnMediaFailed(...)&#10;   at System.Windows.Media.MediaPlayer.OnMediaFailed(...)"/>
+                                                        <TextBlock Text="{app:Loc 'Only the error type, message and stack trace are sent. Your user name and profile path are hidden.'}" Foreground="{DynamicResource Dim}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                                    </StackPanel>
+                                                </Border.ToolTip>
+                                            </Border>
+                                        </StackPanel>
                                         <CheckBox Grid.Column="1" x:Name="ErrorReports" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
                                     </Grid>
-                                </StackPanel>
-                            </Grid>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Recording'}"/>
-                            <Border Style="{StaticResource SectionCard}">
-                                <StackPanel x:Name="RecordingSection">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border Style="{StaticResource ColDivider}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{app:Loc 'Recording quality'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
-                                    <Border Grid.Column="1" Width="300" Style="{StaticResource SegmentTrack}">
-                                        <UniformGrid x:Name="QualityBar" Rows="1">
-                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Low'}" Tag="Low" Checked="OnQuality"/>
-                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Medium'}" Tag="Medium" Checked="OnQuality"/>
-                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'High'}" Tag="High" Checked="OnQuality"/>
-                                            <RadioButton Style="{StaticResource Segment}" Content="{app:Loc 'Ultra'}" Tag="Ultra" Checked="OnQuality"/>
-                                        </UniformGrid>
-                                    </Border>
-                                </Grid>
-                                <StackPanel Grid.Column="2">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{app:Loc 'Max FPS'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
-                                        <TextBox Grid.Column="1" x:Name="FpsBox" Width="100" MaxLength="4" TextChanged="Validate" LostFocus="OnCommit" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
-                                    </Grid>
-                                    <TextBlock x:Name="FpsError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
-                                </StackPanel>
-                            </Grid>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Storage'}"/>
-                            <Border Style="{StaticResource SectionCard}">
-                                <StackPanel x:Name="StorageSection">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                <Border Style="{StaticResource ColDivider}" Grid.RowSpan="2"/>
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{app:Loc 'Max storage (0 GB = unlimited)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
-                                        <TextBox Grid.Column="1" x:Name="StorageBox" Width="100" MaxLength="8" TextChanged="Validate" GotKeyboardFocus="OnStorageFocus" LostFocus="OnStorageLostFocus" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
-                                    </Grid>
-                                    <TextBlock x:Name="StorageError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>
-                                </StackPanel>
-                                <Grid Grid.Column="2" VerticalAlignment="Top">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{app:Loc 'Keep personal best replays'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnKeepPbLabel"/>
-                                    <CheckBox Grid.Column="1" x:Name="KeepPb" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
-                                </Grid>
-                                <Grid Grid.Row="1" Margin="0,14,0,0">
-                                <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                <TextBlock Text="{app:Loc 'Keep only the best run video in a session'}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnBeatenLabel"/>
-                                <CheckBox Grid.Column="1" x:Name="DeleteBeaten" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
-                                </Grid>
-                            </Grid>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Style="{StaticResource SectionTitle}" Text="{app:Loc 'Webcam'}"/>
-                            <Border Style="{StaticResource SectionCard}">
-                                <StackPanel x:Name="CamSection">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                <Border x:Name="CamDivider" Style="{StaticResource ColDivider}" Visibility="Collapsed"/>
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{app:Loc 'Webcam'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnCamLabel"/>
-                                        <CheckBox Grid.Column="1" x:Name="CamOn" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCamToggle" Unchecked="OnCamToggle"/>
-                                    </Grid>
-                                    <StackPanel x:Name="CamLeft" Visibility="Collapsed">
-                                        <TextBlock Text="{app:Loc 'Video save'}" Foreground="{DynamicResource Fg}" Margin="4,12,0,4"/>
-                                        <StackPanel x:Name="CamSaveBar" Margin="4,0,0,0">
-                                            <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'One video (game + webcam)'}" Tag="Composite" Checked="OnCamSave"/>
-                                            <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'Separate videos (game and webcam)'}" Tag="Separate" Checked="OnCamSave"/>
-                                        </StackPanel>
-                                        <Border Width="240" Height="135" Margin="0,16,0,0" HorizontalAlignment="Center" CornerRadius="6" Background="{DynamicResource Panel}" ClipToBounds="True">
-                                            <Canvas x:Name="CamCanvas"/>
-                                        </Border>
-                                    </StackPanel>
-                                </StackPanel>
-                                <StackPanel x:Name="CamPanel" Grid.Column="2" Visibility="Collapsed">
-                                    <StackPanel x:Name="CamCards"/>
-                                    <Button x:Name="CamAdd" Content="{app:Loc 'Add webcam'}" Margin="0,14,0,0" HorizontalAlignment="Stretch" Click="OnCamAdd"/>
                                 </StackPanel>
                             </Grid>
                                 </StackPanel>
@@ -284,10 +320,9 @@
                                 <TextBlock x:Name="VersionCaption" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="4,0,0,0"/>
                                 <Button Grid.Column="1" x:Name="CheckBtn" Content="{app:Loc 'Check for updates'}" Click="OnCheckUpdate"/>
                             </Grid>
-
-                            <StackPanel x:Name="ReportPanel" Visibility="Collapsed" Margin="0,14,0,0">
-                                <Button x:Name="ReportOpenBtn" Content="{app:Loc 'Report a bug'}" HorizontalAlignment="Right" Click="OnReportOpen"/>
-                            </StackPanel>
+                                </StackPanel>
+                                <StackPanel x:Name="ReportPanel" Grid.Column="2" Visibility="Collapsed" VerticalAlignment="Center">
+                                    <Button x:Name="ReportOpenBtn" Content="{app:Loc 'Report a bug'}" HorizontalAlignment="Right" Click="OnReportOpen"/>
                                 </StackPanel>
                             </Grid>
 
@@ -312,10 +347,21 @@
                     Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Edge}" BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="{app:Loc 'Report a bug'}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"/>
-                    <TextBox x:Name="ReportText" Margin="0,14,0,0" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxLength="1500"
-                             VerticalScrollBarVisibility="Auto" TextChanged="OnReportText"/>
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,10,0,0"
-                               Text="{app:Loc 'Your OS information is collected with this report.'}"/>
+                    <TextBox x:Name="ReportText" Margin="0,14,0,0" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxLength="1500" Padding="12,10"
+                             VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" TextChanged="OnReportText"/>
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,14,0,6"
+                               Text="{app:Loc 'The following information is sent together with this report.'}"/>
+                    <Border CornerRadius="12" Background="{DynamicResource Panel}" Padding="12,10">
+                        <StackPanel>
+                            <TextBlock x:Name="ReportInfo" FontSize="12" Foreground="{DynamicResource Dim}" TextWrapping="Wrap"/>
+                            <StackPanel x:Name="ReportLogPanel" Margin="0,10,0,0">
+                                <TextBlock Text="{app:Loc 'Application log (last 300 lines)'}" FontSize="12" Foreground="{DynamicResource Fg}"/>
+                                <ScrollViewer MaxHeight="110" Margin="0,4,0,0" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="ReportLog" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource Dim}"/>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
                         <Button Content="{app:Loc 'Cancel'}" Margin="0,0,8,0" Click="OnReportCancel"/>
                         <Button x:Name="ReportBtn" Content="{app:Loc 'Send'}" IsEnabled="False" Click="OnReport"/>

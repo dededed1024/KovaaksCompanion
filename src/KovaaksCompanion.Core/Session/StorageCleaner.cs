@@ -92,15 +92,20 @@ public static class StorageCleaner
         return result;
     }
 
+    /// <summary>Sessions that ended more than <paramref name="days"/> days before <paramref name="now"/> (0 = no limit), except the ones <paramref name="keep"/> accepts.</summary>
+    public static List<StoredSession> Expired(IReadOnlyList<StoredSession> all, int days, DateTime now, Func<SessionInfo, bool> keep) =>
+        days <= 0 ? [] : all.Where(s => s.Info.End < now.AddDays(-days) && !keep(s.Info)).ToList();
+
     /// <summary>Permanently deletes the session folders and keeps each run's score in the cache like a server score. Returns how many were deleted; a folder in use is skipped.</summary>
     public static int Delete(IEnumerable<StoredSession> victims, StatsCache cache)
     {
         var n = 0;
         foreach (var s in victims)
         {
+            var record = SessionStore.ReadRecord(s.Folder);
             try { Directory.Delete(s.Folder, true); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
-            cache.HideRun(s.Info.Scenario, s.Info.End, s.Info.Score);
+            cache.HideRun(s.Info.Scenario, s.Info.End, s.Info.Score, record);
             n++;
         }
         return n;
