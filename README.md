@@ -29,10 +29,10 @@ Download the exe from [Releases](https://github.com/dededed1024/KovaaksCompanion
 dotnet build KovaaksCompanion.slnx -c Release
 ```
 
-The build downloads a pinned, hash-checked FFmpeg (`scripts/fetch-ffmpeg.ps1`) and embeds it in the exe.
+The build downloads a pinned, hash-checked OBS Studio release (`scripts/fetch-libobs.ps1`), packs the parts libobs needs and embeds them in the exe.
 
 ## Notices
 
-Unofficial; not affiliated with or endorsed by KovaaK Games. "KovaaK's" and its branding belong to KovaaK Games. Benchmark playlist definitions come from [evxl.app](https://evxl.app) by EviL. Video uses an unmodified FFmpeg LGPL v3 build; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for sources and licenses.
+Unofficial; not affiliated with or endorsed by KovaaK Games. "KovaaK's" and its branding belong to KovaaK Games. Benchmark playlist definitions come from [evxl.app](https://evxl.app) by EviL. Video uses libobs from an unmodified OBS Studio build (GPL v2 or later); see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for sources and licenses.
 
-The app's own code is MIT licensed ([LICENSE](LICENSE)).
+The app is licensed under the GNU General Public License v2 or later ([LICENSE](LICENSE)); releases up to 1.4.3 were MIT licensed.
