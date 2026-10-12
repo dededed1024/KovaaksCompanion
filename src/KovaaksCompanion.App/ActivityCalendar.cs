@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -33,6 +33,14 @@ public sealed class ActivityCalendar : FrameworkElement
         set { _showLabels = value; InvalidateMeasure(); InvalidateVisual(); }
     }
 
+    bool _showLegend = true;
+    /// <summary>The More/Less and personal-best legend under the grid. Off: the footer row is dropped too.</summary>
+    public bool ShowLegend
+    {
+        get => _showLegend;
+        set { _showLegend = value; InvalidateMeasure(); InvalidateVisual(); }
+    }
+
     bool _light;
     /// <summary>On a light background: dark labels and outlines, dark-tinted empty cells.</summary>
     public bool Light
@@ -52,7 +60,15 @@ public sealed class ActivityCalendar : FrameworkElement
         set { _pbDays = value ?? new HashSet<DateTime>(); InvalidateVisual(); }
     }
 
-    double CellFor(double w) => FixedWeeks is { } n ? Math.Clamp((w - LeftW - Right) / n - Gap, 6, MaxCell) : Math.Clamp((w - LeftW - Right) / MaxWeeks - Gap, 10, MaxCell);
+    DateTime? _liveDay;
+    /// <summary>The day of the running live session, filled red; null when none.</summary>
+    public DateTime? LiveDay
+    {
+        get => _liveDay;
+        set { _liveDay = value?.Date; InvalidateVisual(); }
+    }
+
+    double CellFor(double w) => FixedWeeks is { } n ? Math.Clamp((w - LeftW - Right) / n - Gap, 10, Math.Max(10, MaxCell)) : Math.Clamp((w - LeftW - Right) / MaxWeeks - Gap, 10, MaxCell);
 
     double ScaleFor(double cell) => FixedWeeks == null ? (cell >= 20 ? 1.3 : 1) : Math.Clamp(cell / 12, 0.85, 1.3);
 
@@ -68,13 +84,13 @@ public sealed class ActivityCalendar : FrameworkElement
 
     double MonthH => ShowLabels ? 16 * Scale : 0;
 
-    double FootH => ShowLabels ? 22 * Scale : 0;
+    double FootH => ShowLabels && ShowLegend ? 22 * Scale : 0;
 
     protected override Size MeasureOverride(Size avail)
     {
         var w = double.IsInfinity(avail.Width) ? 600 : avail.Width;
         var cell = CellFor(w);
-        return new Size(FixedWeeks == null ? w : Math.Min(w, GridW(cell)), (ShowLabels ? 16 + 22 : 0) * ScaleFor(cell) + 7 * (cell + Gap));
+        return new Size(FixedWeeks == null ? w : Math.Min(w, GridW(cell)), ((ShowLabels ? 16 : 0) + (ShowLabels && ShowLegend ? 22 : 0)) * ScaleFor(cell) + 7 * (cell + Gap));
     }
 
     public void Set(IReadOnlyDictionary<DateTime, int> playsPerDay, Brush tone)
@@ -188,6 +204,12 @@ public sealed class ActivityCalendar : FrameworkElement
                     fill = g;
                 }
                 Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : _selected == day ? new Pen(fg, 1.5) : day == today ? new Pen(Alpha(fg, 0.5), 1) : null;
+                if (_liveDay == day)
+                {
+                    var red = ((SolidColorBrush)Res("Red")).Color;
+                    fill = new SolidColorBrush(Color.FromArgb(0xE6, red.R, red.G, red.B));
+                    pen = hov ? pen : new Pen(Alpha(Res("Red"), 1), 1);
+                }
                 dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
                 if (PbDays.Contains(day))
                 {
@@ -197,7 +219,7 @@ public sealed class ActivityCalendar : FrameworkElement
                 }
             }
 
-        if (ShowLabels)
+        if (ShowLabels && ShowLegend)
         {
             // Legend, bottom right. Layout: "More" swatches "Less" [PB dot "Personal best"]
             var more = Text(L.T("More"), 10 * sc, dim);
