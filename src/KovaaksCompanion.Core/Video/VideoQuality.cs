@@ -12,10 +12,10 @@ public static class VideoQualityExtensions
     /// <summary>Constant-quality value for <see cref="VideoOptions.Quality"/> (lower = better).</summary>
     public static int ToCq(this VideoQuality q) => q switch
     {
-        VideoQuality.Low => 28,
-        VideoQuality.Medium => 23,
-        VideoQuality.Ultra => 14,
-        _ => 18,
+        VideoQuality.Low => 32,
+        VideoQuality.Medium => 28,
+        VideoQuality.Ultra => 18,
+        _ => 23,
     };
 
     /// <summary>Output height cap for window capture (null = source resolution).</summary>

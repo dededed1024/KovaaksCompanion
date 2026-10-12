@@ -27,7 +27,6 @@ internal sealed unsafe class PacketOutput : IDisposable
     GCHandle _self;
     nint _output;
     nint _video, _audio;
-    bool _started;
     string _error = "";
 
     public event Action<EncodedPacket>? Packet;
@@ -136,7 +135,6 @@ internal sealed unsafe class PacketOutput : IDisposable
             if (!ObsNative.obs_output_can_begin_data_capture(s._output, flags)) return 0;
             if (!ObsNative.obs_output_initialize_encoders(s._output, flags)) return 0;
             if (!ObsNative.obs_output_begin_data_capture(s._output, flags)) return 0;
-            s._started = true;
             return 1;
         }
         catch (Exception e) { AppLog.Write("obs", "output start failed: " + e); return 0; }
@@ -150,7 +148,6 @@ internal sealed unsafe class PacketOutput : IDisposable
         try
         {
             ObsNative.obs_output_end_data_capture(s._output);
-            s._started = false;
             s.Stopped?.Invoke(s._error);
         }
         catch (Exception e) { AppLog.Write("obs", "output stop failed: " + e); }

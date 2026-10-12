@@ -56,7 +56,7 @@ internal sealed class ObsCapture : IDisposable
         ObsNative.obs_data_set_string(s, "window", window);
         ObsNative.obs_data_set_int(s, "method", 2);      // Windows Graphics Capture
         ObsNative.obs_data_set_int(s, "priority", 2);    // match by exe
-        ObsNative.obs_data_set_bool(s, "cursor", false);
+        ObsNative.obs_data_set_bool(s, "cursor", true);
         ObsNative.obs_data_set_bool(s, "client_area", true);
         _videoSource = ObsNative.obs_source_create("window_capture", "game", s, 0);
         ObsNative.obs_data_release(s);
