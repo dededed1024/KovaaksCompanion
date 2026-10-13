@@ -14,18 +14,18 @@ public static class EnvironmentInfo
     /// <summary>Reads the OS, Windows and GPU details and formats them with the app values.</summary>
     public static string Describe(AppValues app)
     {
-        var sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
-        return Format(RuntimeInformation.OSDescription, WindowsEdition(), File.Exists(Path.Combine(sys, "wmp.dll")),
-            File.Exists(Path.Combine(sys, "mfplat.dll")), GpuNames(), app);
+        return Format(RuntimeInformation.OSDescription, WindowsEdition(), CpuName(),
+            GC.GetGCMemoryInfo().TotalAvailableMemoryBytes, GpuNames(), app);
     }
 
     /// <summary>Pure formatting of the collected values, one line per item.</summary>
-    public static string Format(string os, string windows, bool wmp, bool mediaFoundation, IReadOnlyList<string> gpus, AppValues app)
+    public static string Format(string os, string windows, string cpu, long ramBytes, IReadOnlyList<string> gpus, AppValues app)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"OS: {os}");
         if (windows.Length > 0) sb.AppendLine($"Windows: {windows}");
-        sb.AppendLine($"Media Player (wmp.dll): {(wmp ? "yes" : "no")}, Media Foundation (mfplat.dll): {(mediaFoundation ? "yes" : "no")}");
+        sb.AppendLine($"CPU: {(cpu.Length > 0 ? cpu : "unknown")}");
+        sb.AppendLine($"RAM: {ramBytes / (1024.0 * 1024 * 1024):0.#} GB");
         sb.AppendLine($"GPU: {(gpus.Count > 0 ? string.Join("; ", gpus) : "unknown")}");
         sb.AppendLine($"Screen: {app.Resolution}");
         sb.AppendLine($"Video: {app.VideoQuality}, max {app.MaxFps} FPS");
@@ -41,6 +41,16 @@ public static class EnvironmentInfo
             if (k == null) return "";
             string V(string n) => k.GetValue(n)?.ToString() ?? "";
             return string.Join(" ", new[] { V("ProductName"), V("EditionID"), V("DisplayVersion"), "build " + V("CurrentBuild") }.Where(s => s.Length > 0 && s != "build "));
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return ""; }
+    }
+
+    static string CpuName()
+    {
+        try
+        {
+            using var k = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+            return k?.GetValue("ProcessorNameString")?.ToString()?.Trim() ?? "";
         }
         catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return ""; }
     }
