@@ -246,7 +246,7 @@ public partial class StatsView
                 {
                     try
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                        _host.Settings.EnsureCapturesFolder();
                         var enc = new PngBitmapEncoder();
                         enc.Frames.Add(BitmapFrame.Create(shot));
                         using var fs = File.Create(file);

@@ -58,7 +58,7 @@ internal sealed class GifFrameEncoder : IDisposable
             for (var x = 0; x < _w; x++)
             {
                 var p = y * _w + x;
-                var o = (Bayer[(y & 3) * 4 + (x & 3)] * 2 - 15) >> 3;
+                var o = (Bayer[(y & 3) * 4 + (x & 3)] * 2 - 15) >> 2;
                 var b = Math.Clamp(flat[p * 4] + o, 0, 255);
                 var g = Math.Clamp(flat[p * 4 + 1] + o, 0, 255);
                 var r = Math.Clamp(flat[p * 4 + 2] + o, 0, 255);

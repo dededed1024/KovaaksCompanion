@@ -62,9 +62,6 @@ public partial class StatsView
         if (await CaptureImage(null)) await FlashCopyImage();
     }
 
-    /// <summary>Fixed pixels-per-DIP of the image captures, independent of the screen's DPI.</summary>
-    internal const double CaptureScale = 1.5;
-
     /// <summary>Opaque background of the theme currently applied, for the image captures.</summary>
     Brush CaptureBg()
     {
@@ -99,7 +96,7 @@ public partial class StatsView
         if ((only ?? _bench) is not { } t || t.ActualWidth <= 0 || t.ActualHeight <= 0) return false;
         try
         {
-            var scale = CaptureScale;
+            var scale = VisualTreeHelper.GetDpi(this).DpiScaleX; // the screen's own pixels-per-DIP, no separate capture scaling
             var body = new List<FrameworkElement> { t };
             var title = new FormattedText(Heading.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                 new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize * 0.7, Heading.Foreground, scale);
@@ -173,8 +170,7 @@ public partial class StatsView
             finally { t.SetCaptureButtonsVisible(true); }
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = _host.Settings.CapturesFolder;
-            Directory.CreateDirectory(dir);
+            var dir = _host.Settings.EnsureCapturesFolder();
             var name = string.Concat((subName == null ? Heading.Text : $"{Heading.Text}_{subName}").Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
@@ -227,7 +223,7 @@ public partial class StatsView
             var st = BenchmarkTable.Summarize(cat, tiers);
             Brush? rb = st.Rank >= 1 && st.Rank <= c.Brushes.Count ? c.Brushes[st.Rank - 1] : null;
             var nb = st.Rank < tiers && st.Rank < c.Brushes.Count ? c.Brushes[st.Rank] : rb ?? DimB;
-            return new CatInfo(cat, st, rb == null ? L.T("UNRANK") : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
+            return new CatInfo(cat, st, rb == null ? L.T("UNRANKED") : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
         }).ToList();
     }
 
@@ -304,7 +300,7 @@ public partial class StatsView
         var p = c.P;
         var r = c.Report;
         var ranked = p.OverallRank > 0;
-        var tierText = ranked ? TierText.Label(p.OverallRankName) : L.T("UNRANK");
+        var tierText = ranked ? TierText.Label(p.OverallRankName) : L.T("UNRANKED");
         _hero = Hero(tierText, ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {p.OverallFraction * 100:0.00}%",
             L.F("{0} of {1} scenarios played · {2} plays · {3}", r.PlayedCount, r.ScenarioCount, r.TotalPlays, Dur(r.TimePlayed)));
         page.Children.Add(_hero);
@@ -542,7 +538,7 @@ public partial class StatsView
             name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = a.Label;
             g.Children.Add(name);
             var right = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0) };
-            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : L.T("UNRANK"), 12, tb, FontWeights.SemiBold));
+            right.Children.Add(Text(rank >= 1 && rank <= c.Names.Count ? c.Names[rank - 1] : L.T("UNRANKED"), 12, tb, FontWeights.SemiBold));
             Grid.SetColumn(right, 1);
             g.Children.Add(right);
             var f = v / max;

@@ -36,7 +36,7 @@ public partial class StatsView
 
             var w = ProfileCard.ActualWidth; var h = ProfileCard.ActualHeight;
             var off = VisualTreeHelper.GetOffset(ProfileCard);
-            var k = Math.Min(1, 800 / w);
+            var k = Math.Min(1, 1200 / w);
             int ox = (int)Math.Round(off.X * k), oy = (int)Math.Round(off.Y * k);
             int cw = (int)Math.Round(w * k), ch = (int)Math.Round(h * k);
             var rect = new Int32Rect(ox, oy, cw, ch);
@@ -52,8 +52,8 @@ public partial class StatsView
                 return buf;
             }
 
-            var samples = Enumerable.Range(0, 8).Select(i => Grab(i / 8.0)).ToArray();
-            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            var samples = Enumerable.Range(0, 16).Select(i => Grab(i / 16.0)).ToArray();
+            _host.Settings.EnsureCapturesFolder();
             await using var fs = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
             var enc = await Task.Run(() => new GifFrameEncoder(fs, cw, ch, delayCs, (bg.R, bg.G, bg.B), samples));
             Task? pending = null;
