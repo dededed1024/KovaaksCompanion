@@ -149,5 +149,39 @@ internal static unsafe partial class ObsNative
     [LibraryImport("obs", EntryPoint = "os_gettime_ns")] public static partial ulong os_gettime_ns();
     [LibraryImport(Lib)] public static partial void obs_output_signal_stop(nint output, int code);
 
+    public const int GsBgra = 5, GsZsNone = 0;
+    public const uint GsClearColor = 1;
+    public const int MonitorOnly = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Vec4 { public float X, Y, Z, W; }
+
+    [LibraryImport(Lib)] public static partial void obs_enter_graphics();
+    [LibraryImport(Lib)] public static partial void obs_leave_graphics();
+    [LibraryImport(Lib)] public static partial nint gs_texrender_create(int format, int zsformat);
+    [LibraryImport(Lib)] public static partial void gs_texrender_destroy(nint texrender);
+    [LibraryImport(Lib)] public static partial void gs_texrender_reset(nint texrender);
+    [LibraryImport(Lib)][return: MarshalAs(UnmanagedType.U1)] public static partial bool gs_texrender_begin(nint texrender, uint cx, uint cy);
+    [LibraryImport(Lib)] public static partial void gs_texrender_end(nint texrender);
+    [LibraryImport(Lib)] public static partial nint gs_texrender_get_texture(nint texrender);
+    [LibraryImport(Lib)] public static partial void gs_ortho(float left, float right, float top, float bottom, float znear, float zfar);
+    [LibraryImport(Lib)] public static partial void gs_clear(uint flags, in Vec4 color, float depth, byte stencil);
+    [LibraryImport(Lib)] public static partial nint gs_stagesurface_create(uint width, uint height, int format);
+    [LibraryImport(Lib)] public static partial void gs_stagesurface_destroy(nint surface);
+    [LibraryImport(Lib)] public static partial void gs_stage_texture(nint surface, nint texture);
+    [LibraryImport(Lib)][return: MarshalAs(UnmanagedType.U1)] public static partial bool gs_stagesurface_map(nint surface, out byte* data, out uint linesize);
+    [LibraryImport(Lib)] public static partial void gs_stagesurface_unmap(nint surface);
+    [LibraryImport(Lib)] public static partial void obs_source_video_render(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_media_play_pause(nint source, [MarshalAs(UnmanagedType.U1)] bool pause);
+    [LibraryImport(Lib)] public static partial long obs_source_media_get_duration(nint source);
+    [LibraryImport(Lib)] public static partial long obs_source_media_get_time(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_media_set_time(nint source, long ms);
+    [LibraryImport(Lib)] public static partial int obs_source_media_get_state(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_set_monitoring_type(nint source, int type);
+    [LibraryImport(Lib)] public static partial void obs_source_inc_showing(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_dec_showing(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_inc_active(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_dec_active(nint source);
+
     public static string? Str(nint p) => p == 0 ? null : Marshal.PtrToStringUTF8(p);
 }

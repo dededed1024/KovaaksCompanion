@@ -113,6 +113,9 @@ public partial class ReplayView : UserControl
         PreviewMouseMove += OnFsMouse;
         host.SessionSaved += OnSessionSaved;
         CompositionTarget.Rendering += OnRendering;
+        Media.MediaOpened += OnMediaOpened;
+        Media.MediaEnded += OnMediaEnded;
+        Media.MediaFailed += OnMediaFailed;
     }
 
     public bool IsOpen => _open;
@@ -1012,7 +1015,6 @@ public partial class ReplayView : UserControl
         _playing = false; PlayBtn.Content = PlayGlyph;
         _seekTimer.Stop(); _seekPending = false; _dragging = false; _resumeAfterDrag = false; _holdUntil = 0;
         Media.Close();
-        Media.Source = null;
         PendingHost.Child = null; PendingHost.Visibility = Visibility.Collapsed;
         _s = null;
         _duration = 0;
@@ -1043,12 +1045,11 @@ public partial class ReplayView : UserControl
         if (_s.VideoPath is { } path)
         {
             Notice.Visibility = Visibility.Collapsed;
-            Media.Source = new Uri(path);
-            Media.Play(); // paused again in MediaOpened; a loaded-but-never-played element renders no frame
+            Media.Open(path); // plays on its own; paused again in OnMediaOpened
         }
         else
         {
-            Media.Source = null;
+            Media.Close();
             SetRecorded(false);
             Notice.Text = L.T("No video for this session");
             Notice.Visibility = Visibility.Visible;
@@ -1226,13 +1227,13 @@ public partial class ReplayView : UserControl
         if (_s?.VideoPath is { } p && File.Exists(p)) Process.Start("explorer.exe", $"/select,\"{p}\"");
     }
 
-    void OnMediaOpened(object sender, RoutedEventArgs e)
+    void OnMediaOpened()
     {
-        if (_s is null || !Media.NaturalDuration.HasTimeSpan) return;
-        _duration = Media.NaturalDuration.TimeSpan.TotalSeconds;
+        if (_s is null || Media.Duration <= 0) return;
+        _duration = Media.Duration;
         Media.SpeedRatio = _speed;
         Media.Pause();
-        Media.Position = TimeSpan.FromSeconds(Math.Clamp(_s.Info.VideoTime(0) - 1, 0, _duration));
+        Media.Position = Math.Clamp(_s.Info.VideoTime(0) - 1, 0, _duration);
         BuildChart();
         SetTransport(true);
         FitScreen();
@@ -1255,18 +1256,18 @@ public partial class ReplayView : UserControl
         Screen.Margin = new Thickness((W - w) / 2, (H - h) / 2, (W - w) / 2, (H - h) / 2);
     }
 
-    void OnMediaEnded(object sender, RoutedEventArgs e)
+    void OnMediaEnded()
     {
         _playing = false; PlayBtn.Content = PlayGlyph;
         Media.Pause();
     }
 
-    void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
+    void OnMediaFailed(Exception ex)
     {
-        AppLog.Write("replay", "media failed: " + e.ErrorException);
-        ErrorReporter.Report("replay media", e.ErrorException);
+        AppLog.Write("replay", "media failed: " + ex);
+        ErrorReporter.Report("replay media", ex);
         SetTransport(false);
-        Notice.Text = L.T("Video failed to load: ") + e.ErrorException.Message;
+        Notice.Text = L.T("Video failed to load: ") + ex.Message;
         Notice.Visibility = Visibility.Visible;
     }
 
@@ -1281,7 +1282,7 @@ public partial class ReplayView : UserControl
     }
 
     /// <summary>Playhead in video seconds: the pending drag position while a seek is not yet applied, else the media clock.</summary>
-    double CurPos => _dragging || _seekPending ? _shownPos : Environment.TickCount64 < _holdUntil ? _dragPos : Media.Position.TotalSeconds;
+    double CurPos => _dragging || _seekPending ? _shownPos : Environment.TickCount64 < _holdUntil ? _dragPos : Media.Position;
 
     void OnRendering(object? sender, EventArgs e)
     {
@@ -1307,7 +1308,7 @@ public partial class ReplayView : UserControl
     }
     void BeginDrag()
     {
-        _shownPos = Media.Position.TotalSeconds;
+        _shownPos = Media.Position;
         if (_playing) { Media.Pause(); _resumeAfterDrag = true; }
     }
 
@@ -1329,7 +1330,7 @@ public partial class ReplayView : UserControl
         _seekPending = false;
         _shownPos = _dragPos;
         _holdUntil = Environment.TickCount64 + 250; // Media.Position settles asynchronously; keep showing the target meanwhile
-        Media.Position = TimeSpan.FromSeconds(_dragPos);
+        Media.Position = _dragPos;
     }
 
     void OnChartDown(object sender, MouseButtonEventArgs e) { if (_duration <= 0) return; BeginDrag(); _dragging = true; Chart.CaptureMouse(); SeekToChart(e); }
@@ -1358,7 +1359,7 @@ public partial class ReplayView : UserControl
         _playing = !_playing;
         if (_playing)
         {
-            if (Media.Position.TotalSeconds >= _duration - 0.05) Media.Position = TimeSpan.FromSeconds(Math.Max(0, _s!.Info.VideoTime(0)));
+            if (Media.Position >= _duration - 0.05) Media.Position = Math.Max(0, _s!.Info.VideoTime(0));
             Media.Play();
         }
         else Media.Pause();
@@ -1372,7 +1373,7 @@ public partial class ReplayView : UserControl
         _dragPos = Math.Clamp(CurPos + sec, 0, _duration);
         _seekPending = false; _seekTimer.Stop();
         _holdUntil = Environment.TickCount64 + 250;
-        Media.Position = TimeSpan.FromSeconds(_dragPos);
+        Media.Position = _dragPos;
     }
     void OnStepBack(object sender, RoutedEventArgs e) => Step(-FrameSec);
     void OnStepForward(object sender, RoutedEventArgs e) => Step(FrameSec);

@@ -142,8 +142,7 @@
                             <Grid x:Name="Stage" Grid.Row="1" Margin="0" SizeChanged="OnStageSized">
                                 <Border x:Name="Screen" CornerRadius="14" Background="Black" ClipToBounds="True" MouseLeftButtonDown="OnScreenDown">
                                     <Grid>
-                                        <MediaElement x:Name="Media" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True"
-                                                      Stretch="Uniform" MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded" MediaFailed="OnMediaFailed"/>
+                                        <app:VideoSurface x:Name="Media"/>
                                         <app:TrailOverlay x:Name="Overlay" IsHitTestVisible="False"/>
                                         <Border x:Name="PendingHost" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                                         <TextBlock x:Name="Notice" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Dim}"
