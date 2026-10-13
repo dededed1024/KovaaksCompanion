@@ -136,12 +136,12 @@ public sealed class VideoCaptureService : IAsyncDisposable
     /// Null when there is no recorder / no footage for that window. The recorder (and its buffer) stays usable after the game exits.
     /// With hand cams in Composite mode they are already in the video; in Separate mode handcamN.mp4 next to the clip holds cam N on the clip's timeline.
     /// </summary>
-    public async Task<ClipResult?> ExtractClipAsync(DateTime startUtc, DateTime endUtc, string outputPath, Action<double>? progress = null)
+    public async Task<ClipResult?> ExtractClipAsync(long startQpc, long endQpc, string outputPath, Action<double>? progress = null)
     {
         var rec = _rec;
         if (rec is null) return null;
         progress?.Invoke(0.02);
-        var clip = await rec.ExtractClipAsync(startUtc, endUtc, outputPath);
+        var clip = await rec.ExtractClipAsync(startQpc, endQpc, outputPath);
         if (clip != null && _cams.Count > 0)
         {
             progress?.Invoke(0.6);

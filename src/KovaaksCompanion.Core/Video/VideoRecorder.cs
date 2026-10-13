@@ -80,16 +80,14 @@ public sealed class VideoRecorder : IAsyncDisposable
 
     /// <summary>
     /// Cuts [start, end] +/- margin out of the buffer. Waits (up to maxWait) for the buffer to reach end+margin; if recording already stopped, uses whatever was captured.
-    /// The clip starts at the keyframe at or before start - margin; <see cref="ClipResult.ClipStartUtc"/> is that frame's time.
+    /// The clip starts at the keyframe at or before start - margin; <see cref="ClipResult.ClipStartQpc"/> is that frame's time. Start and end are QPC ticks (Stopwatch).
     /// </summary>
-    public async Task<ClipResult?> ExtractClipAsync(DateTime startUtc, DateTime endUtc, string outputPath, TimeSpan? maxWait = null)
+    public async Task<ClipResult?> ExtractClipAsync(long startQpc, long endQpc, string outputPath, TimeSpan? maxWait = null)
     {
         var ring = _ring;
         if (ring == null || !ring.HasOrigin) return null;
-        startUtc = startUtc.ToUniversalTime(); endUtc = endUtc.ToUniversalTime();
-        // only picks the span to cut (the margin absorbs any error); the clip's own start stays on the QPC clock
-        var clock = new QpcClock();
-        double from = ToRingSec(ring, clock, startUtc - _o.ClipMargin), to = ToRingSec(ring, clock, endUtc + _o.ClipMargin);
+        var margin = (long)(_o.ClipMargin.TotalSeconds * Stopwatch.Frequency);
+        double from = ring.ToRingSec(QpcToNs(startQpc - margin)), to = ring.ToRingSec(QpcToNs(endQpc + margin));
         var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(5));
         while (ring.LastVideoSec < to && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);
 
@@ -98,8 +96,7 @@ public sealed class VideoRecorder : IAsyncDisposable
         if (avc == null) return null;
         var span = await Task.Run(() => ring.WriteClip(outputPath, from, to, avc, aac));
         if (span is not { } s) return null;
-        var startQpc = NsToQpc(ring.ToQpcNs(s.Start));
-        return new ClipResult(outputPath, clock.ToUtc(startQpc), startQpc, TimeSpan.FromSeconds(s.End - s.Start + 1.0 / Math.Max(1, _o.Fps)));
+        return new ClipResult(outputPath, NsToQpc(ring.ToQpcNs(s.Start)), TimeSpan.FromSeconds(s.End - s.Start + 1.0 / Math.Max(1, _o.Fps)));
     }
 
     /// <summary>Stream parameters (SPS/PPS, AAC config) read from the running encoders once, then cached.</summary>
@@ -110,9 +107,6 @@ public sealed class VideoRecorder : IAsyncDisposable
         if (_aac == null && cap.HasAudio && cap.Output.AudioExtraData() is { Length: >= 2 } asc) _aac = new AacInfo(48000, 2, asc[..2]); // AAC-LC; libobs appends SBR signalling that MP4 readers do not want
         return (_avc, _aac);
     }
-
-    /// <summary>The ring's time (seconds on the encoder clock) of a wall-clock instant.</summary>
-    static double ToRingSec(PacketRing ring, QpcClock clock, DateTime utc) => ring.ToRingSec(QpcToNs(clock.ToQpc(utc)));
 
     internal static long QpcToNs(long ticks) => (long)(ticks * 1e9 / Stopwatch.Frequency);
     static long NsToQpc(long ns) => (long)(ns * (double)Stopwatch.Frequency / 1e9);

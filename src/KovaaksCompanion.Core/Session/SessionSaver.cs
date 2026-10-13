@@ -10,7 +10,7 @@ namespace KovaaksCompanion.Core.Session;
 public sealed class SessionSaver
 {
     /// <param name="progress">0..1 of the clip work done.</param>
-    public delegate Task<ClipResult?> ClipExtractor(DateTime startUtc, DateTime endUtc, string outputPath, Action<double> progress);
+    public delegate Task<ClipResult?> ClipExtractor(long startQpc, long endQpc, string outputPath, Action<double> progress);
 
     readonly string _root;
     readonly MouseRingBuffer _buffer;
@@ -67,14 +67,12 @@ public sealed class SessionSaver
         var anchor = _anchor();
         var startQpc = anchor.ToQpc(run.Start);
         var endQpc = anchor.ToQpc(run.End);
-        var startUtc = DateTime.SpecifyKind(run.Start, DateTimeKind.Local).ToUniversalTime();
-        var endUtc = DateTime.SpecifyKind(run.End, DateTimeKind.Local).ToUniversalTime();
 
         ClipResult? clip = null;
         var skipVideo = _pbOnly?.Invoke() == true && !pb; // "save video for PB only": the clip of any other run is never cut
         if (!skipVideo)
         {
-            try { clip = await _extract(startUtc, endUtc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
+            try { clip = await _extract(startQpc, endQpc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
             catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
         }
         var clipEndQpc = clip == null ? 0 : clip.ClipStartQpc + (long)(clip.Duration.TotalSeconds * anchor.Frequency);
