@@ -1177,14 +1177,36 @@ public partial class StatsView
         }
         if (items.Count == 0) body.Children.Add(Text(L.T(tab == "Scenarios" ? "No scenarios" : "No plays"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
         var grid = new UniformGrid { Columns = cols };
-        foreach (var make in items)
-        {
-            var el = make();
-            if (el is FrameworkElement fe && tab == "Playlists") fe.MinHeight = BrowseItemHeight;
-            grid.Children.Add(el);
-        }
+        _browseItems = items; _browseGrid = grid; _browseShown = 0;
+        AppendBrowse(BrowseBatch);
         body.Children.Add(new Border { Padding = new Thickness(TileGap / 2 - 2, 0, TileGap / 2 - 2, 0), Child = grid });
         _browseHost.Child = Card(body, new Thickness(8, 4, 8, 4), CardGap);
+    }
+
+    /// <summary>Rows built per step; the rest of a long list is built while the page scrolls towards its end.</summary>
+    const int BrowseBatch = 40;
+    List<Func<UIElement>> _browseItems = [];
+    UniformGrid? _browseGrid;
+    int _browseShown;
+
+    void AppendBrowse(int count)
+    {
+        if (_browseGrid == null) return;
+        var end = Math.Min(_browseItems.Count, _browseShown + count);
+        for (; _browseShown < end; _browseShown++)
+        {
+            var el = _browseItems[_browseShown]();
+            if (el is FrameworkElement fe && _browseTab == "Playlists") fe.MinHeight = BrowseItemHeight;
+            _browseGrid.Children.Add(el);
+        }
+    }
+
+    /// <summary>Builds the next rows once the page is scrolled within a screenful of the list's end.</summary>
+    void LoadMoreBrowse()
+    {
+        if (_browseGrid == null || _browseShown >= _browseItems.Count) return;
+        if (HomeScroll.VerticalOffset + HomeScroll.ViewportHeight < HomeScroll.ExtentHeight - HomeScroll.ViewportHeight) return;
+        AppendBrowse(BrowseBatch);
     }
 
     /// <summary>Rank thresholds and server best score per scenario, from every loaded benchmark.</summary>

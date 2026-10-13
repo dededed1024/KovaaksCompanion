@@ -50,7 +50,7 @@ public partial class StatsView : UserControl
     {
         InitializeComponent();
         _host = host;
-        _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
+        _index = new PlaylistIndex(App.Demo ? DemoIndexFile : host.Settings.PlaylistIndexFile);
         Heading.Text = L.T("Loading…");
         host.SessionSaved += OnSessionSaved;
         host.RunFinished += OnRunFinished;
