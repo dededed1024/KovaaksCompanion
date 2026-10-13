@@ -3,7 +3,7 @@ namespace KovaaksCompanion.Core.Diagnostics;
 /// <summary>Sends unhandled and video errors to the webhook: each distinct error once per process, at most <see cref="MaxPerProcess"/> in all.</summary>
 public static class ErrorReporter
 {
-    public const int MaxPerProcess = 5;
+    public const int MaxPerProcess = 10;
 
     static readonly object Gate = new();
     static readonly HashSet<string> Seen = [];

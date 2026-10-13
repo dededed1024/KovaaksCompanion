@@ -262,7 +262,7 @@ public sealed class AppHost : IDisposable
             ObsRoot = obsRoot, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(), MaxHeight = _settings.VideoQuality.MaxHeight(),
             Fps = _settings.VideoFps,
         }, () => HandCamConfig.From(_settings));
-        _video.Error += m => SetError("video: " + m);
+        _video.Error += m => { SetError("video: " + m); ErrorReporter.Report("video", new VideoProblem(m)); };
         _video.GameLaunched += t => _liveId = t.Ticks;
         _video.GameExited += () => _liveId = null;
         _video.StateChanged += () => GameStateChanged?.Invoke();

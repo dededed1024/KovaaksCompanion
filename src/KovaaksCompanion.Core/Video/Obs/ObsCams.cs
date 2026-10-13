@@ -38,7 +38,7 @@ internal static class ObsCamSource
     }
 
     /// <summary>Adds the source to the scene as a cover-scaled, cropped box of <paramref name="layout"/> inside a <paramref name="frameW"/> x <paramref name="frameH"/> frame.</summary>
-    public static void Place(nint scene, nint source, int frameW, int frameH, HandCamLayout layout)
+    public static nint Place(nint scene, nint source, int frameW, int frameH, HandCamLayout layout)
     {
         var (w, h) = HandCamGeometry.CamBox(frameW, frameH, layout);
         var (x, y) = HandCamGeometry.Position(frameW, frameH, w, h, layout);
@@ -49,6 +49,7 @@ internal static class ObsCamSource
         ObsNative.obs_sceneitem_set_bounds_alignment(item, ObsNative.AlignCenter);
         ObsNative.obs_sceneitem_set_bounds_crop(item, true);
         ObsNative.obs_sceneitem_set_bounds(item, new ObsNative.Vec2(w, h));
+        return item;
     }
 }
 

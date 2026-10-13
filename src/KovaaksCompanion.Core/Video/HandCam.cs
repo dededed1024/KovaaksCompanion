@@ -2,14 +2,14 @@
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width, height of the video height; gaps from the right / top edge of the video. The cam image fills the box (cover, centered crop).</summary>
-public sealed record HandCamLayout(int SizePercent = 25, int RightPercent = 0, int TopPercent = 20, int HeightPercent = 25);
+/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width (the height follows the cam's own aspect, so nothing is cropped); the cam's center as a position in the video from the left / top edge, pulled inside the frame when it would stick out.</summary>
+public sealed record HandCamLayout(int SizePercent = 25, int XPercent = 100, int YPercent = 0);
 
 /// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, and its place in the video.</summary>
-public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int Right = 0, int Top = 20, int Height = 25)
+public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int X = 100, int Y = 0)
 {
     public const int Max = 3;
-    public HandCamLayout Layout => new(Size, Right, Top, Height);
+    public HandCamLayout Layout => new(Size, X, Y);
 }
 
 /// <summary>The configured cams as a list with value equality, so <see cref="AppSettings"/> still compares by content.</summary>
@@ -68,16 +68,18 @@ public static class HandCamDeviceList
 /// <summary>Where a hand cam sits in a game frame of a given size (percentages of the frame, see <see cref="HandCamLayout"/>).</summary>
 public static class HandCamGeometry
 {
-    /// <summary>Box the cam occupies: width / height percent of the frame, even pixels.</summary>
+    /// <summary>Box the cam occupies: width percent of the frame, height from the cam's aspect ratio, even pixels.</summary>
     public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l)
-        => (Math.Max(16, gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100 / 2 * 2), Math.Max(16, gameHeight * Math.Clamp(l.HeightPercent, 10, 40) / 100 / 2 * 2));
+    {
+        var w = Math.Max(16, gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100 / 2 * 2);
+        return (w, Math.Max(16, w * ObsCamSource.Height / ObsCamSource.Width / 2 * 2));
+    }
 
-    /// <summary>Top-left corner of the cam box: its right / top gap in percent, clamped inside the frame.</summary>
+    /// <summary>Top-left corner of the cam box centered on the layout's position, pulled inside the frame.</summary>
     public static (int X, int Y) Position(int gameWidth, int gameHeight, int camWidth, int camHeight, HandCamLayout l)
     {
-        double right = Math.Clamp(l.RightPercent, 0, 100) / 100.0, top = Math.Clamp(l.TopPercent, 0, 100) / 100.0;
-        var x = Math.Max(0, Math.Min(gameWidth - camWidth, gameWidth - camWidth - gameWidth * right));
-        var y = Math.Max(0, Math.Min(gameHeight - camHeight, gameHeight * top));
+        var x = Math.Clamp(gameWidth * Math.Clamp(l.XPercent, 0, 100) / 100.0 - camWidth / 2.0, 0, Math.Max(0, gameWidth - camWidth));
+        var y = Math.Clamp(gameHeight * Math.Clamp(l.YPercent, 0, 100) / 100.0 - camHeight / 2.0, 0, Math.Max(0, gameHeight - camHeight));
         return ((int)Math.Round(x), (int)Math.Round(y));
     }
 }

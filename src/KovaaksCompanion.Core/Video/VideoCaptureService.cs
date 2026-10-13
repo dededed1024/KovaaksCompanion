@@ -76,6 +76,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
             var composite = cfg.Save == HandCamSave.Composite ? resolved.Select(r => new ObsCamSpec(r.Id, r.Config.Layout)).ToList() : [];
 
             var rec = new VideoRecorder(_o);
+            rec.Problem += m => Error?.Invoke(m);
             if (await rec.StartAsync(composite, cts.Token))
             {
                 _rec = rec;

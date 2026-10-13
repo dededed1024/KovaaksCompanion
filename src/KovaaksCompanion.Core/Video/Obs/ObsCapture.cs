@@ -23,6 +23,7 @@ internal sealed class ObsCapture : IDisposable
     readonly ObsCaptureSpec _spec;
     nint _scene, _videoSource, _audioSource, _videoEncoder, _audioEncoder;
     readonly List<nint> _camSources = [];
+    readonly List<nint> _items = [];
     readonly object _sync = new();
     PacketOutput? _output;
 
@@ -67,6 +68,7 @@ internal sealed class ObsCapture : IDisposable
         ObsNative.obs_sceneitem_set_pos(item, new ObsNative.Vec2(0, 0));
         ObsNative.obs_sceneitem_set_bounds_type(item, 2); // scale inner
         ObsNative.obs_sceneitem_set_bounds(item, new ObsNative.Vec2(t.Width & ~1, t.Height & ~1));
+        _items.Add(item);
         // cams go on top of the game, each in its box (cover-scaled and cropped to it), in list order
         int baseW = t.Width & ~1, baseH = t.Height & ~1;
         foreach (var cam in _spec.Cams ?? [])
@@ -74,7 +76,7 @@ internal sealed class ObsCapture : IDisposable
             var src = ObsCamSource.Create(cam.DeviceId, "cam" + (_camSources.Count + 1));
             if (src == 0) { AppLog.Write("obs", "hand cam source failed: " + cam.DeviceId); continue; }
             _camSources.Add(src);
-            ObsCamSource.Place(_scene, src, baseW, baseH, cam.Layout);
+            _items.Add(ObsCamSource.Place(_scene, src, baseW, baseH, cam.Layout));
         }
         ObsNative.obs_set_output_source(0, ObsNative.obs_scene_get_source(_scene));
 
@@ -157,6 +159,13 @@ internal sealed class ObsCapture : IDisposable
         return $"{Esc(title.ToString())}:{Esc(cls.ToString())}:{Esc(processName + ".exe")}";
     }
 
+    /// <summary>Size libobs sees for the game source; 0x0 means the window was not found or never delivered a frame.</summary>
+    public (uint Width, uint Height) SourceSize()
+    {
+        lock (_sync)
+            return _videoSource == 0 ? (0, 0) : (ObsNative.obs_source_get_width(_videoSource), ObsNative.obs_source_get_height(_videoSource));
+    }
+
     /// <summary>Cams that deliver no frames at 1280x720@30 fall back to their device default mode.</summary>
     public void FixCamModes()
     {
@@ -176,7 +185,10 @@ internal sealed class ObsCapture : IDisposable
         if (_videoEncoder != 0) { ObsNative.obs_encoder_release(_videoEncoder); _videoEncoder = 0; }
         if (_audioEncoder != 0) { ObsNative.obs_encoder_release(_audioEncoder); _audioEncoder = 0; }
         ObsNative.obs_set_output_source(0, 0); ObsNative.obs_set_output_source(1, 0);
-        foreach (var c in _camSources) ObsNative.obs_source_release(c);
+        // drop the scene's references first, otherwise a cam stays open (webcam LED on) until the process ends
+        foreach (var i in _items) ObsNative.obs_sceneitem_remove(i);
+        _items.Clear();
+        foreach (var c in _camSources) { ObsNative.obs_source_remove(c); ObsNative.obs_source_release(c); }
         _camSources.Clear();
         if (_videoSource != 0) { ObsNative.obs_source_release(_videoSource); _videoSource = 0; }
         if (_audioSource != 0) { ObsNative.obs_source_release(_audioSource); _audioSource = 0; }

@@ -108,6 +108,8 @@ internal static unsafe partial class ObsNative
     [LibraryImport(Lib)] public static partial nint obs_scene_get_source(nint scene);
     [LibraryImport(Lib)] public static partial nint obs_scene_add(nint scene, nint source);
     [LibraryImport(Lib)] public static partial void obs_scene_release(nint scene);
+    [LibraryImport(Lib)] public static partial void obs_sceneitem_remove(nint item);
+    [LibraryImport(Lib)] public static partial void obs_source_remove(nint source);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_pos(nint item, in Vec2 pos);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_alignment(nint item, uint alignment);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds_type(nint item, int type);

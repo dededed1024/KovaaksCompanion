@@ -10,6 +10,7 @@ public static unsafe class ObsRuntime
     static readonly object Gate = new();
     static bool _loaded, _started, _videoReset, _audioReset;
     static string _root = "";
+    static int? _adapter;
     static uint _fpsNum, _w, _h, _ow, _oh;
 
     public static bool IsStarted => _started;
@@ -21,6 +22,16 @@ public static unsafe class ObsRuntime
     /// <summary>Starts libobs from the bundle folder (contains bin\64bit, obs-plugins\64bit, data). Safe to call again; false (see <see cref="LastError"/>) when it cannot load.</summary>
     public static bool Start(string root)
     {
+        // libobs wants a multithreaded COM apartment (CoInitializeEx fails with RPC_E_CHANGED_MODE on the STA UI thread and window capture then stays black)
+        if (OperatingSystem.IsWindows() && Thread.CurrentThread.GetApartmentState() != ApartmentState.MTA)
+        {
+            var ok = false;
+            var t = new Thread(() => ok = Start(root));
+            t.SetApartmentState(ApartmentState.MTA);
+            t.Start();
+            t.Join();
+            return ok;
+        }
         lock (Gate)
         {
             if (_started) return true;
@@ -41,6 +52,9 @@ public static unsafe class ObsRuntime
                 _started = true;
                 ObsNative.obs_add_data_path(Path.Combine(root, "data", "libobs") + "/");
                 ObsNative.obs_add_module_path(Path.Combine(root, "obs-plugins", "64bit"), Path.Combine(root, "data", "obs-plugins", "%module%"));
+                // win-capture decides at module load whether WGC is usable by asking the graphics device, so the device must exist before the modules load
+                // (otherwise window capture silently falls back to BitBlt, which is black for D3D games)
+                if (!ResetVideo(1920, 1080, 1920, 1080, 60)) return false;
                 // the encoder plugins probe their GPU through obs-*-test.exe, which they look up next to the host exe; keep the copies only while they load
                 var helpers = StageEncoderProbes(bin);
                 try { ObsNative.obs_load_all_modules(); ObsNative.obs_post_load_modules(); }
@@ -71,10 +85,11 @@ public static unsafe class ObsRuntime
     }
 
     /// <summary>Sets the compositing canvas. libobs allows this only while nothing is active; same size and rate is a no-op.</summary>
-    public static bool ResetVideo(int width, int height, int outWidth, int outHeight, int fps, int adapter = 0)
+    public static bool ResetVideo(int width, int height, int outWidth, int outHeight, int fps, int adapter = -1)
     {
         lock (Gate)
         {
+            if (adapter < 0) adapter = _adapter ??= DxgiAdapters.PickBest();
             if (_videoReset && _fpsNum == fps && _w == width && _h == height && _ow == outWidth && _oh == outHeight) return true;
             var gfx = Marshal.StringToCoTaskMemUTF8("libobs-d3d11");
             try
@@ -147,10 +162,14 @@ public static unsafe class ObsRuntime
     {
         try
         {
-            if (level > MaxLogLevel) return;
+            if (level > ObsNative.LogInfo) return;
             var buf = stackalloc byte[2048];
             ObsNative.vsnprintf(buf, 2048, fmt, args);
-            AppLog.Write("obs", (level <= ObsNative.LogError ? "error: " : level <= ObsNative.LogWarning ? "warn: " : "info: ") + Marshal.PtrToStringUTF8((nint)buf));
+            var msg = Marshal.PtrToStringUTF8((nint)buf) ?? "";
+            // info lines only for KC_OBS_LOG=1 or the game capture source (its window matching is the usual reason for an empty frame)
+            if (level > MaxLogLevel && !msg.Contains("window-capture", StringComparison.Ordinal)) return;
+            if (level <= ObsNative.LogError) ErrorReporter.Report("libobs", new VideoProblem(msg));
+            AppLog.Write("obs", (level <= ObsNative.LogError ? "error: " : level <= ObsNative.LogWarning ? "warn: " : "info: ") + msg);
         }
         catch { }
     }

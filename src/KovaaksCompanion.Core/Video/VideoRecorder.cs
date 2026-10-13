@@ -25,6 +25,8 @@ public sealed class VideoRecorder : IAsyncDisposable
     public string LastError { get; private set; } = "";
     /// <summary>Why the clip has no audio (empty = audio recorded or not requested).</summary>
     public string AudioError { get; private set; } = "";
+    /// <summary>Raised on a thread-pool thread when a running recording turns out not to capture the game.</summary>
+    public event Action<string>? Problem;
     /// <summary>Captured window.</summary>
     public CaptureTarget? Target { get; private set; }
     /// <summary>Size of the recorded video (the capped output size, not the raw window size); 0x0 before start.</summary>
@@ -58,6 +60,14 @@ public sealed class VideoRecorder : IAsyncDisposable
                 (_ring, _capture, Encoder, VideoSize) = (ring, cap, enc, (cap.OutputWidth, cap.OutputHeight));
                 AudioError = _o.CaptureAudio && !cap.HasAudio ? "process audio capture unavailable" : "";
                 AppLog.Write("video", $"recording with encoder {enc} at {cap.OutputWidth}x{cap.OutputHeight}");
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000);
+                    if (_capture != cap) return;
+                    var (w, h) = cap.SourceSize();
+                    AppLog.Write("video", $"game source size {w}x{h}");
+                    if (w == 0 || h == 0) { AppLog.Write("video", "game capture delivers no frames"); Problem?.Invoke("game capture delivers no frames (window not captured)"); }
+                });
                 if (cap.CamSources.Count > 0) _ = Task.Run(async () => { await Task.Delay(2000); if (_capture == cap) cap.FixCamModes(); });
                 _ = Task.Run(async () => { for (int i = 0; i < 40 && _avc == null && _capture == cap; i++) { Parameters(cap); if (_avc == null) await Task.Delay(250); } });
                 return true;
