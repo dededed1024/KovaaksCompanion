@@ -22,7 +22,7 @@ public static class KovaaksLaunch
         }
         catch (Exception e)
         {
-            AppLog.Write("launch", $"{url} failed: {e.Message}");
+            ErrorReporter.Report($"launch {url}", e);
             return false;
         }
     }

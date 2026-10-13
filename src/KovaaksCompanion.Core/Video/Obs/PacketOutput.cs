@@ -137,7 +137,7 @@ internal sealed unsafe class PacketOutput : IDisposable
             if (!ObsNative.obs_output_begin_data_capture(s._output, flags)) return 0;
             return 1;
         }
-        catch (Exception e) { AppLog.Write("obs", "output start failed: " + e); return 0; }
+        catch (Exception e) { ErrorReporter.Report("obs output start", e); return 0; }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
@@ -150,7 +150,7 @@ internal sealed unsafe class PacketOutput : IDisposable
             ObsNative.obs_output_end_data_capture(s._output);
             s.Stopped?.Invoke(s._error);
         }
-        catch (Exception e) { AppLog.Write("obs", "output stop failed: " + e); }
+        catch (Exception e) { ErrorReporter.Report("obs output stop", e); }
     }
 
     /// <summary>
@@ -181,6 +181,6 @@ internal sealed unsafe class PacketOutput : IDisposable
             Marshal.Copy((nint)pkt->Data, bytes, 0, bytes.Length);
             Packet?.Invoke(new EncodedPacket(pkt->Type == 1, pkt->Keyframe != 0, pkt->Pts, pkt->Dts, pkt->TimebaseNum, pkt->TimebaseDen, bytes, pkt->DtsUsec, captureNs));
         }
-        catch (Exception e) { AppLog.Write("obs", "packet handler failed: " + e); }
+        catch (Exception e) { ErrorReporter.Report("obs packet handler", e); }
     }
 }

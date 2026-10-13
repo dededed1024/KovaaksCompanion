@@ -22,7 +22,7 @@ public sealed class CamRecorder : IAsyncDisposable
     public async Task<bool> StartAsync(string deviceId, string encoder)
     {
         Directory.CreateDirectory(_dir);
-        foreach (var f in Directory.GetFiles(_dir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) { try { File.Delete(f); } catch { } }
+        foreach (var f in Directory.GetFiles(_dir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) { try { File.Delete(f); } catch (Exception e) { Diagnostics.ErrorReporter.Report("cam chunk delete", e); } }
         var ring = new PacketRing(_dir, TimeSpan.FromMinutes(_o.BufferMinutes));
         var cap = new ObsCamCapture();
         if (!await Task.Run(() => cap.Start(deviceId, encoder, _o.Quality, ring.Append)))
@@ -73,7 +73,7 @@ public sealed class CamRecorder : IAsyncDisposable
         await Task.Run(() =>
         {
             try { Parameters(); cap.Output.Stop(); var sw = System.Diagnostics.Stopwatch.StartNew(); while (cap.Output.IsActive && sw.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(50); }
-            catch (Exception e) { AppLog.Write("handcam", "stop failed: " + e.Message); }
+            catch (Exception e) { Diagnostics.ErrorReporter.Report("handcam stop", e); }
             _capture = null;
             cap.Dispose();
         });

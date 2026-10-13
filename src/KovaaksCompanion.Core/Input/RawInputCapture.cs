@@ -59,7 +59,7 @@ public sealed class RawInputCapture : IDisposable
             if (!RegisterRawInputDevices([rid], 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>()))
                 throw new System.ComponentModel.Win32Exception();
         }
-        catch (Exception e) { fail(e); ready.Set(); return; }
+        catch (Exception e) { Diagnostics.ErrorReporter.Report("raw input", e); fail(e); ready.Set(); return; }
         ready.Set();
         while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0) { TranslateMessage(ref msg); DispatchMessage(ref msg); }
     }
