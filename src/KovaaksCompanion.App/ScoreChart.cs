@@ -147,7 +147,7 @@ public sealed class ScoreChart : FrameworkElement
         if (string.IsNullOrEmpty(tagText)) return null;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var probe = new FormattedText(_watermark.Length > 0 ? _watermark : "A", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
-        var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
+        var tagBrush = new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)); tagBrush.Freeze();
         // Scales with the card height, up to twice the watermark's height cap.
         var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
         var tag = new FormattedText(tagText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize, tagBrush, dpi);
