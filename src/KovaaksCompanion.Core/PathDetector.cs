@@ -18,13 +18,24 @@ public static partial class PathDetector
     static bool IsKovaaks(string dir, Func<string, bool> dirExists, Func<string, bool> fileExists) =>
         dirExists(Path.Combine(dir, "FPSAimTrainer", "stats")) || fileExists(Path.Combine(dir, "FPSAimTrainer.exe"));
 
-    static string? ReadRegistry(string hive, string key, string value)
+    internal static string? ReadRegistry(string hive, string key, string value)
     {
         if (!OperatingSystem.IsWindows()) return null;
         try
         {
             using var k = (hive == "HKLM" ? Registry.LocalMachine : Registry.CurrentUser).OpenSubKey(key);
             return k?.GetValue(value) as string;
+        }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return null; }
+    }
+
+    internal static long? ReadRegistryDword(string hive, string key, string value)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            using var k = (hive == "HKLM" ? Registry.LocalMachine : Registry.CurrentUser).OpenSubKey(key);
+            return k?.GetValue(value) is int i ? (uint)i : null;
         }
         catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return null; }
     }
