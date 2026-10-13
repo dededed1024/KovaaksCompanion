@@ -3,13 +3,10 @@ using System.Runtime.InteropServices;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>
-/// Game window: <see cref="Hwnd"/> for gfxcapture; client area in desktop pixels (X/Y relative to <see cref="Output"/>, the DXGI output
-/// showing it, null when off-screen) for the ddagrab crop.
-/// </summary>
-public sealed record CaptureTarget(DxgiOutput? Output, int ProcessId, int X, int Y, int Width, int Height, long Hwnd = 0);
+/// <summary>Game window: <see cref="Hwnd"/> for the libobs window capture, client area size in physical pixels (even, as encoders need).</summary>
+public sealed record CaptureTarget(int ProcessId, int Width, int Height, long Hwnd);
 
-/// <summary>Locates the game's window and (handle for gfxcapture, client rect for ddagrab).</summary>
+/// <summary>Locates the game's window.</summary>
 public static class GameWindow
 {
     private delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
@@ -27,14 +24,14 @@ public static class GameWindow
     private const int MinSide = 200;
 
     /// <summary>Largest visible top-level window of the process; null when the process or its window is not up yet.</summary>
-    public static CaptureTarget? Find(string processName, IReadOnlyList<DxgiOutput>? outputs = null)
+    public static CaptureTarget? Find(string processName)
     {
         if (!OperatingSystem.IsWindows()) return null;
         var pids = new HashSet<uint>();
         foreach (var p in Process.GetProcessesByName(processName)) { pids.Add((uint)p.Id); p.Dispose(); }
         if (pids.Count == 0) return null;
 
-        // physical pixels regardless of this process's DPI mode (same space as DXGI output rects)
+        // physical pixels regardless of this process's DPI mode
         var prevCtx = SetThreadDpiAwarenessContext(new IntPtr(-4));
         try
         {
@@ -54,8 +51,7 @@ public static class GameWindow
             }, IntPtr.Zero);
             if (best is null) return null;
             var r = best.Value.Client;
-            var t = Resolve(r.Left, r.Top, r.Right, r.Bottom, (int)best.Value.Pid, outputs ?? MonitorResolver.Enumerate());
-            return (t ?? new CaptureTarget(null, (int)best.Value.Pid, 0, 0, (r.Right - r.Left) & ~1, (r.Bottom - r.Top) & ~1)) with { Hwnd = best.Value.Hwnd.ToInt64() };
+            return new CaptureTarget((int)best.Value.Pid, (r.Right - r.Left) & ~1, (r.Bottom - r.Top) & ~1, best.Value.Hwnd.ToInt64());
         }
         finally { SetThreadDpiAwarenessContext(prevCtx); }
     }
@@ -81,24 +77,5 @@ public static class GameWindow
         var ps = Process.GetProcessesByName(processName);
         foreach (var p in ps) p.Dispose();
         return ps.Length > 0;
-    }
-
-    /// <summary>
-    /// Maps a desktop rectangle to the output holding most of it: clipped to that output, made even-sized
-    /// (encoders need it), offset relative to the output origin as ddagrab expects.
-    /// </summary>
-    public static CaptureTarget? Resolve(int left, int top, int right, int bottom, int pid, IEnumerable<DxgiOutput> outputs)
-    {
-        DxgiOutput? best = null; long bestArea = 0;
-        foreach (var o in outputs.Where(o => o.AttachedToDesktop && !o.IsRotated))
-        {
-            long w = Math.Min(right, o.Right) - Math.Max(left, o.Left), h = Math.Min(bottom, o.Bottom) - Math.Max(top, o.Top);
-            if (w > 0 && h > 0 && w * h > bestArea) { best = o; bestArea = w * h; }
-        }
-        if (best is null) return null;
-        int x = Math.Max(left, best.Left), y = Math.Max(top, best.Top);
-        int width = (Math.Min(right, best.Right) - x) & ~1, height = (Math.Min(bottom, best.Bottom) - y) & ~1;
-        if (width < 2 || height < 2) return null;
-        return new CaptureTarget(best, pid, x - best.Left, y - best.Top, width, height);
     }
 }

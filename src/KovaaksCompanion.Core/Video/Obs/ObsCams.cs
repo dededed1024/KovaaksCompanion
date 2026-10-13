@@ -70,6 +70,9 @@ internal sealed class ObsCamCapture : IDisposable
     public int Height => ObsCamSource.Height;
 
     public bool Start(string deviceId, string encoderId, int quality, Action<EncodedPacket> onPacket)
+        => ObsRuntime.Run(() => StartCore(deviceId, encoderId, quality, onPacket));
+
+    bool StartCore(string deviceId, string encoderId, int quality, Action<EncodedPacket> onPacket)
     {
         var gfx = Marshal.StringToCoTaskMemUTF8("libobs-d3d11");
         try
@@ -104,15 +107,16 @@ internal sealed class ObsCamCapture : IDisposable
     }
 
     /// <summary>A cam that delivers no frames at 1280x720@30 falls back to its device default mode.</summary>
-    public void FixMode()
+    public void FixMode() => ObsRuntime.Run(() =>
     {
         lock (_sync)
             if (_source != 0 && !ObsCamSource.HasFrames(_source)) { Diagnostics.AppLog.Write("handcam", "no frames at 1280x720@30, using the device default"); ObsCamSource.UseDeviceDefault(_source); }
-    }
+        return true;
+    });
 
     public void Dispose()
     {
-        lock (_sync) DisposeCore();
+        ObsRuntime.Run(() => { lock (_sync) DisposeCore(); return true; });
     }
 
     void DisposeCore()

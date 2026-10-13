@@ -10,7 +10,6 @@ public static unsafe class ObsRuntime
     static readonly object Gate = new();
     static bool _loaded, _started, _videoReset, _audioReset;
     static string _root = "";
-    static int? _adapter;
     static uint _fpsNum, _w, _h, _ow, _oh;
 
     public static bool IsStarted => _started;
@@ -20,18 +19,31 @@ public static unsafe class ObsRuntime
     static readonly int MaxLogLevel = Environment.GetEnvironmentVariable("KC_OBS_LOG") == "1" ? ObsNative.LogInfo : ObsNative.LogWarning;
 
     /// <summary>Starts libobs from the bundle folder (contains bin\64bit, obs-plugins\64bit, data). Safe to call again; false (see <see cref="LastError"/>) when it cannot load.</summary>
-    public static bool Start(string root)
+    public static bool Start(string root) => Run(() => StartCore(root));
+
+    [ThreadStatic] static bool _onObsThread;
+
+    /// <summary>obs_startup initialises COM as an STA on the calling thread (an MTA thread gets RPC_E_CHANGED_MODE 0x80010106, as does any thread already in the other mode), and the plugins load on that same thread. Every libobs call that can start the core, load a plugin or create a source runs here, on a fresh STA thread; a nested call runs inline. Plugin worker threads manage their own COM.</summary>
+    public static T Run<T>(Func<T> body)
     {
-        // libobs wants a multithreaded COM apartment (CoInitializeEx fails with RPC_E_CHANGED_MODE on the STA UI thread and window capture then stays black)
-        if (OperatingSystem.IsWindows() && Thread.CurrentThread.GetApartmentState() != ApartmentState.MTA)
+        if (_onObsThread) return body();
+        T result = default!;
+        Exception? error = null;
+        var t = new Thread(() =>
         {
-            var ok = false;
-            var t = new Thread(() => ok = Start(root));
-            t.SetApartmentState(ApartmentState.MTA);
-            t.Start();
-            t.Join();
-            return ok;
-        }
+            _onObsThread = true;
+            try { result = body(); }
+            catch (Exception e) { error = e; }
+        }) { IsBackground = true, Name = "libobs" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        t.Join();
+        if (error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+        return result;
+    }
+
+    static bool StartCore(string root)
+    {
         lock (Gate)
         {
             if (_started) return true;
@@ -58,7 +70,7 @@ public static unsafe class ObsRuntime
                 // the encoder plugins probe their GPU through obs-*-test.exe, which they look up next to the host exe; keep the copies only while they load
                 var helpers = StageEncoderProbes(bin);
                 try { ObsNative.obs_load_all_modules(); ObsNative.obs_post_load_modules(); }
-                finally { foreach (var h in helpers) { try { File.Delete(h); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } } }
+                finally { foreach (var h in helpers) { try { File.Delete(h); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } } RemoveStrayPluginDir(); }
                 return true;
             }
             catch (Exception e) when (e is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
@@ -68,6 +80,18 @@ public static unsafe class ObsRuntime
                 return false;
             }
         }
+    }
+
+    /// <summary>win-capture leaves an empty win-capture folder next to the host exe when it loads.</summary>
+    static void RemoveStrayPluginDir()
+    {
+        try
+        {
+            var host = Path.GetDirectoryName(Environment.ProcessPath);
+            var dir = host == null ? null : Path.Combine(host, "win-capture");
+            if (dir != null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     static List<string> StageEncoderProbes(string bin)
@@ -85,11 +109,10 @@ public static unsafe class ObsRuntime
     }
 
     /// <summary>Sets the compositing canvas. libobs allows this only while nothing is active; same size and rate is a no-op.</summary>
-    public static bool ResetVideo(int width, int height, int outWidth, int outHeight, int fps, int adapter = -1)
+    public static bool ResetVideo(int width, int height, int outWidth, int outHeight, int fps, int adapter = 0)
     {
         lock (Gate)
         {
-            if (adapter < 0) adapter = _adapter ??= DxgiAdapters.PickBest();
             if (_videoReset && _fpsNum == fps && _w == width && _h == height && _ow == outWidth && _oh == outHeight) return true;
             var gfx = Marshal.StringToCoTaskMemUTF8("libobs-d3d11");
             try
@@ -109,12 +132,19 @@ public static unsafe class ObsRuntime
         }
     }
 
-    public static bool ResetAudio()
+    [DllImport("rtworkq.dll")] static extern int RtwqStartup();
+
+    public static bool ResetAudio() => Run(ResetAudioCore);
+
+    static bool ResetAudioCore()
     {
         lock (Gate)
         {
             if (_audioReset) return true;
-            var a = new ObsNative.AudioInfo { SamplesPerSec = 48000, Speakers = ObsNative.SpeakersStereo };
+            // win-wasapi locks an RTWQ shared work queue but never starts the platform itself; without this it fails with MF_E_SHUTDOWN (0xC00D3E85)
+            int hr = RtwqStartup();
+            if (hr < 0) AppLog.Write("obs", $"RtwqStartup failed: 0x{hr:X8}");
+            var a =new ObsNative.AudioInfo { SamplesPerSec = 48000, Speakers = ObsNative.SpeakersStereo };
             if (!ObsNative.obs_reset_audio(ref a)) { LastError = "obs_reset_audio failed"; return false; }
             _audioReset = true;
             return true;
@@ -125,7 +155,9 @@ public static unsafe class ObsRuntime
     /// <summary>libobs os_gettime_ns(): the QPC clock in nanoseconds.</summary>
     public static ulong NowNs() => ObsNative.os_gettime_ns();
 
-    public static List<string> EncoderIds()
+    public static List<string> EncoderIds() => Run(EncoderIdsCore);
+
+    static List<string> EncoderIdsCore()
     {
         var l = new List<string>();
         for (nuint i = 0; ObsNative.obs_enum_encoder_types(i, out var p); i++) if (ObsNative.Str(p) is { } s) l.Add(s);
@@ -133,7 +165,9 @@ public static unsafe class ObsRuntime
     }
 
     /// <summary>(display name, libobs id) of every DirectShow video device, in the order the dshow_input source lists them.</summary>
-    public static List<(string Name, string Id)> DshowDevices()
+    public static List<(string Name, string Id)> DshowDevices() => Run(DshowDevicesCore);
+
+    static List<(string Name, string Id)> DshowDevicesCore()
     {
         var l = new List<(string, string)>();
         var props = ObsNative.obs_get_source_properties("dshow_input");
@@ -168,7 +202,8 @@ public static unsafe class ObsRuntime
             var msg = Marshal.PtrToStringUTF8((nint)buf) ?? "";
             // info lines only for KC_OBS_LOG=1 or the game capture source (its window matching is the usual reason for an empty frame)
             if (level > MaxLogLevel && !msg.Contains("window-capture", StringComparison.Ordinal)) return;
-            if (level <= ObsNative.LogError) ErrorReporter.Report("libobs", new VideoProblem(msg));
+            // win-capture probes its game-hook helper at load (graphics-hook is not bundled; window capture does not need it)
+            if (level <= ObsNative.LogError && !msg.StartsWith("CreateProcessW failed", StringComparison.Ordinal)) ErrorReporter.Report("libobs", new VideoProblem(msg));
             AppLog.Write("obs", (level <= ObsNative.LogError ? "error: " : level <= ObsNative.LogWarning ? "warn: " : "info: ") + msg);
         }
         catch { }
