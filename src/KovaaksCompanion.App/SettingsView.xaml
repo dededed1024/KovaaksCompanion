@@ -220,7 +220,7 @@
                                         <Border Width="240" Height="135" Margin="0,12,0,0" HorizontalAlignment="Center" CornerRadius="6" Background="{DynamicResource Panel}" ClipToBounds="True">
                                             <Canvas x:Name="CamCanvas"/>
                                         </Border>
-                                        <TextBlock Text="{app:Loc 'Video save'}" Foreground="{DynamicResource Fg}" Margin="4,16,0,4"/>
+                                        <TextBlock Text="{app:Loc 'How to save video'}" Foreground="{DynamicResource Fg}" Margin="4,16,0,4"/>
                                         <StackPanel x:Name="CamSaveBar" Margin="4,0,0,0">
                                             <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'One video (game + webcam)'}" Tag="Composite" Checked="OnCamSave"/>
                                             <RadioButton Style="{StaticResource Radio}" Content="{app:Loc 'Separate videos (game and webcam)'}" Tag="Separate" Checked="OnCamSave"/>

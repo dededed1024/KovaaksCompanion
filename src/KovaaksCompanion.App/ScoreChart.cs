@@ -140,8 +140,6 @@ public sealed class ScoreChart : FrameworkElement
         if (_marquee && IsLoaded) StartDrift(pitch); else StopDrift();
     }
 
-    static readonly Typeface TagFace = new(new FontFamily("Segoe UI Semibold, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
-
     /// <summary>Bottom right tag: COMPLETE once the top tier is reached, else the progress number plus a "%" at 3/4 size on the same baseline. Null when there is nothing to show.</summary>
     (FormattedText Text, Point TextAt, FormattedText? Pct, Point PctAt)? TagLayout(double w, double h)
     {
@@ -149,15 +147,15 @@ public sealed class ScoreChart : FrameworkElement
         if (string.IsNullOrEmpty(tagText)) return null;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var probe = new FormattedText(_watermark.Length > 0 ? _watermark : "A", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
-        var tagBrush = new SolidColorBrush(Color.FromArgb(0xD0, 255, 255, 255)); tagBrush.Freeze();
+        var tagBrush = new SolidColorBrush(Color.FromArgb(0xA0, 255, 255, 255)); tagBrush.Freeze();
         // Scales with the card height, up to twice the watermark's height cap.
         var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
-        var tag = new FormattedText(tagText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, TagFace, tagSize, tagBrush, dpi);
+        var tag = new FormattedText(tagText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize, tagBrush, dpi);
         FormattedText? pct = null;
         var width = tag.Width;
         if (tagText == _progress)
         {
-            pct = new FormattedText("%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, TagFace, tagSize * 0.75, tagBrush, dpi);
+            pct = new FormattedText("%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize * 0.75, tagBrush, dpi);
             width += pct.Width;
         }
         var x0 = w - width - 8;

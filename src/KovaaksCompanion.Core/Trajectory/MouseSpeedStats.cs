@@ -9,7 +9,8 @@ public enum AimKind { Tracking, Switching, Flick }
 /// </summary>
 public sealed record RunSpeed(
     double Mean, double Peak, double Max, double? FireSpeed, double? IdleSpeed, double HoldRatio, double ReversalsPerSec,
-    double? KillInterval, double? FlickDistance, double? FlickPeak, double? FlickTime, double? Reaction, double? Efficiency, int Kills);
+    double? KillInterval, double? FlickDistance, double? FlickPeak, double? FlickTime, double? Reaction, double? Efficiency, int Kills,
+    double? Jerk = null, double? SpeedCv = null);
 
 public static class MouseSpeedStats
 {
@@ -19,6 +20,8 @@ public static class MouseSpeedStats
     public const double MoveDegPerSec = KillFlicks.MoveThresholdDegPerSec;
     /// <summary>Horizontal speed (deg/s) below which a direction change is jitter, not a reversal.</summary>
     const double ReversalDegPerSec = 15;
+    /// <summary>Samples between the two points a horizontal velocity is taken from (~8 ms): single mouse counts at 1 kHz are all jitter.</summary>
+    const int ReversalStride = (int)(AnalysisHz / 120);
 
     /// <summary>The aim kind from the scenario name; null when the name says nothing.</summary>
     public static AimKind? KindFromName(string scenario)
@@ -33,6 +36,37 @@ public static class MouseSpeedStats
     /// <summary>The aim kind from how the runs were played: holding the trigger most of the time is tracking, anything else is target-to-target.</summary>
     public static AimKind KindFromRuns(IReadOnlyList<RunSpeed> runs) =>
         runs.Count > 0 && runs.Average(r => r.HoldRatio) >= 0.5 ? AimKind.Tracking : AimKind.Switching;
+
+    /// <summary>Rate the metrics are measured at, so they do not depend on how finely the mouse movement was logged.</summary>
+    const double AnalysisHz = 1000;
+
+    /// <summary>The samples to measure: raw movement (samples at the mouse's own timing, up to 1 kHz) is resampled to a fixed rate, older fixed-rate samples are used as they are.</summary>
+    static IReadOnlyList<CameraSample> Uniform(TrajectoryData data)
+    {
+        var s = data.Samples;
+        if (data.Raw == null || s.Count < 2) return s;
+        var n = (int)Math.Floor((s[^1].TSec - s[0].TSec) * AnalysisHz) + 1;
+        var res = new CameraSample[n];
+        for (var i = 0; i < n; i++)
+        {
+            var t = s[0].TSec + i / AnalysisHz;
+            var d = CameraPath.At(s, t);
+            res[i] = new CameraSample((float)t, (float)d.YawDeg, (float)d.PitchDeg);
+        }
+        return res;
+    }
+
+    /// <summary>Index of the first sample later than <paramref name="t"/> (the sample count when there is none).</summary>
+    static int FirstAfter(IReadOnlyList<CameraSample> s, double t)
+    {
+        int lo = 0, hi = s.Count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (s[mid].TSec <= t) lo = mid + 1; else hi = mid;
+        }
+        return lo;
+    }
 
     /// <summary>Per-sample speed: the angle covered from this sample to the one a window later, over the time between them.</summary>
     static double[] Speeds(IReadOnlyList<CameraSample> s)
@@ -52,7 +86,7 @@ public static class MouseSpeedStats
     /// <summary>Mean speed (deg/s) over the stretch ending at each of <paramref name="ends"/> (ascending, mouse seconds) and starting at the previous one. A stretch without samples is a still mouse: 0, so the line stays continuous.</summary>
     public static double[] Averages(TrajectoryData data, IReadOnlyList<double> ends)
     {
-        var s = data.Samples;
+        var s = Uniform(data);
         var res = new double[ends.Count];
         if (s.Count < 2) return res;
         var v = Speeds(s);
@@ -77,7 +111,7 @@ public static class MouseSpeedStats
     /// <summary>Null when the run has less than a second of samples.</summary>
     public static RunSpeed? Analyze(TrajectoryData data)
     {
-        var s = data.Samples;
+        var s = Uniform(data);
         if (s.Count < 2 || s[^1].TSec - s[0].TSec < 1) return null;
         var v = Speeds(s);
         var span = s[^1].TSec - s[0].TSec;
@@ -105,11 +139,12 @@ public static class MouseSpeedStats
         // Direction changes of the horizontal velocity, between stretches faster than the jitter floor.
         var reversals = 0;
         var lastSign = 0;
-        for (var i = 1; i < s.Count; i++)
+        var stride = data.Raw != null ? ReversalStride : 1; // older samples are already ~8 ms apart
+        for (var i = stride; i < s.Count; i++)
         {
-            var dt = s[i].TSec - s[i - 1].TSec;
+            var dt = s[i].TSec - s[i - stride].TSec;
             if (dt <= 0) continue;
-            var yawSpeed = CameraPath.WrapDelta(s[i].YawDeg - s[i - 1].YawDeg) / dt;
+            var yawSpeed = CameraPath.WrapDelta(s[i].YawDeg - s[i - stride].YawDeg) / dt;
             if (Math.Abs(yawSpeed) < ReversalDegPerSec) continue;
             var sign = Math.Sign(yawSpeed);
             if (lastSign != 0 && sign != lastSign) reversals++;
@@ -119,6 +154,36 @@ public static class MouseSpeedStats
         var sorted = v.Order().ToArray();
         var peak = sorted[(int)Math.Min(sorted.Length - 1, sorted.Length * 0.95)];
         var holdTime = holds.Sum(x => Math.Max(0, x.To - x.From));
+
+        // Smoothness while firing: the speed sampled every 50 ms inside the holds, its RMS jerk (third difference) and its variation around the mean.
+        const double Step = 0.05;
+        double jerkSq = 0;
+        int jerkN = 0, j = 0;
+        var held = new List<double>();
+        foreach (var (from, to) in holds)
+        {
+            if (to - from < 4 * Step) continue;
+            var grid = new List<double>();
+            for (var t = from; t <= to; t += Step)
+            {
+                while (j + 1 < s.Count && s[j + 1].TSec <= t) j++;
+                grid.Add(v[j]);
+            }
+            held.AddRange(grid);
+            for (var i = 3; i < grid.Count; i++)
+            {
+                var jerk = (grid[i] - 3 * grid[i - 1] + 3 * grid[i - 2] - grid[i - 3]) / (Step * Step * Step);
+                jerkSq += jerk * jerk;
+                jerkN++;
+            }
+        }
+        double? rmsJerk = jerkN >= 10 ? Math.Sqrt(jerkSq / jerkN) : null;
+        double? speedCv = null;
+        if (held.Count >= 10 && held.Average() > 0)
+        {
+            var m = held.Average();
+            speedCv = Math.Sqrt(held.Sum(x => (x - m) * (x - m)) / held.Count) / m;
+        }
 
         // One flick per kill: from the previous kill (or the start) to this one.
         var kills = data.Events.Where(e => e.Type == TrajectoryEventType.Kill).Select(e => (double)e.TSec).Order().ToList();
@@ -136,15 +201,14 @@ public static class MouseSpeedStats
             double path = 0, begin = double.NaN, top = 0;
             var at = from;
             var last = a;
-            for (var i = 0; i < s.Count; i++)
+            for (var i = FirstAfter(s, from); i < s.Count; i++)
             {
                 var t = s[i].TSec;
-                if (t <= from) continue;
                 if (t >= kill) break;
                 var b = new ViewDirection(s[i].YawDeg, s[i].PitchDeg);
                 var step = KillFlicks.AngleBetween(last, b);
                 path += step;
-                if (double.IsNaN(begin) && t > at && step / (t - at) > MoveDegPerSec) begin = at;
+                if (double.IsNaN(begin) && v[i] > MoveDegPerSec) begin = t;
                 top = Math.Max(top, v[i]);
                 last = b;
                 at = t;
@@ -160,6 +224,6 @@ public static class MouseSpeedStats
         }
 
         return new RunSpeed(v.Average(), peak, sorted[^1], fireN > 0 ? fireSum / fireN : null, idleN > 0 ? idleSum / idleN : null, Math.Min(1, holdTime / span), reversals / span,
-            Median(interval), Median(dist), Median(fpeak), Median(ftime), Median(react), Median(eff), interval.Count);
+            Median(interval), Median(dist), Median(fpeak), Median(ftime), Median(react), Median(eff), interval.Count, rmsJerk, speedCv);
     }
 }

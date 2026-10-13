@@ -202,11 +202,19 @@ public partial class StatsView : UserControl
         _cts.Cancel();
     }
 
+    string _dpiFixSig = "";
+
     string FavSig() => string.Join('|', _host.Ui.FavoritePlaylists.Order(StringComparer.OrdinalIgnoreCase));
 
     /// <summary>Favorites changed: redraw what lists playlists.</summary>
     void OnUiChanged()
     {
+        var fixSig = string.Join(';', _host.Ui.DpiFixes.OrderBy(k => k.Key).Select(k => $"{k.Key}={k.Value}"));
+        if (fixSig != _dpiFixSig)
+        {
+            _dpiFixSig = fixSig;
+            _book = _book.WithLibrary(_book.Lib.WithDpiFixes(_host.Ui.DpiFixes));
+        }
         var sig = FavSig();
         if (sig == _favSig) return;
         _favSig = sig;
@@ -295,9 +303,10 @@ public partial class StatsView : UserControl
         var folder = _host.Settings.StatsFolder;
         var sessionsFolder = _host.SessionsFolder;
         var cache = Cache;
+        var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
         var (lib, sessions, serverBest, deletedBest, hidden, scores) = await Task.Run(() => {
             var infos = SessionStore.List(sessionsFolder).Select(s => s.Info).ToList();
-            return (RunLibrary.Scan(folder).Verified(infos).WithArchived(cache.ArchivedRuns()), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
+            return (RunLibrary.Scan(folder).Verified(infos).WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
         });
         _book = _book.WithLibrary(lib);
         (_sessions, _deletedBest, _hidden) = (sessions, deletedBest, hidden);

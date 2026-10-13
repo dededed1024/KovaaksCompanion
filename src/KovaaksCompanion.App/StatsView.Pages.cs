@@ -62,6 +62,9 @@ public partial class StatsView
         if (await CaptureImage(null)) await FlashCopyImage();
     }
 
+    /// <summary>Fixed pixels-per-DIP of the image captures, independent of the screen's DPI.</summary>
+    internal const double CaptureScale = 1.5;
+
     /// <summary>Opaque background of the theme currently applied, for the image captures.</summary>
     Brush CaptureBg()
     {
@@ -96,28 +99,28 @@ public partial class StatsView
         if ((only ?? _bench) is not { } t || t.ActualWidth <= 0 || t.ActualHeight <= 0) return false;
         try
         {
-            var dpi = VisualTreeHelper.GetDpi(only == null ? t : this);
+            var scale = CaptureScale;
             var body = new List<FrameworkElement> { t };
             var title = new FormattedText(Heading.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize * 0.7, Heading.Foreground, dpi.PixelsPerDip);
+                new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch), Heading.FontSize * 0.7, Heading.Foreground, scale);
             // Header row: dot, name and difficulty on the left, then the overall tier.
-            const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28, pad = 15, dotInset = 18, headPadY = 4, headGap = 4;
+            const double dot = 10, dotGap = 12, diffGap = 12, tierGap = 28, pad = 8, dotInset = 18, headPadY = 4, headGap = 4;
             var pill = HeadPill.Visibility == Visibility.Visible && HeadPill.ActualWidth > 0 ? HeadPill : null;
             var diffName = DiffTrack.Visibility == Visibility.Visible ? DiffBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string : null;
             var diff = string.IsNullOrEmpty(diffName) ? null : new FormattedText(diffName, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                new Typeface(Heading.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 14, DimB, dpi.PixelsPerDip);
+                new Typeface(Heading.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 14, DimB, scale);
             // Overall tier and percentage, right-aligned in the header at the benchmark name's size and weight.
             var heroRuns = only == null ? (_hero as Panel)?.Children.OfType<TextBlock>().FirstOrDefault()?.Inlines.OfType<Run>().ToList() : null;
             var tierFace = new Typeface(Heading.FontFamily, Heading.FontStyle, Heading.FontWeight, Heading.FontStretch);
-            var heroTexts = (heroRuns ?? []).Select(r => new FormattedText(r.Text.Trim() + (r == heroRuns![0] ? "  " : ""), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, tierFace, Heading.FontSize * 1.0, r.Foreground, dpi.PixelsPerDip)).ToList();
+            var heroTexts = (heroRuns ?? []).Select(r => new FormattedText(r.Text.Trim() + (r == heroRuns![0] ? "  " : ""), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, tierFace, Heading.FontSize * 1.0, r.Foreground, scale)).ToList();
             var heroW = heroTexts.Sum(f => f.WidthIncludingTrailingWhitespace);
             var leftW = (pill != null ? dotInset + dot + dotGap : 0) + title.Width + (diff != null ? diffGap + diff.Width : 0);
             var headH = Math.Max(Math.Max(title.Height, diff?.Height ?? 0), heroTexts.Count > 0 ? heroTexts.Max(f => f.Height) : 0);
             var width = Math.Max(body.Max(x => x.ActualWidth), heroTexts.Count > 0 ? leftW + tierGap + heroW + pad : leftW) + pad * 2;
             var height = headPadY + headH + headGap + body.Sum(x => x.ActualHeight) + CardGap * (body.Count - 1) + pad;
-            var w = (int)Math.Ceiling(width * dpi.DpiScaleX);
-            var h = (int)Math.Ceiling(height * dpi.DpiScaleY);
-            var rtb = new RenderTargetBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            var w = (int)Math.Ceiling(width * scale);
+            var h = (int)Math.Ceiling(height * scale);
+            var rtb = new RenderTargetBitmap(w, h, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
@@ -165,7 +168,9 @@ public partial class StatsView
                     y += part.ActualHeight + CardGap;
                 }
             }
-            rtb.Render(dv);
+            t.SetCaptureButtonsVisible(false);
+            try { rtb.Render(dv); }
+            finally { t.SetCaptureButtonsVisible(true); }
             rtb.Freeze();
             Clipboard.SetImage(rtb);
             var dir = _host.Settings.CapturesFolder;

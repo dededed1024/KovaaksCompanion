@@ -302,7 +302,8 @@ public partial class ReplayView : UserControl
         var tok = _tok;
         var infos = Infos();
         var cacheFolder = _host.Settings.CacheFolder;
-        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder).Verified(infos).WithArchived(new StatsCache(cacheFolder).ArchivedRuns()));
+        var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
+        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder).Verified(infos).WithArchived(new StatsCache(cacheFolder).ArchivedRuns()).WithDpiFixes(dpiFixes));
         if (!_open || tok != _tok || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         BuildAll();
@@ -636,6 +637,25 @@ public partial class ReplayView : UserControl
         return g;
     }
 
+    /// <summary>The best bar with the average bar drawn over it, so the part past the average shows how far the best reaches. When both are the same only the best bar is drawn.</summary>
+    static UIElement OverlapBar(double avg, double best, Brush avgFill, Brush bestFill, double height = 6)
+    {
+        var g = new Grid { Height = height };
+        g.Children.Add(new Border { CornerRadius = new CornerRadius(height / 2), Background = Solid("#14FFFFFF") });
+        UIElement Fill(double frac, Brush b)
+        {
+            frac = double.IsNaN(frac) ? 0 : Math.Clamp(frac, 0, 1);
+            var inner = new Grid();
+            inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(frac, 1e-6), GridUnitType.Star) });
+            inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(1 - frac, 1e-6), GridUnitType.Star) });
+            inner.Children.Add(new Border { CornerRadius = new CornerRadius(height / 2), Background = b });
+            return inner;
+        }
+        g.Children.Add(Fill(best, bestFill));
+        if (Math.Abs(avg - best) > 1e-6) g.Children.Add(Fill(avg, avgFill));
+        return g;
+    }
+
     /// <summary>Wraps a grid of cards: as many columns (up to <paramref name="max"/>) as fit at <paramref name="minCell"/> px each. The cards carry an 8 px right and bottom margin; the grid's own right margin takes the last one back.</summary>
     static void Responsive(UniformGrid grid, int max, double minCell)
     {
@@ -692,36 +712,90 @@ public partial class ReplayView : UserControl
         var groups = ScenarioInsights.BySensitivity(s.Runs);
         if (groups.Count == 0) return null;
         var top = groups.Count > 1 ? groups.MaxBy(g => g.Average) : null;
-        // The bars zoom into the scenario's own score range: the axis spans from just under the lowest average to the best score, so the gaps fill the bar.
+        // The bars zoom into the scenario's own score range: the axis starts where the lowest average fills 5% of the bar and ends at the best score.
         var hi = groups.Max(g => g.Best);
         var lo0 = groups.Min(g => g.Average);
-        var span = hi - lo0;
-        var floor = span < hi * 0.01 ? 0 : Math.Max(0, lo0 - span * 0.5);
+        var floor = hi - lo0 < hi * 0.01 ? 0 : Math.Max(0, (lo0 - 0.05 * hi) / 0.95);
         double Frac(double v) => (v - floor) / Math.Max(1e-9, hi - floor);
         var body = new StackPanel();
-        var dots = s.Runs.Where(r => r.Cm360 is > 0).ToList();
+        List<RunRecord> RunsOf(SensGroup g) => s.Runs.Where(r => r.Cm360 is > 0 && Math.Abs(Math.Round(r.Cm360.Value, 2) - g.Cm360) < 1e-6).ToList();
+        // Only the listed sensitivities are plotted, each in its own colour that the row below repeats.
+        var dots = s.Runs.Where(r => r.Cm360 is > 0 && groups.Any(g => Math.Abs(g.Cm360 - Math.Round(r.Cm360!.Value, 2)) < 1e-6)).ToList();
         if (groups.Count > 1 && dots.Count >= 5)
         {
             var chart = new ScatterChart { Height = 170, Margin = new Thickness(0, 0, 0, 8) };
-            chart.Set(dots.Select(r => (r.Cm360!.Value, r.Score, L.Stamp(r.End))).ToList(), "0.#", "0.#");
+            chart.Set(dots.Select(r => (r.Cm360!.Value, r.Score, $"{r.Cm360!.Value:0.##} cm/360 · {L.Stamp(r.End)}")).ToList(), "0.#", "0.#",
+                dots.Select(r => groups.FindIndex(g => Math.Abs(g.Cm360 - Math.Round(r.Cm360!.Value, 2)) < 1e-6)).ToList());
+            chart.GroupNote = gi => gi < groups.Count && RunsOf(groups[gi]) is { Count: > 0 } rs ? $"DPI {rs[0].EffectiveDpi} · " + L.T("Click to edit") : "";
+            chart.GroupClick += gi => { if (gi < groups.Count) ShowDpiEditor(chart, RunsOf(groups[gi])); };
             body.Children.Add(chart);
         }
-        foreach (var g in groups)
+        for (var gi = 0; gi < groups.Count; gi++)
         {
+            var g = groups[gi];
             var bestTone = TierOf(g.Best) is { } t ? ChartPaths.TextTone(t.Brush) : FgB;
-            var head = new Grid { Margin = new Thickness(4, 8, 4, 5) };
-            head.Children.Add(new TextBlock { Text = $"{g.Cm360:0.#} cm/360", Foreground = DimB, FontSize = 13 });
+            var head = new Grid { Margin = new Thickness(4, 8, 4, 5), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            head.MouseLeftButtonUp += (_, _) => ShowDpiEditor(head, RunsOf(g));
+            var label = new StackPanel { Orientation = Orientation.Horizontal };
+            if (groups.Count > 1 && dots.Count >= 5)
+                label.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, Fill = new SolidColorBrush(ScatterChart.GroupColors[gi % ScatterChart.GroupColors.Length]) });
+            label.Children.Add(new TextBlock { Text = $"{g.Cm360:0.##} cm/360", Foreground = DimB, FontSize = 13 });
+            head.Children.Add(label);
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             right.Children.Add(new TextBlock { Text = L.F("{0} plays", g.Runs), Foreground = DimB, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) });
             right.Children.Add(new TextBlock { Text = g.Average.ToString("0.#"), Foreground = g == top ? (Brush)FindResource("Green") : FgB, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             right.Children.Add(new TextBlock { Text = " / " + g.Best.ToString("0.#"), Foreground = bestTone, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             head.Children.Add(right);
             body.Children.Add(head);
-            var bar = MeterBar(Frac(g.Average), g == top ? (Brush)FindResource("Green") : (Brush)FindResource("Accent"), 6, Frac(g.Best), bestTone);
+            var same = string.Equals(g.Average.ToString("0.#"), g.Best.ToString("0.#"));
+            var behind = !same && bestTone is SolidColorBrush sb ? new SolidColorBrush(Color.FromArgb(0x70, sb.Color.R, sb.Color.G, sb.Color.B)) : bestTone;
+            var bar = OverlapBar(same ? Frac(g.Best) : Frac(g.Average), Frac(g.Best), g == top ? (Brush)FindResource("Green") : (Brush)FindResource("Accent"), behind);
             bar.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 4, 2));
             body.Children.Add(bar);
         }
         return Section("Score by sensitivity", body, new Thickness(0, 12, 0, 0), L.T("Average") + " / " + L.T("Best"));
+    }
+
+    /// <summary>A small popup to correct the DPI of the runs played at one sensitivity (KovaaK's recorded a wrong one). Applies to every scenario's runs recorded with the same DPI and sensitivity.</summary>
+    void ShowDpiEditor(FrameworkElement anchor, List<RunRecord> runs)
+    {
+        if (runs.Count == 0) return;
+        var keys = runs.Select(r => r.DpiKey).OfType<string>().Distinct().ToList();
+        var recorded = runs[0].Dpi;
+        if (keys.Count == 0 || recorded <= 0) return;
+        var box = new TextBox { Text = runs[0].EffectiveDpi.ToString(), Width = 80, FontSize = 13, MaxLength = 6, VerticalContentAlignment = VerticalAlignment.Center };
+        var popup = new System.Windows.Controls.Primitives.Popup { PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
+        void Apply(int dpi)
+        {
+            // Every DPI recorded at this sensitivity becomes the one entered; entering a run's own recorded DPI clears its correction.
+            foreach (var r in runs.Where(r => r.DpiKey is not null).DistinctBy(r => r.DpiKey)) _host.Ui.SetDpiFix([r.DpiKey!], dpi, r.Dpi);
+            _host.SaveUi();
+            popup.IsOpen = false;
+            if (_d is null) return;
+            var lib = _d.Lib.WithDpiFixes(_host.Ui.DpiFixes);
+            _d = _d with { Book = _d.Book.WithLibrary(lib) };
+            _stats = _d.Book.For(_scenario);
+            if (!_runMode) BuildOverview();
+        }
+        void Commit() { if (int.TryParse(box.Text.Trim(), out var v) && v is > 0 and <= 100000) Apply(v); }
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); e.Handled = true; } else if (e.Key == Key.Escape) { popup.IsOpen = false; e.Handled = true; } };
+        var ok = new Button { Content = L.T("Apply"), Style = (Style)FindResource("Primary"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(12, 4, 12, 4) };
+        ok.Click += (_, _) => Commit();
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(new TextBlock { Text = "DPI", Foreground = DimB, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        row.Children.Add(box);
+        row.Children.Add(ok);
+        var panel = new StackPanel();
+        panel.Children.Add(row);
+        if (runs.Any(r => r.FixedDpi > 0))
+        {
+            var reset = new TextBlock { Text = L.F("Recorded: {0}", recorded), Foreground = DimB, FontSize = 12, Margin = new Thickness(0, 8, 0, 0), Cursor = Cursors.Hand };
+            reset.MouseLeftButtonUp += (_, _) => Apply(0);
+            panel.Children.Add(reset);
+        }
+        popup.Child = new Border { Background = (Brush)FindResource("Raised"), BorderBrush = (Brush)FindResource("Separator"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12), Margin = new Thickness(0, 4, 0, 8), Child = panel };
+        popup.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        popup.IsOpen = true;
     }
 
     // ---- mouse speed -------------------------------------------------------------------------------------------
@@ -739,10 +813,9 @@ public partial class ReplayView : UserControl
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TrajectoryFormatException) { return null; }
     }
 
-    const int SpeedRuns = 30;
     readonly record struct SpeedPlay(DateTime End, double Score, SessionItem? Item, RunSpeed? Cached);
 
-    /// <summary>Fills the mouse-speed card: the average over the newest plays next to the values of the highest-scoring play with mouse data. Reading trajectories takes a moment, so the card appears once they are in.</summary>
+    /// <summary>Fills the mouse-speed card from every play of the scenario that has mouse data. Reading trajectories takes a moment, so the card appears once they are in.</summary>
     async Task LoadSpeedAsync(string scenario, Border host)
     {
         var items = _items.Where(x => x.Info.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -751,40 +824,55 @@ public partial class ReplayView : UserControl
         // Recorded plays (trajectory on disk) and deleted ones (speed kept in the cache).
         var plays = items.Select(x => new SpeedPlay(x.Info.End, x.Info.Score, x, null))
             .Concat(archived.Select(r => new SpeedPlay(r.End, r.Score, null, r.Speed))).ToList();
-        var newest = plays.OrderByDescending(x => x.End).Take(SpeedRuns).ToList();
-        var missing = newest.Where(x => x.Item != null && !_speeds.ContainsKey(x.Item.Folder)).Select(x => x.Item!).ToList();
+        var missing = plays.Where(x => x.Item != null && !_speeds.ContainsKey(x.Item.Folder)).Select(x => x.Item!).ToList();
         if (missing.Count > 0)
         {
             var read = await Task.Run(() => missing.AsParallel().Select(x => (x.Folder, Speed: ReadSpeed(x.Folder))).ToList());
             foreach (var (folder, speed) in read) _speeds[folder] = speed;
         }
-        RunSpeed? SpeedOf(SpeedPlay x) => x.Item != null ? _speeds.GetValueOrDefault(x.Item.Folder) : x.Cached;
-        // Best score first until one has mouse data; usually the first.
-        RunSpeed? best = null;
-        foreach (var x in plays.OrderByDescending(x => x.Score))
-        {
-            if (x.Item != null && !_speeds.ContainsKey(x.Item.Folder)) _speeds[x.Item.Folder] = await Task.Run(() => ReadSpeed(x.Item.Folder));
-            if (SpeedOf(x) is { } sp) { best = sp; break; }
-        }
         if (host != _speedHost || scenario != _scenario || _runMode) return;
-        host.Child = best is null ? null : SpeedCard(newest.Select(SpeedOf).OfType<RunSpeed>().ToList(), best);
+        var runs = plays.Select(x => (x.Score, Speed: x.Item != null ? _speeds.GetValueOrDefault(x.Item.Folder) : x.Cached)).Where(x => x.Speed != null).Select(x => (x.Score, x.Speed!)).ToList();
+        host.Child = runs.Count == 0 ? null : SpeedCard(runs);
     }
 
-    /// <summary>Mouse-speed figures as paired bars on a shared scale: the average over the plays and the highest-scoring play's value.</summary>
-    UIElement? SpeedCard(IReadOnlyList<RunSpeed> runs, RunSpeed bestRun)
+    /// <summary>
+    /// Mouse-speed figures as bars, one block per unit separated by lines (bars of a block share one scale). Each figure shows the top 5%
+    /// of plays by score, the average and the bottom 5%; with fewer than 10 plays only the average.
+    /// </summary>
+    UIElement? SpeedCard(IReadOnlyList<(double Score, RunSpeed Speed)> runs)
     {
-        const string Speed = "{0:0}°/s", Ms = "{0:0} ms", Deg = "{0:0.0}°", Pct = "{0:0}%";
-        (string Label, Func<RunSpeed, double?> Get, string Format)[] specs =
+        const string Speed = "{0:0}°/s", Ms = "{0:0} ms", Pct = "{0:0}%";
+        (string Label, Func<RunSpeed, double?> Get, string Format)[] speed =
         [
             ("Average speed", r => r.Mean, Speed), ("Max speed", r => r.Max, Speed),
-            ("Firing speed", r => r.FireSpeed, Speed), ("Non-firing speed", r => r.IdleSpeed, Speed),
-            ("Direction changes", r => r.ReversalsPerSec, "{0:0.0}/s"), ("Firing time", r => r.HoldRatio * 100, Pct),
-            ("Flick distance", r => r.FlickDistance, Deg), ("Peak flick speed", r => r.FlickPeak, Speed), ("Flick time", r => r.FlickTime * 1000, Ms),
-            ("Reaction time", r => r.Reaction * 1000, Ms), ("Path efficiency", r => r.Efficiency * 100, Pct), ("Time between kills", r => r.KillInterval * 1000, Ms),
+            ("Firing speed", r => r.FireSpeed, Speed), ("Non-firing speed", r => r.IdleSpeed, Speed), ("Peak flick speed", r => r.FlickPeak, Speed),
+        ];
+        (string Label, Func<RunSpeed, double?> Get, string Format)[] time =
+        [
+            ("Flick time", r => r.FlickTime * 1000, Ms), ("Reaction time", r => r.Reaction * 1000, Ms), ("Time between kills", r => r.KillInterval * 1000, Ms),
+        ];
+        (string Label, Func<RunSpeed, double?> Get, string Format)[] ratio =
+        [
+            ("Path efficiency", r => r.Efficiency * 100, Pct), ("Firing time", r => r.HoldRatio * 100, Pct), ("Speed variation", r => r.SpeedCv * 100, Pct),
+        ];
+        (string Label, Func<RunSpeed, double?> Get, string Format)[] other =
+        [
+            ("Flick distance", r => r.FlickDistance, "{0:0.0}°"), ("Direction changes", r => r.ReversalsPerSec, "{0:0.0}/s"), ("Jerk", r => r.Jerk / 1000, "{0:0.0} k°/s³"),
         ];
         string Show(double v, string format) => string.Format(System.Globalization.CultureInfo.InvariantCulture, format, v);
-        var host = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
-        var head = new Grid { Margin = new Thickness(4, 0, 4, 10) };
+
+        var ordered = runs.OrderByDescending(r => r.Score).Select(r => r.Speed).ToList();
+        var split = ordered.Count >= 10;
+        var k = Math.Max(1, (int)Math.Ceiling(ordered.Count * 0.05));
+        var topBrush = (Brush)FindResource("Green");
+        var avgBrush = (Brush)FindResource("Accent");
+        var lowBrush = (Brush)FindResource("Red");
+        var lines = split
+            ? new (Brush Brush, IReadOnlyList<RunSpeed> Runs)[] { (topBrush, ordered.Take(k).ToList()), (avgBrush, ordered), (lowBrush, ordered.TakeLast(k).ToList()) }
+            : [(avgBrush, ordered)];
+
+        var host = new StackPanel();
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 10) };
         head.Children.Add(new TextBlock { Text = L.T("Mouse speed"), Foreground = FgB, FontSize = 15, FontWeight = FontWeights.SemiBold });
         var legend = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         void Key(string text, Brush brush)
@@ -792,47 +880,58 @@ public partial class ReplayView : UserControl
             legend.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = brush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(legend.Children.Count == 0 ? 0 : 12, 0, 5, 0) });
             legend.Children.Add(new TextBlock { Text = text, Foreground = DimB, FontSize = 12 });
         }
-        var avgBrush = (Brush)FindResource("Accent");
-        var bestBrush = (Brush)FindResource("Green");
+        if (split) Key(L.T("Top 5%"), topBrush);
         Key(L.T("Average"), avgBrush);
-        Key(L.T("PB"), bestBrush);
+        if (split) Key(L.T("Bottom 5%"), lowBrush);
         head.Children.Add(legend);
         host.Children.Add(head);
-        var grid = new UniformGrid { Columns = 3 };
-        Responsive(grid, 3, 230);
-        foreach (var sp in specs)
+
+        void Block((string Label, Func<RunSpeed, double?> Get, string Format)[] specs, bool shared)
         {
-            var avgs = runs.Select(sp.Get).OfType<double>().ToList();
-            var best = sp.Get(bestRun);
-            if (avgs.Count == 0 && best is null) continue;
-            double? avg = avgs.Count == 0 ? null : avgs.Average();
-            var scale = Math.Max(avg ?? 0, best ?? 0);
-            var g = new StackPanel();
-            g.Children.Add(new TextBlock { Text = L.T(sp.Label), Foreground = DimB, FontSize = 12, Margin = new Thickness(0, 0, 0, 8), TextTrimming = TextTrimming.CharacterEllipsis });
-            void Line(double? v, Brush brush)
+            var rows = specs.Select(sp => (Spec: sp, Values: lines.Select(l => { var xs = l.Runs.Select(sp.Get).OfType<double>().ToList(); return xs.Count == 0 ? (double?)null : xs.Average(); }).ToList()))
+                .Where(x => x.Values.Any(v => v != null)).ToList();
+            if (rows.Count == 0) return;
+            if (host.Children.Count > 1) host.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(0, 4, 0, 12) });
+            var blockMax = rows.SelectMany(x => x.Values).OfType<double>().DefaultIfEmpty(0).Max();
+            var grid = new UniformGrid { Columns = 3 };
+            Responsive(grid, 3, 230);
+            foreach (var (spec, values) in rows)
             {
-                var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var bar = MeterBar(v is { } x && scale > 0 ? x / scale : 0, brush, 6);
-                ((FrameworkElement)bar).VerticalAlignment = VerticalAlignment.Center;
-                ((FrameworkElement)bar).Margin = new Thickness(0, 0, 8, 0);
-                row.Children.Add(bar);
-                var t = new TextBlock { Text = v is { } y ? Show(y, sp.Format) : "–", Foreground = FgB, FontSize = 12.5, FontWeight = FontWeights.SemiBold, MinWidth = 58, TextAlignment = TextAlignment.Right };
-                Grid.SetColumn(t, 1);
-                row.Children.Add(t);
-                g.Children.Add(row);
+                var scale = shared ? blockMax : values.OfType<double>().DefaultIfEmpty(0).Max();
+                var avg = values[split ? 1 : 0];
+                var g = new StackPanel { Margin = new Thickness(0, 0, 8, 10) };
+                g.Children.Add(new TextBlock { Text = L.T(spec.Label), Foreground = DimB, FontSize = 12, Margin = new Thickness(0, 0, 0, 8), TextTrimming = TextTrimming.CharacterEllipsis });
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    var v = values[i];
+                    var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    if (split) row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+                    var bar = MeterBar(v is { } x && scale > 0 ? x / scale : 0, lines[i].Brush, 6);
+                    ((FrameworkElement)bar).VerticalAlignment = VerticalAlignment.Center;
+                    ((FrameworkElement)bar).Margin = new Thickness(0, 0, 8, 0);
+                    row.Children.Add(bar);
+                    var t = new TextBlock { Text = v is { } y ? Show(y, spec.Format) : "–", Foreground = FgB, FontSize = 12.5, FontWeight = FontWeights.SemiBold, MinWidth = 58, TextAlignment = TextAlignment.Right };
+                    Grid.SetColumn(t, 1);
+                    row.Children.Add(t);
+                    if (split && i != 1 && v is { } z && avg is { } a && a != 0)
+                    {
+                        var d = new TextBlock { Text = ((z / a - 1) * 100).ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%", Foreground = DimB, FontSize = 11, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                        Grid.SetColumn(d, 2);
+                        row.Children.Add(d);
+                    }
+                    g.Children.Add(row);
+                }
+                grid.Children.Add(g);
             }
-            Line(avg, avgBrush);
-            Line(best, bestBrush);
-            grid.Children.Add(new Border
-            {
-                Style = (Style)FindResource("SheetCard"), Padding = new Thickness(14, 10, 14, 6), Child = g,
-                Margin = new Thickness(0, 0, 8, 8),
-            });
+            host.Children.Add(grid);
         }
-        host.Children.Add(grid);
-        return host;
+        Block(speed, true);
+        Block(time, true);
+        Block(ratio, true);
+        Block(other, false);
+        return new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(18, 14, 18, 4), Margin = new Thickness(0, 12, 0, 0), Child = host };
     }
 
     /// <summary>Brings the server scores up to date (older runs, other PCs) and rebuilds the sheet from the score book when they changed.</summary>

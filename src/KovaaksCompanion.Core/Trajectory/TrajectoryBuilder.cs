@@ -25,11 +25,11 @@ public static class TrajectoryBuilder
         var degrees = SensConversion.TryGetDegreesPerCount(run.Settings, out var yaw, out var pitch);
         if (!degrees) return new BuiltTrajectory(null, buckets, partial, false);
 
-        var samples = MouseSampler.Integrate(buckets, rateHz, yaw, pitch);
         var evs = MouseSampler.ButtonEvents(events, startQpc, endQpc, anchor.Frequency);
         evs.AddRange(KillEvents(run));
         evs.Sort((a, b) => a.TSec.CompareTo(b.TSec));
-        return new BuiltTrajectory(new TrajectoryData(rateHz, samples, evs), buckets, partial, true);
+        var raw = new RawTrack(yaw, pitch, MouseSampler.Moves(events, startQpc, endQpc, anchor.Frequency));
+        return new BuiltTrajectory(TrajectoryData.FromRaw(raw, evs), buckets, partial, true);
     }
 
     public static IEnumerable<TrajectoryEvent> KillEvents(RunStats run) =>

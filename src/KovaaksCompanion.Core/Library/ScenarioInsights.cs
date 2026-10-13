@@ -76,9 +76,10 @@ public static class ScenarioInsights
     /// <summary>Local runs grouped by the sensitivity they were played at (runs within half a cm/360 below 20 cm, one cm above, count as the same), lowest sens first. Runs without a known sens are left out.</summary>
     public static List<SensGroup> BySensitivity(IReadOnlyList<RunRecord> runs) =>
         runs.Where(r => r.Cm360 is > 0)
-            .GroupBy(r => { var w = r.Cm360!.Value < 20 ? 0.5 : 1.0; return Math.Round(r.Cm360.Value / w) * w; })
-            .OrderBy(g => g.Key)
-            .Select(g => new SensGroup(g.Average(r => r.Cm360!.Value), g.Count(), g.Average(r => r.Score), g.Max(r => r.Score)))
+            .GroupBy(r => Math.Round(r.Cm360!.Value, 2))
+            .OrderByDescending(g => g.Max(r => r.Score))
+            .Take(5)
+            .Select(g => new SensGroup(g.Key, g.Count(), g.Average(r => r.Score), g.Max(r => r.Score)))
             .ToList();
 
     /// <summary>

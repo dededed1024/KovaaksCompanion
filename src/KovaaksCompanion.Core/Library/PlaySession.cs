@@ -16,7 +16,7 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     public int RunCount => Runs.Count;
     public IReadOnlyList<string> Scenarios => Runs.Select(r => r.Scenario).Distinct().ToList();
     public int ScenarioCount => Scenarios.Count;
-    public double AverageAccuracy => Runs.Average(r => r.Accuracy);
+    public double AverageAccuracy => Runs.Count == 0 ? 0 : Runs.Average(r => r.Accuracy);
 
     /// <summary>Gap that splits sessions of runs that were not finished in a live session (legacy runs).</summary>
     public static readonly TimeSpan DefaultGap = TimeSpan.FromMinutes(20);

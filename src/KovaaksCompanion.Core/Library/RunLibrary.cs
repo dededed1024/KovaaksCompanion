@@ -42,6 +42,18 @@ public sealed class RunLibrary
         return new(AllRuns.Concat(archived.Where(r => !have.Contains((r.Scenario.ToLowerInvariant(), r.End)))));
     }
 
+    /// <summary>
+    /// Recomputes the sensitivity of runs whose recorded DPI and sensitivity have a correction (<see cref="RunRecord.DpiKey"/> to the real DPI).
+    /// Idempotent: it starts from the recorded values, so removing a correction restores the run.
+    /// </summary>
+    public RunLibrary WithDpiFixes(IReadOnlyDictionary<string, int> fixes) => new(AllRuns.Select(r =>
+    {
+        var raw = r with { Cm360 = r.RawCm360, FixedDpi = 0 };
+        if (raw.DpiKey is { } k && raw.Cm360 is { } cm && fixes.TryGetValue(k, out var dpi) && dpi > 0 && dpi != raw.Dpi)
+            return raw with { Cm360 = cm * raw.Dpi / dpi, FixedDpi = dpi };
+        return raw;
+    }));
+
     /// <summary>Summary of the run's .perf, or null when it is missing or unreadable (older runs may have none).</summary>
     static PerfSummary? ReadPerf(string statsCsv)
     {

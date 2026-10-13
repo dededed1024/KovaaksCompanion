@@ -43,6 +43,29 @@ public static class MouseSampler
         return samples;
     }
 
+    /// <summary>The movement in <c>[startQpc, endQpc)</c> as counts summed per <paramref name="binUs"/> microseconds; bins without movement are left out. Each move is stamped with the end of its bin.</summary>
+    public static List<MouseMove> Moves(IEnumerable<RawMouseEvent> events, long startQpc, long endQpc, long frequency, int binUs = 1000)
+    {
+        var moves = new List<MouseMove>();
+        long bin = -1;
+        long dx = 0, dy = 0;
+        void Flush()
+        {
+            if (bin >= 0 && (dx != 0 || dy != 0)) moves.Add(new MouseMove((int)((bin + 1) * binUs), (int)dx, (int)dy));
+            dx = dy = 0;
+        }
+        foreach (var e in events)
+        {
+            if (e.Kind != RawMouseKind.Move || e.Qpc < startQpc || e.Qpc >= endQpc) continue;
+            var b = (long)((double)(e.Qpc - startQpc) / frequency * 1e6) / binUs;
+            if (b != bin) { Flush(); bin = Math.Max(bin, b); }
+            dx += e.Dx;
+            dy += e.Dy;
+        }
+        Flush();
+        return moves;
+    }
+
     /// <summary>Button events in the window with exact times relative to <paramref name="startQpc"/>.</summary>
     public static List<TrajectoryEvent> ButtonEvents(IEnumerable<RawMouseEvent> events, long startQpc, long endQpc, long frequency)
     {

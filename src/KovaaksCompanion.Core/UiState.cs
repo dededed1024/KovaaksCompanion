@@ -140,7 +140,21 @@ public sealed class UiState
         return true;
     }
 
-    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null, string? ProfileName = null, string? ProfileImage = null, string? ProfileAccent = null, string[]? FavoriteScenarios = null, string[]? FavoriteRuns = null, bool? ComparePrev = null, bool? ProfileAnimated = null, string[]? ProfileItems = null);
+    readonly Dictionary<string, int> _dpiFixes = [];
+    /// <summary>Corrected DPIs by <see cref="Library.RunRecord.DpiKey"/>: for runs whose CSV recorded a wrong DPI.</summary>
+    public IReadOnlyDictionary<string, int> DpiFixes => _dpiFixes;
+
+    /// <summary>Sets (or, with a DPI of 0 or the recorded one, clears) the corrected DPI of the runs recorded under <paramref name="keys"/>.</summary>
+    public void SetDpiFix(IEnumerable<string> keys, int dpi, int recordedDpi)
+    {
+        foreach (var k in keys)
+        {
+            if (dpi <= 0 || dpi == recordedDpi) _dpiFixes.Remove(k);
+            else _dpiFixes[k] = dpi;
+        }
+    }
+
+    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null, string? ProfileName = null, string? ProfileImage = null, string? ProfileAccent = null, string[]? FavoriteScenarios = null, string[]? FavoriteRuns = null, bool? ComparePrev = null, bool? ProfileAnimated = null, string[]? ProfileItems = null, Dictionary<string, int>? DpiFixes = null);
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
@@ -174,6 +188,7 @@ public sealed class UiState
             if (d?.FavoriteRuns is { } fr) s._favRuns.AddRange(fr.Distinct());
             if (d?.TierPlaylists is { } tl) s._tiers = tl.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             else if (d?.TierPlaylist is { Length: > 0 } tp && !s.IsPinned(tp)) s._tiers.Add(tp);
+            if (d?.DpiFixes is { } df) foreach (var (k, dv) in df) if (dv > 0) s._dpiFixes[k] = dv;
             // Files from before the editable profile card: show the favorite playlists, newest first.
             if (d?.ProfileItems is { } pi2) s.SetProfileItems(pi2);
             else s.SetProfileItems(s._favs.AsEnumerable().Reverse().Select(PlaylistKey));
@@ -191,6 +206,6 @@ public sealed class UiState
     {
         path ??= DefaultFile;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, _favScenarios.ToArray(), _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray()), Options));
+        File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, _favScenarios.ToArray(), _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray(), _dpiFixes.Count > 0 ? new Dictionary<string, int>(_dpiFixes) : null), Options));
     }
 }

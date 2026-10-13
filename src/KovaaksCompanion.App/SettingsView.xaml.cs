@@ -241,7 +241,7 @@ public partial class SettingsView : UserControl
     void OnCamAdd(object sender, RoutedEventArgs e)
     {
         if (!CamAdd.IsEnabled) return;
-        AddCamCard(new HandCamSlot(Top: Math.Min(80, 20 + 25 * _cards.Count)));
+        AddCamCard(new HandCamSlot(Y: Math.Min(100, 35 * _cards.Count)));
         UpdateCamUi();
         Save();
     }
@@ -251,9 +251,10 @@ public partial class SettingsView : UserControl
         public required StackPanel Root;
         public required TextBlock Title;
         public required ComboBox Devices;
-        public required Slider Size, Height, Right, Top;
-        public required TextBlock SizeText, HeightText, RightText, TopText;
+        public required Slider Size;
+        public double X, Y;
         public required Border Marker;
+        public required TextBlock Number;
     }
 
     readonly List<CamCard> _cards = [];
@@ -263,8 +264,8 @@ public partial class SettingsView : UserControl
     HandCamSlots CamSlots(HandCamSlots cur)
     {
         var next = _cards.Select(c => c.Devices.SelectedItem is HandCamDevice d
-            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value, (int)c.Height.Value)
-            : new HandCamSlot("", 0, (int)c.Size.Value, (int)c.Right.Value, (int)c.Top.Value, (int)c.Height.Value));
+            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)Math.Round(c.X), (int)Math.Round(c.Y))
+            : new HandCamSlot("", 0, (int)c.Size.Value, (int)Math.Round(c.X), (int)Math.Round(c.Y)));
         var list = new HandCamSlots(); list.AddRange(next);
         return list.Equals(cur) ? cur : list;
     }
@@ -281,29 +282,25 @@ public partial class SettingsView : UserControl
         head.Children.Add(title); head.Children.Add(remove);
         var devices = new ComboBox { Margin = new Thickness(0, 6, 0, 0) };
         var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
-        Slider Row(int r, string label, double min, double max, double val, out TextBlock text)
+        Slider Row(int r, string label, double min, double max, double val)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var margin = new Thickness(0, r == 0 ? 0 : 8, 0, 0);
             var l = new TextBlock { Text = label, Foreground = (Brush)FindResource("Fg"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, margin.Top, 0, 0) };
             var sl = new Slider { Minimum = min, Maximum = max, Value = val, SmallChange = 1, LargeChange = 5, IsSnapToTickEnabled = true, TickFrequency = 1, Margin = margin, VerticalAlignment = VerticalAlignment.Center };
-            text = new TextBlock { Style = (Style)FindResource("Caption"), Margin = margin, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetRow(l, r); Grid.SetRow(sl, r); Grid.SetRow(text, r);
-            Grid.SetColumn(sl, 1); Grid.SetColumn(text, 2);
-            grid.Children.Add(l); grid.Children.Add(sl); grid.Children.Add(text);
+            Grid.SetRow(l, r); Grid.SetRow(sl, r);
+            Grid.SetColumn(sl, 1);
+            grid.Children.Add(l); grid.Children.Add(sl);
             return sl;
         }
-        var size = Row(0, L.T("Width"), 10, 40, slot.Size, out var st);
-        var height = Row(1, L.T("Height"), 10, 40, slot.Height, out var ht);
-        var right = Row(2, L.T("From right"), 0, 100, slot.Right, out var rt);
-        var top = Row(3, L.T("From top"), 0, 100, slot.Top, out var tt);
+        var size = Row(0, L.T("Size"), 10, 40, slot.Size);
         root.Children.Add(head); root.Children.Add(devices); root.Children.Add(grid);
 
-        var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85 };
-        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, Height = height, Right = right, Top = top, SizeText = st, HeightText = ht, RightText = rt, TopText = tt, Marker = marker };
+        var number = new TextBlock { Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85, Cursor = Cursors.SizeAll, Child = number };
+        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, X = slot.X, Y = slot.Y, Number = number, Marker = marker };
         _cards.Add(card);
         CamCanvas.Children.Add(marker);
         CamCards.Children.Add(root);
@@ -316,7 +313,22 @@ public partial class SettingsView : UserControl
         if (saved == null) devices.SelectedItem = items.FirstOrDefault(d => !_cards.Any(c => c != card && Equals(c.Devices.SelectedItem, d)));
 
         void Changed(object? s, RoutedPropertyChangedEventArgs<double> e) { UpdateCamUi(); Save(); }
-        size.ValueChanged += Changed; height.ValueChanged += Changed; right.ValueChanged += Changed; top.ValueChanged += Changed;
+        size.ValueChanged += Changed;
+        Point grab = default;
+        marker.MouseLeftButtonDown += (_, e) => { marker.CaptureMouse(); grab = e.GetPosition(marker); Panel.SetZIndex(marker, 1); e.Handled = true; };
+        marker.MouseMove += (_, e) =>
+        {
+            if (!marker.IsMouseCaptured) return;
+            var p = e.GetPosition(CamCanvas);
+            var (_, _, w, h) = CamBox(card);
+            double left = p.X - grab.X, top = p.Y - grab.Y;
+            ClearGuides();
+            Snap(card, w, h, ref left, ref top);
+            card.X = Math.Clamp((left + w / 2) / CamW * 100, 0, 100);
+            card.Y = Math.Clamp((top + h / 2) / CamH * 100, 0, 100);
+            UpdateCamUi();
+        };
+        marker.MouseLeftButtonUp += (_, _) => { if (!marker.IsMouseCaptured) return; marker.ReleaseMouseCapture(); Panel.SetZIndex(marker, 0); ClearGuides(); Save(); };
         devices.SelectionChanged += (_, _) => { UpdateCamUi(); Save(); };
         remove.Click += (_, _) =>
         {
@@ -328,20 +340,65 @@ public partial class SettingsView : UserControl
         };
     }
 
+    const double CamW = 240, CamH = 135, SnapDistance = 6;
+    readonly List<UIElement> _guides = [];
+
+    /// <summary>Preview box of a cam (the cam keeps 16:9), centered on its position and pulled inside the frame.</summary>
+    static (double L, double T, double W, double H) CamBox(CamCard c)
+    {
+        var w = CamW * c.Size.Value / 100; var h = w * 9 / 16;
+        return (Math.Clamp(CamW * c.X / 100 - w / 2, 0, CamW - w), Math.Clamp(CamH * c.Y / 100 - h / 2, 0, CamH - h), w, h);
+    }
+
+    void ClearGuides() { foreach (var g in _guides) CamCanvas.Children.Remove(g); _guides.Clear(); }
+
+    /// <summary>Pulls a dragged box onto the frame's edges and center and onto the edges and centers of the other cams.</summary>
+    void Snap(CamCard moving, double w, double h, ref double left, ref double top)
+    {
+        List<double> xs = [0, CamW / 2, CamW], ys = [0, CamH / 2, CamH];
+        foreach (var o in _cards.Where(o => o != moving))
+        {
+            var (ol, ot, ow, oh) = CamBox(o);
+            xs.AddRange([ol, ol + ow / 2, ol + ow]); ys.AddRange([ot, ot + oh / 2, ot + oh]);
+        }
+        double? gx = null, gy = null;
+        left = SnapAxis(left, w, xs, out gx); top = SnapAxis(top, h, ys, out gy);
+        left = Math.Clamp(left, 0, CamW - w); top = Math.Clamp(top, 0, CamH - h);
+        if (gx is double x) AddGuide(x, 0, x, CamH);
+        if (gy is double y) AddGuide(0, y, CamW, y);
+    }
+
+    static double SnapAxis(double start, double size, List<double> targets, out double? guide)
+    {
+        guide = null;
+        double best = SnapDistance, shift = 0;
+        foreach (var edge in new[] { 0, size / 2, size })
+            foreach (var t in targets)
+            {
+                var d = t - (start + edge);
+                if (Math.Abs(d) < best) { best = Math.Abs(d); shift = d; guide = t; }
+            }
+        return start + shift;
+    }
+
+    void AddGuide(double x1, double y1, double x2, double y2)
+    {
+        var line = new System.Windows.Shapes.Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = (Brush)FindResource("Fg"), StrokeThickness = 1, Opacity = 0.5, StrokeDashArray = [3, 3], IsHitTestVisible = false };
+        _guides.Add(line); CamCanvas.Children.Add(line);
+    }
+
     /// <summary>Titles, slider readouts, preview boxes and the Add button after any card or slider change.</summary>
     void UpdateCamUi()
     {
-        const double W = 240, H = 135;
         for (int i = 0; i < _cards.Count; i++)
         {
             var c = _cards[i];
             c.Title.Text = L.F("Webcam {0}", i + 1);
-            c.SizeText.Text = $"{(int)c.Size.Value}%"; c.HeightText.Text = $"{(int)c.Height.Value}%"; c.RightText.Text = $"{(int)c.Right.Value}%"; c.TopText.Text = $"{(int)c.Top.Value}%";
-            var w = W * c.Size.Value / 100; var h = H * c.Height.Value / 100;
+            var (l, t, w, h) = CamBox(c);
             c.Marker.Width = w; c.Marker.Height = h;
             c.Marker.Background = (Brush)FindResource(CamColors[i % CamColors.Length]);
-            Canvas.SetLeft(c.Marker, Math.Max(0, Math.Min(W - w, W - w - W * c.Right.Value / 100)));
-            Canvas.SetTop(c.Marker, Math.Max(0, Math.Min(H - h, H * c.Top.Value / 100)));
+            c.Number.Text = (i + 1).ToString();
+            Canvas.SetLeft(c.Marker, l); Canvas.SetTop(c.Marker, t);
         }
         CamAdd.IsEnabled = _cards.Count < HandCamSlot.Max && _devices.Any(d => !_cards.Any(c => Equals(c.Devices.SelectedItem, d)));
     }

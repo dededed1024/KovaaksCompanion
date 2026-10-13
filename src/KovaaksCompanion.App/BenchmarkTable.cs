@@ -35,6 +35,14 @@ public sealed class BenchmarkTable : UserControl
     /// <summary>False leaves the capture button out of each category header (the capture's own table).</summary>
     public bool ShowCaptureButton { get; set; } = true;
 
+    readonly List<UIElement> _captureButtons = [];
+
+    /// <summary>Hides (keeping layout) or shows the category capture buttons, so a capture of this table leaves them out.</summary>
+    public void SetCaptureButtonsVisible(bool visible)
+    {
+        foreach (var b in _captureButtons) b.Visibility = visible ? Visibility.Visible : Visibility.Hidden;
+    }
+
     /// <summary>Small camera glyph button; shows a check for 1.2s after the click.</summary>
     static Border CaptureButton(Action click)
     {
@@ -169,6 +177,7 @@ public sealed class BenchmarkTable : UserControl
     public void Set(IReadOnlyList<BenchCategory> cats, IReadOnlyList<string> tierNames, IReadOnlyList<Brush> tierBrushes)
     {
         _stack.Children.Clear();
+        _captureButtons.Clear();
         _cards.Clear();
         var dim = Res("Dim");
         var shown = cats.Where(c => c.Subs.Any(s => s.Rows.Count > 0)).ToList();
@@ -237,7 +246,12 @@ public sealed class BenchmarkTable : UserControl
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
             H(Cell(stat.Rank >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
-            if (ShowCaptureButton) H(CaptureButton(() => CategoryCaptureRequested?.Invoke(cat)), 5);
+            if (ShowCaptureButton)
+            {
+                var cb = CaptureButton(() => CategoryCaptureRequested?.Invoke(cat));
+                _captureButtons.Add(cb);
+                H(cb, 5);
+            }
             Put(g, head, hr, 0, cols);
         }
 
@@ -247,7 +261,7 @@ public sealed class BenchmarkTable : UserControl
         Put(g, Cell(L.T("SCENARIO"), 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
         Put(g, Cell(L.T("Score").ToUpperInvariant(), 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
-            Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, -8, 0), false), cr, 3 + k);
+            Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, k == tiers - 1 ? 6 : -8, 0), false), cr, 3 + k);
 
         foreach (var sub in subs)
         {
@@ -265,6 +279,11 @@ public sealed class BenchmarkTable : UserControl
             foreach (var r in sub.Rows) BuildRow(g, AddRow(g, RowH), r, tierNames, tierBrushes, cols);
         }
         AddRow(g, 6);
+
+        // Score area under the column header: a step lighter on dark themes, darker on light ones (Argb flips white washes).
+        var body = new Border { Background = Argb("#0DFFFFFF"), IsHitTestVisible = false };
+        Grid.SetRow(body, cr + 1); Grid.SetRowSpan(body, g.RowDefinitions.Count - cr - 1); Grid.SetColumnSpan(body, cols);
+        g.Children.Insert(0, body);
 
         return new Border
         {
@@ -358,7 +377,8 @@ public sealed class BenchmarkTable : UserControl
         var nextText = Argb("#B3FFFFFF");
         for (var k = 1; k <= tiers; k++)
         {
-            var cell = new Grid();
+            // The last tier stops short of the card's right edge, matching the 16px the name has on the left (the shape adds its own 2px inset).
+            var cell = new Grid { Margin = new Thickness(0, 0, k == tiers ? 14 : 0, 0) };
             var has = k <= row.Maxes.Count;
             var reached = has && k <= rank;
             var next = has && k == rank + 1;

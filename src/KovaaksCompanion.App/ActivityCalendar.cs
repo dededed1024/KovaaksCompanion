@@ -61,11 +61,32 @@ public sealed class ActivityCalendar : FrameworkElement
     }
 
     DateTime? _liveDay;
-    /// <summary>The day of the running live session, filled red; null when none.</summary>
+    /// <summary>The day of the running live session: a red dot with a white ripple; null when none.</summary>
     public DateTime? LiveDay
     {
         get => _liveDay;
-        set { _liveDay = value?.Date; InvalidateVisual(); }
+        set
+        {
+            _liveDay = value?.Date;
+            if (_liveDay != null && IsLoaded) StartPulse(); else StopPulse();
+            InvalidateVisual();
+        }
+    }
+
+    public static readonly DependencyProperty PhaseProperty = DependencyProperty.Register(nameof(Phase), typeof(double), typeof(ActivityCalendar),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>Ripple progress 0..1, animated only while a live day is shown.</summary>
+    double Phase { get => (double)GetValue(PhaseProperty); set => SetValue(PhaseProperty, value); }
+
+    void StartPulse() => BeginAnimation(PhaseProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromSeconds(1.8)) { RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever });
+
+    void StopPulse() { BeginAnimation(PhaseProperty, null); Phase = 0; }
+
+    public ActivityCalendar()
+    {
+        Loaded += (_, _) => { if (_liveDay != null) StartPulse(); };
+        Unloaded += (_, _) => StopPulse();
     }
 
     double CellFor(double w) => FixedWeeks is { } n ? Math.Clamp((w - LeftW - Right) / n - Gap, 10, Math.Max(10, MaxCell)) : Math.Clamp((w - LeftW - Right) / MaxWeeks - Gap, 10, MaxCell);
@@ -204,13 +225,14 @@ public sealed class ActivityCalendar : FrameworkElement
                     fill = g;
                 }
                 Pen? pen = hov ? new Pen(Alpha(fg, 0.8), 1) : _selected == day ? new Pen(fg, 1.5) : day == today ? new Pen(Alpha(fg, 0.5), 1) : null;
+                if (_liveDay == day) fill = Res("Red");
+                dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
                 if (_liveDay == day)
                 {
-                    var red = ((SolidColorBrush)Res("Red")).Color;
-                    fill = new SolidColorBrush(Color.FromArgb(0xE6, red.R, red.G, red.B));
-                    pen = hov ? pen : new Pen(Alpha(Res("Red"), 1), 1);
+                    var c = new Point(r.X + r.Width / 2, r.Y + r.Height / 2);
+                    var ring = Cell * (0.2 + 0.9 * Phase);
+                    dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb((byte)(200 * (1 - Phase)), 255, 255, 255)), 1.5), c, ring, ring);
                 }
-                dc.DrawRoundedRectangle(fill, pen, r, 3, 3);
                 if (PbDays.Contains(day))
                 {
                     var dotRadius = Math.Max(1.2, Cell * 0.09);
@@ -300,7 +322,7 @@ public sealed class ActivityCalendar : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (_hover is not { } h) return;
         var day = FirstDay.AddDays(h.Week * 7 + h.Row);
-        if (CountOf(day) > 0) DayClicked?.Invoke(day);
+        if (CountOf(day) > 0 || day == _liveDay) DayClicked?.Invoke(day);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)

@@ -85,7 +85,7 @@ public sealed class SessionSaver
         {
             Scenario = run.Scenario, Start = run.Start, End = run.End,
             VideoOffsetSec = clip?.ToClipTime(startUtc).TotalSeconds ?? 0,
-            SampleRateHz = TrajectoryBuilder.DefaultRateHz,
+            SampleRateHz = 0, // the trajectory holds raw mouse movement, not fixed-rate samples
             Settings = run.Settings,
             Partial = built.Partial || !videoCovers,
             HasVideo = clip != null,

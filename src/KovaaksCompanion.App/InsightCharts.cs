@@ -163,23 +163,37 @@ public sealed class BarChart : FrameworkElement
         base.OnMouseLeave(e);
         if (_hover < 0) return;
         _hover = -1;
+        Cursor = null;
         InvalidateVisual();
     }
 }
 
-/// <summary>Dots of (x, y) pairs with both axes ticked; the newest dot is emphasised. Hover shows the nearest dot.</summary>
+/// <summary>Dots of (x, y) pairs with both axes ticked; the highest dot of each group is emphasised. Hover shows the nearest dot. Dots of one group share a <see cref="GroupColors"/> colour.</summary>
 public sealed class ScatterChart : FrameworkElement
 {
     const double Top = 10, Bottom = 22, Right = 12;
+    public static readonly Color[] GroupColors =
+    [
+        Color.FromRgb(0x4C, 0x9B, 0xFF), Color.FromRgb(0xFF, 0x9F, 0x43), Color.FromRgb(0x3D, 0xD6, 0x8C),
+        Color.FromRgb(0xE0, 0x5C, 0xC9), Color.FromRgb(0xF5, 0xD0, 0x4A),
+    ];
     IReadOnlyList<(double X, double Y, string Tip)> _points = [];
+    IReadOnlyList<int>? _groups;
     string _xFormat = "0.#", _yFormat = "0.#";
     int _hover = -1;
 
-    public void Set(IReadOnlyList<(double X, double Y, string Tip)> points, string xFormat, string yFormat)
+    /// <summary>Extra tooltip text for the group of the hovered dot (e.g. its DPI and a hint to click).</summary>
+    public Func<int, string>? GroupNote { get; set; }
+    /// <summary>Raised with the group index when a dot is clicked.</summary>
+    public event Action<int>? GroupClick;
+
+    public void Set(IReadOnlyList<(double X, double Y, string Tip)> points, string xFormat, string yFormat, IReadOnlyList<int>? groups = null)
     {
-        _points = points; _xFormat = xFormat; _yFormat = yFormat; _hover = -1;
+        _points = points; _xFormat = xFormat; _yFormat = yFormat; _groups = groups; _hover = -1;
         InvalidateVisual();
     }
+
+    Color DotColor(int i, Color fallback) => _groups is { } g && i < g.Count ? GroupColors[g[i] % GroupColors.Length] : fallback;
 
     (double Left, double Pw, double Ph, double XLo, double XHi, double YLo, double YHi, List<double> XTicks, List<double> YTicks) Layout(double w, double h)
     {
@@ -232,27 +246,55 @@ public sealed class ScatterChart : FrameworkElement
             prevEnd = x + ft.Width;
         }
         var ac = InsightDraw.ColorOf(accent);
-        var dotFill = new SolidColorBrush(Color.FromArgb(0xB0, ac.R, ac.G, ac.B));
-        dotFill.Freeze();
         var ring = new Pen(InsightDraw.Res("Bg"), 1);
+        // The highest dot of each group is emphasised.
+        var bestOf = new Dictionary<int, int>();
+        for (var i = 0; i < _points.Count; i++)
+        {
+            var key = _groups is { } gs && i < gs.Count ? gs[i] : 0;
+            if (!bestOf.TryGetValue(key, out var j) || _points[i].Y > _points[j].Y) bestOf[key] = i;
+        }
+        var bests = bestOf.Values.ToHashSet();
+        // A curve through those best dots, left to right, shows how the best score moves with sensitivity.
+        var ridge = bests.Select(i => new Point(X(_points[i].X), Y(_points[i].Y))).OrderBy(q => q.X).ToList();
+        ridge = ridge.Where((q, k) => k == 0 || q.X - ridge[k - 1].X > 0.5).ToList();
+        if (ridge.Count >= 2)
+        {
+            var fillTop = Color.FromArgb(0x38, ac.R, ac.G, ac.B);
+            var area = new LinearGradientBrush(fillTop, Color.FromArgb(0, ac.R, ac.G, ac.B), 90);
+            area.Freeze();
+            dc.DrawGeometry(area, null, ChartPaths.MonotoneArea(ridge, Top + ph));
+            var line = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, ac.R, ac.G, ac.B)), 1.5) { LineJoin = PenLineJoin.Round };
+            line.Freeze();
+            dc.DrawGeometry(null, line, ChartPaths.Monotone(ridge));
+        }
         for (var i = 0; i < _points.Count; i++)
         {
             var p = new Point(X(_points[i].X), Y(_points[i].Y));
-            if (i == _points.Count - 1)
+            var c = DotColor(i, ac);
+            if (bests.Contains(i))
             {
-                var halo = new RadialGradientBrush(Color.FromArgb(0x60, ac.R, ac.G, ac.B), Color.FromArgb(0, ac.R, ac.G, ac.B));
+                var halo = new RadialGradientBrush(Color.FromArgb(0x60, c.R, c.G, c.B), Color.FromArgb(0, c.R, c.G, c.B));
                 halo.Freeze();
+                var solid = new SolidColorBrush(c); solid.Freeze();
                 dc.DrawEllipse(halo, null, p, 9, 9);
-                dc.DrawEllipse(accent, ring, p, 4, 4);
+                dc.DrawEllipse(solid, ring, p, 4, 4);
             }
-            else dc.DrawEllipse(dotFill, ring, p, 3, 3);
+            else
+            {
+                var fill = new SolidColorBrush(Color.FromArgb(0xC8, c.R, c.G, c.B)); fill.Freeze();
+                dc.DrawEllipse(fill, ring, p, 3.5, 3.5);
+            }
         }
         if (_hover >= 0 && _hover < _points.Count)
         {
             var p = _points[_hover];
             var pt = new Point(X(p.X), Y(p.Y));
-            dc.DrawEllipse(accent, new Pen(Brushes.White, 1.5), pt, 5, 5);
-            InsightDraw.Tooltip(dc, this, w, h, pt.X, pt.Y, p.Tip, p.Y.ToString(_yFormat, CultureInfo.InvariantCulture) + " · " + p.X.ToString(_xFormat, CultureInfo.InvariantCulture), fg);
+            // The sensitivity axis line through the hovered dot.
+            dc.DrawLine(new Pen(InsightDraw.WithAlpha(fg, 0.35), 1) { DashStyle = new DashStyle([3, 3], 0) }, new Point(pt.X, Top), new Point(pt.X, Top + ph));
+            var hc = new SolidColorBrush(DotColor(_hover, ac)); hc.Freeze();
+            dc.DrawEllipse(hc, new Pen(Brushes.White, 1.5), pt, 5, 5);
+            InsightDraw.Tooltip(dc, this, w, h, pt.X, pt.Y, GroupNote is { } note && _groups is { } gl && _hover < gl.Count ? p.Tip + " · " + note(gl[_hover]) : p.Tip, p.Y.ToString(_yFormat, CultureInfo.InvariantCulture) + " · " + p.X.ToString(_xFormat, CultureInfo.InvariantCulture), fg);
         }
     }
 
@@ -272,7 +314,14 @@ public sealed class ScatterChart : FrameworkElement
         }
         if (best == _hover) return;
         _hover = best;
+        Cursor = best >= 0 && GroupClick is not null ? Cursors.Hand : null;
         InvalidateVisual();
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_hover >= 0 && _groups is { } g && _hover < g.Count) GroupClick?.Invoke(g[_hover]);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)

@@ -753,8 +753,22 @@ public partial class StatsView
         host.Children.Clear();
         var sessions = PlaySession.Group(_lib.AllRuns.Where(r => !IsHidden(r)), all: _lib.AllRuns, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
         host.Children.Add(Text(DayLabel(day) + " · " + (sessions.Count == 1 ? L.F("{0} session", sessions.Count) : L.F("{0} sessions", sessions.Count)), 15, FgB, FontWeights.SemiBold, new Thickness(0, 0, 0, 8)));
+        DateTime? liveStart = null;
+        if (LiveNow())
+        {
+            var newest = PlaySession.Group(_lib.AllRuns).FirstOrDefault();
+            if (newest != null && newest.End >= _liveSince) liveStart = newest.Start;
+            else if (day == _liveSince.Date)
+            {
+                // No run yet in this launch: show a temporary empty session until the first run lands.
+                liveStart = _liveSince;
+                sessions.Insert(0, new PlaySession([], 0) { Number = (newest?.Number ?? 0) + 1, Opened = _liveSince });
+            }
+        }
         foreach (var s in sessions)
         {
+            var isLive = s.Start == liveStart;
+            var rest = isLive ? Solid("#1AFF453A") : Brushes.Transparent;
             var pbCount = s.Runs.Count(pbs.Contains);
             var g = new Grid { Margin = new Thickness(10, 0, 10, 0) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -762,7 +776,7 @@ public partial class StatsView
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
             var rowTitle = new TextBlock();
-            rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = FgB });
+            rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = isLive ? Solid("#FF453A") : FgB });
             rowTitle.Inlines.Add(new System.Windows.Documents.Run("  " + ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
             rowTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             info.Children.Add(rowTitle);
@@ -782,12 +796,14 @@ public partial class StatsView
             var chev = Chevron(HorizontalAlignment.Right);
             chev.FontSize = 10;
             Grid.SetColumn(chev, pbCount >= 1 ? 2 : 1);
-            g.Children.Add(chev);
-            var row = new Border { CornerRadius = new CornerRadius(10), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
+            if (s.Runs.Count > 0) g.Children.Add(chev);
+            var row = new Border { CornerRadius = new CornerRadius(10), Background = rest, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
+            if (isLive) { row.BorderBrush = Solid("#99FF453A"); row.BorderThickness = new Thickness(1); }
             var sess = s;
-            RowClick.Attach(row, p => _host.ShowSession(sess, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
+            if (s.Runs.Count == 0) { row.Cursor = Cursors.Arrow; host.Children.Add(row); continue; }
+            RowClick.Attach(row, p => _host.ShowSession(sess, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : rest);
             row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
-            row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+            row.MouseLeave += (_, _) => row.Background = rest;
             host.Children.Add(row);
         }
 
@@ -842,8 +858,8 @@ public partial class StatsView
             holder.Measure(new Size(width, double.PositiveInfinity));
             holder.Arrange(new Rect(0, 0, width, holder.DesiredSize.Height));
             holder.UpdateLayout();
-            var dpi = VisualTreeHelper.GetDpi(source);
-            var rtb = new RenderTargetBitmap((int)Math.Ceiling(width * dpi.DpiScaleX), (int)Math.Ceiling(holder.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            var scale = CaptureScale;
+            var rtb = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(holder.ActualHeight * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(holder);
             rtb.Freeze();
             Clipboard.SetImage(rtb);

@@ -18,7 +18,7 @@ public static class Theme
     /// <summary>Background hue, saturation and value of the themes whose tint of the accent over dark gray looked wrong (pale red, brown orange and yellow, khaki green); the others keep the tint.</summary>
     static readonly Dictionary<string, (double H, double S, double V)> Backgrounds = new()
     {
-        ["Rose"] = (350, 0.86, 0.38), ["Ember"] = (30, 0.95, 0.80), ["Gold"] = (50, 1.0, 0.75), ["Forest"] = (138, 0.85, 0.36),
+        ["Rose"] = (6, 0.72, 0.55), ["Ember"] = (26, 0.76, 0.58), ["Forest"] = (138, 0.85, 0.36),
     };
 
     static Color FromHsv(double h, double s, double v)
@@ -35,6 +35,8 @@ public static class Theme
 
     static Look Tinted(string name, string accent)
     {
+        // Gold is a light theme: a bright yellow background with dark text and a dark amber accent (white text on yellow cannot be read).
+        if (name == "Gold") return new("#FFE873", "#F2FFF6C4", "#FFF9DA", "#8A6500", true);
         var a = Parse(accent);
         var bg = Backgrounds.TryGetValue(name, out var hsv) ? FromHsv(hsv.H, hsv.S, hsv.V) : Mix(Color.FromRgb(0x1C, 0x1C, 0x1E), a, 0.09);
         var surface = Mix(bg, Colors.White, 0.04);
@@ -121,7 +123,24 @@ public static class Theme
         {
             ["Bg"] = look.Bg, ["Surface"] = look.Surface, ["Raised"] = look.Raised,
         };
-        if (!look.Light) { pal["BgFadeColor"] = "#E6" + look.Bg[1..]; pal["BgClearColor"] = "#00" + look.Bg[1..]; }
+        if (look.Light)
+        {
+            // Darken the gray text until it reads (4.5:1) on a tinted background and on the cards.
+            var dim = Parse(pal["Dim"]);
+            Color bgc = Parse(look.Bg), raised = Parse(look.Raised);
+            for (var i = 0; i < 20 && (Contrast(dim, bgc) < 4.5 || Contrast(dim, raised) < 4.5); i++) dim = Mix(dim, Colors.Black, 0.15);
+            pal["Dim"] = Hex(dim);
+            if (look.Bg != "#F2F2F7") { pal["BgFadeColor"] = "#E6" + look.Bg[1..]; pal["BgClearColor"] = "#00" + look.Bg[1..]; }
+        }
+        else
+        {
+            pal["BgFadeColor"] = "#E6" + look.Bg[1..]; pal["BgClearColor"] = "#00" + look.Bg[1..];
+            // Bright saturated surfaces: lift the gray text toward white until it reads (4.5:1) on both the background and raised cards.
+            var dim = Parse(pal["Dim"]);
+            Color bgc = Parse(look.Bg), raised = Parse(look.Raised);
+            for (var i = 0; i < 20 && (Contrast(dim, bgc) < 4.5 || Contrast(dim, raised) < 4.5); i++) dim = Mix(dim, Colors.White, 0.15);
+            pal["Dim"] = Hex(dim);
+        }
         if (_dict == null) Application.Current.Resources.MergedDictionaries.Add(_dict = new ResourceDictionary { Source = new Uri("pack://application:,,,/Styles.xaml") });
         var res = _dict;
         foreach (var (key, hex) in pal) Set(res, key, Parse(hex));
