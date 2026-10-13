@@ -196,6 +196,7 @@ public sealed class UiState
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
             // Use defaults when file is missing or malformed
+            if (path is not null && File.Exists(path)) Diagnostics.ErrorReporter.Report("ui state load " + path, e);
             foreach (var n in DefaultFavorites) s._favs.Add(n);
             s.SetProfileItems(s._favs.AsEnumerable().Reverse().Select(PlaylistKey));
         }
@@ -205,7 +206,7 @@ public sealed class UiState
     public void Save(string? path = null)
     {
         path ??= DefaultFile;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, _favScenarios.ToArray(), _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray(), _dpiFixes.Count > 0 ? new Dictionary<string, int>(_dpiFixes) : null), Options));
+        var dir = Path.GetDirectoryName(path)!;
+        AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, _favScenarios.ToArray(), _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray(), _dpiFixes.Count > 0 ? new Dictionary<string, int>(_dpiFixes) : null), Options)); });
     }
 }

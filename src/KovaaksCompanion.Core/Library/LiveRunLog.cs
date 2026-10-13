@@ -28,10 +28,10 @@ public static class LiveRunLog
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            SignedFile.WriteMasked(path, JsonSerializer.SerializeToUtf8Bytes(all));
+            var dir = Path.GetDirectoryName(path)!;
+            AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); SignedFile.WriteMasked(path, JsonSerializer.SerializeToUtf8Bytes(all)); });
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("live runs save " + path, e); }
     }
 
     /// <summary>Tags a run with its live session id and returns the updated map.</summary>
