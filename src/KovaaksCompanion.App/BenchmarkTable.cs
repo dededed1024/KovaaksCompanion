@@ -76,15 +76,20 @@ public sealed class BenchmarkTable : UserControl
     /// <summary>False hides each card's header row (name, rank, progress), for pages whose own hero already shows it.</summary>
     public bool ShowCategoryHeader { get; set; } = true;
 
-    public BenchmarkTable() => Content = _stack;
+    public BenchmarkTable()
+    {
+        // The name column is sized by the real laid-out text, shared by every card, so a name is never cut.
+        Grid.SetIsSharedSizeScope(_stack, true);
+        Content = _stack;
+    }
 
-    /// <summary>Narrowest width at which every column keeps its minimum (the longest scenario name, score 76, % 44, tiers 44 each).</summary>
+    /// <summary>Narrowest width at which every column keeps its minimum (the longest scenario name, score 60, % 44, tiers 44 each).</summary>
     public double MinTableWidth { get; private set; }
 
     /// <summary>Width of the scenario column: the longest scenario name of the table plus its margins, so no name is ever cut.</summary>
     double _nameWidth = 170;
 
-    const double NameMargins = 16 + 8;
+    const double NameMargins = 16 + 4;
 
     /// <summary>The width a scenario name needs at the table's own text size and weight. The text font is set on the window and inherited, so a loose element is measured with it explicitly.</summary>
     static double NameWidth(string name)
@@ -181,8 +186,8 @@ public sealed class BenchmarkTable : UserControl
         _cards.Clear();
         var dim = Res("Dim");
         var shown = cats.Where(c => c.Subs.Any(s => s.Rows.Count > 0)).ToList();
-        _nameWidth = Math.Max(170, Math.Ceiling(shown.SelectMany(c => c.Subs).SelectMany(s => s.Rows).Select(r => NameWidth(r.Scenario)).DefaultIfEmpty(0).Max()) + NameMargins + 2);
-        MinTableWidth = _nameWidth + 76 + 44 + 44 * tierNames.Count + 2;
+        _nameWidth = Math.Max(160, Math.Ceiling(shown.SelectMany(c => c.Subs).SelectMany(s => s.Rows).Select(r => NameWidth(r.Scenario)).DefaultIfEmpty(0).Max()) + NameMargins);
+        MinTableWidth = _nameWidth + 60 + 44 + 44 * tierNames.Count + 14 + 2;
         if (shown.Count == 0)
         {
             _stack.Children.Add(new TextBlock { Text = L.T("No scenarios"), Foreground = dim, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 24) });
@@ -214,14 +219,15 @@ public sealed class BenchmarkTable : UserControl
     {
         var dim = Res("Dim");
         var tiers = tierNames.Count;
-        var cols = tiers + 3; // scenario, score, to-next, tiers...
+        var cols = tiers + 4; // scenario, score, to-next, tiers..., right gutter
         var stat = Summarize(cat, tiers);
         var subs = cat.Subs.Where(s => s.Rows.Count > 0).ToList();
         var g = new Grid();
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.2, GridUnitType.Star), MinWidth = _nameWidth });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 160, SharedSizeGroup = "name" });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
         for (var i = 0; i < tiers; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 44 });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
 
         if (ShowCategoryHeader)
         {
@@ -239,7 +245,7 @@ public sealed class BenchmarkTable : UserControl
             {
                 CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Background = WithAlpha(rankBrush ?? dim, 0.15),
-                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANK") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = rankBrush == null ? Res("Fg") : ChartPaths.TextTone(rankBrush) },
+                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANKED") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = rankBrush == null ? Res("Fg") : ChartPaths.TextTone(rankBrush) },
             }, 1);
             var bar = new Grid { Width = 120, Height = 4, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
@@ -261,7 +267,16 @@ public sealed class BenchmarkTable : UserControl
         Put(g, Cell(L.T("SCENARIO"), 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
         Put(g, Cell(L.T("Score").ToUpperInvariant(), 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
-            Put(g, Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Center, FontWeights.Bold, new Thickness(-8, 0, k == tiers - 1 ? 6 : -8, 0), false), cr, 3 + k);
+        {
+            // Canvas desires no size, so the label cannot widen its column (the tier columns split the available width equally); it is centred by hand.
+            var lbl = Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Left, FontWeights.Bold, null, false);
+            var host = new Canvas();
+            host.Children.Add(lbl);
+            void Center() { Canvas.SetLeft(lbl, (host.ActualWidth - lbl.ActualWidth) / 2); Canvas.SetTop(lbl, (host.ActualHeight - lbl.ActualHeight) / 2); }
+            host.SizeChanged += (_, _) => Center();
+            lbl.SizeChanged += (_, _) => Center();
+            Put(g, host, cr, 3 + k);
+        }
 
         foreach (var sub in subs)
         {
@@ -312,18 +327,18 @@ public sealed class BenchmarkTable : UserControl
         return g;
     }
 
-    /// <summary>Slant of the seam between two tiers: how far the top edge sits right of the bottom edge.</summary>
+    /// <summary>Slant of the seam between two tiers: how far the top edge sits right of the bottom edge; the seam crosses the cell edge at mid height, so the shapes stay centred on their cells.</summary>
     const double TierSlant = 8;
 
     /// <summary>Fill of one reached tier in a cell of the given size. A side shared with a neighbour is a diagonal (top right to bottom left) that may reach past the cell; an outer end is rounded.</summary>
     static Geometry TierShape(double w, double h, bool first, bool last)
     {
-        const double top = 3, round = 6;
+        const double top = 4, round = 6, gap = 1.5;
         var bottom = h - top;
         var g = new StreamGeometry();
         using (var c = g.Open())
         {
-            c.BeginFigure(new Point(first ? 2 + round : 1 + TierSlant, top), true, true);
+            c.BeginFigure(new Point(first ? 2 + round : gap + TierSlant / 2, top), true, true);
             if (last)
             {
                 c.LineTo(new Point(w - 2 - round, top), true, false);
@@ -333,8 +348,8 @@ public sealed class BenchmarkTable : UserControl
             }
             else
             {
-                c.LineTo(new Point(w - 1 + TierSlant, top), true, false);
-                c.LineTo(new Point(w - 1, bottom), true, false);
+                c.LineTo(new Point(w - gap + TierSlant / 2, top), true, false);
+                c.LineTo(new Point(w - gap - TierSlant / 2, bottom), true, false);
             }
             if (first)
             {
@@ -343,7 +358,7 @@ public sealed class BenchmarkTable : UserControl
                 c.LineTo(new Point(2, top + round), true, false);
                 c.ArcTo(new Point(2 + round, top), new Size(round, round), 0, false, SweepDirection.Clockwise, true, false);
             }
-            else c.LineTo(new Point(1, bottom), true, false);
+            else c.LineTo(new Point(gap - TierSlant / 2, bottom), true, false);
         }
         g.Freeze();
         return g;
@@ -361,7 +376,7 @@ public sealed class BenchmarkTable : UserControl
 
         void Add(UIElement e, int col) { e.IsHitTestVisible = false; Put(g, e, r, col); }
 
-        Add(Cell(row.Scenario, 12.5, unplayed ? dim : fg, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 8, 0), false), 0);
+        Add(Cell(row.Scenario, 12.5, unplayed ? dim : fg, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 4, 0), false), 0);
 
         var score = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         score.Children.Add(Tab(new TextBlock
@@ -377,8 +392,8 @@ public sealed class BenchmarkTable : UserControl
         var nextText = Argb("#B3FFFFFF");
         for (var k = 1; k <= tiers; k++)
         {
-            // The last tier stops short of the card's right edge, matching the 16px the name has on the left (the shape adds its own 2px inset).
-            var cell = new Grid { Margin = new Thickness(0, 0, k == tiers ? 14 : 0, 0) };
+            // A 14px gutter column after the last tier keeps it short of the card's right edge, matching the 16px the name has on the left (the shape adds its own 2px inset).
+            var cell = new Grid();
             var has = k <= row.Maxes.Count;
             var reached = has && k <= rank;
             var next = has && k == rank + 1;
