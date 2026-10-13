@@ -28,7 +28,7 @@ public static class L
 
     public static string ShortDate(DateTime t) => t.ToString("d", DateCulture);
     public static string MonthDay(DateTime t) => t.ToString("M", DateCulture);
-    public static string Time(DateTime t) => t.ToString("t", DateCulture);
+    public static string Time(DateTime t) => t.ToString("HH:mm", CultureInfo.InvariantCulture);
     public static string Stamp(DateTime t) => ShortDate(t) + " " + Time(t);
 
     public static string T(string key)
