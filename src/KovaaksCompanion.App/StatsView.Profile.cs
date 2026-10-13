@@ -200,13 +200,6 @@ public partial class StatsView
         };
         ProfileTools.Children.Add(toggle);
 
-        if (_celebrated.Count > 0)
-        {
-            var replay = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Replay"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, Foreground = FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-            replay.Click += (_, _) => { _confettiPending = true; FireConfetti(); };
-            ProfileTools.Children.Add(replay);
-        }
-
         var edit = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Edit"), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 24, Foreground = FgB, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         edit.Click += (_, _) => OpenProfileEdit();
         ProfileTools.Children.Add(edit);
@@ -214,7 +207,14 @@ public partial class StatsView
         var copy = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         copy.Click += async (_, _) =>
         {
-            if (ProfileCard.ActualWidth <= 0) return;
+            if (ProfileCard.ActualWidth <= 0 || _gifBusy) return;
+            // Motion on: the card is saved as a looping GIF (and copied as a file); motion off: a still image.
+            if (_host.Ui.ProfileAnimated)
+            {
+                var label = (TextBlock)copy.Content;
+                await SaveProfileGifAsync(label, label.Text);
+                return;
+            }
             try
             {
                 ProfileTools.Visibility = Visibility.Hidden;
