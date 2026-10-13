@@ -55,7 +55,7 @@ public partial class StatsView
             var tier = ranked ? RankBrush(d, p.RankName(rank)) : (Brush)FindResource("Dim");
             var dot = ParseBrush(b.Color);
             var history = Tier.History(scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.RankMaxes)));
-            var watermark = ranked ? TierText.Label(p.RankName(rank)) : L.T("UNRANK");
+            var watermark = ranked ? TierText.Label(p.RankName(rank)) : L.T("UNRANKED");
             var category = k.Parent;
             return (MiniCard(b.BenchmarkName, category, dot, tier, ranked, history, watermark, complete, complete ? 1 : value - rank, p with { Subcategories = subs }, () => OpenPlaylist(b, d, category)), ranked ? ColorOf(tier) : null);
         }
@@ -77,7 +77,7 @@ public partial class StatsView
             var ranked = d != null && rank > 0 && p!.RankName(rank).Length > 0;
             var tier = ranked ? RankBrush(d!, p!.RankName(rank)) : (Brush)FindResource("Dim");
             var history = sc == null ? [] : Tier.History([(stats, (IReadOnlyList<double>)sc.RankMaxes)]);
-            var watermark = ranked ? TierText.Label(p!.RankName(rank)) : L.T("UNRANK");
+            var watermark = ranked ? TierText.Label(p!.RankName(rank)) : L.T("UNRANKED");
             var complete = ranked && rank >= p!.RankNames.Count - 1;
             var scoped = p != null && sc != null ? p with { Subcategories = [new SubcategoryProgress("", "", 0, 0, [], [sc])] } : null;
             var sub = best > 0 ? L.F("best {0}", best.ToString("0.#")) : L.T("Not played");
