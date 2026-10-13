@@ -21,7 +21,6 @@ public sealed class VideoRecorder : IAsyncDisposable
     public bool IsRunning => _capture?.Output.IsActive == true;
     /// <summary>libobs id of the encoder in use.</summary>
     public string? Encoder { get; private set; }
-    public QpcClock Clock { get; } = new();
     public string LastError { get; private set; } = "";
     /// <summary>Why the clip has no audio (empty = audio recorded or not requested).</summary>
     public string AudioError { get; private set; } = "";
@@ -88,7 +87,9 @@ public sealed class VideoRecorder : IAsyncDisposable
         var ring = _ring;
         if (ring == null || !ring.HasOrigin) return null;
         startUtc = startUtc.ToUniversalTime(); endUtc = endUtc.ToUniversalTime();
-        double from = ToRingSec(ring, startUtc - _o.ClipMargin), to = ToRingSec(ring, endUtc + _o.ClipMargin);
+        // only picks the span to cut (the margin absorbs any error); the clip's own start stays on the QPC clock
+        var clock = new QpcClock();
+        double from = ToRingSec(ring, clock, startUtc - _o.ClipMargin), to = ToRingSec(ring, clock, endUtc + _o.ClipMargin);
         var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(5));
         while (ring.LastVideoSec < to && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);
 
@@ -98,7 +99,7 @@ public sealed class VideoRecorder : IAsyncDisposable
         var span = await Task.Run(() => ring.WriteClip(outputPath, from, to, avc, aac));
         if (span is not { } s) return null;
         var startQpc = NsToQpc(ring.ToQpcNs(s.Start));
-        return new ClipResult(outputPath, Clock.ToUtc(startQpc), startQpc, TimeSpan.FromSeconds(s.End - s.Start + 1.0 / Math.Max(1, _o.Fps)));
+        return new ClipResult(outputPath, clock.ToUtc(startQpc), startQpc, TimeSpan.FromSeconds(s.End - s.Start + 1.0 / Math.Max(1, _o.Fps)));
     }
 
     /// <summary>Stream parameters (SPS/PPS, AAC config) read from the running encoders once, then cached.</summary>
@@ -111,13 +112,10 @@ public sealed class VideoRecorder : IAsyncDisposable
     }
 
     /// <summary>The ring's time (seconds on the encoder clock) of a wall-clock instant.</summary>
-    double ToRingSec(PacketRing ring, DateTime utc) => ring.ToRingSec(QpcToNs(Clock.ToQpc(utc)));
+    static double ToRingSec(PacketRing ring, QpcClock clock, DateTime utc) => ring.ToRingSec(QpcToNs(clock.ToQpc(utc)));
 
-    static long QpcToNs(long ticks) => (long)(ticks * 1e9 / Stopwatch.Frequency);
+    internal static long QpcToNs(long ticks) => (long)(ticks * 1e9 / Stopwatch.Frequency);
     static long NsToQpc(long ns) => (long)(ns * (double)Stopwatch.Frequency / 1e9);
-
-    /// <summary>Session-wide clock helpers the cam recorders use to line their rings up with a game clip.</summary>
-    public static long UtcToQpcNs(QpcClock clock, DateTime utc) => QpcToNs(clock.ToQpc(utc));
 
     /// <summary>Stops the encoders and releases the capture; the buffered footage stays cuttable until <see cref="DisposeAsync"/>.</summary>
     public async Task StopAsync()

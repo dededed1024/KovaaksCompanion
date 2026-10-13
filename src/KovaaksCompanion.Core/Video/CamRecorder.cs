@@ -44,11 +44,11 @@ public sealed class CamRecorder : IAsyncDisposable
     /// Writes the cam footage for the span of <paramref name="clip"/> (same start and length; the file's time 0 is the game clip's first frame).
     /// False when the cam has nothing buffered for it.
     /// </summary>
-    public async Task<bool> ExtractAsync(ClipResult clip, QpcClock clock, string outputPath)
+    public async Task<bool> ExtractAsync(ClipResult clip, string outputPath)
     {
         var ring = _ring;
         if (ring == null || !ring.HasOrigin) { AppLog.Write("handcam", $"cam ring has no time origin (ring={(ring != null)}); no capture timestamps yet?"); return false; }
-        var origin = ring.ToRingSec(VideoRecorder.UtcToQpcNs(clock, clip.ClipStartUtc));
+        var origin = ring.ToRingSec(VideoRecorder.QpcToNs(clip.ClipStartQpc));
         var end = origin + clip.Duration.TotalSeconds;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
         while (ring.LastVideoSec < end && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);

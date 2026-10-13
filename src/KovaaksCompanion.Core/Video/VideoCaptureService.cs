@@ -150,7 +150,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
             {
                 try
                 {
-                    if (!await cam.ExtractAsync(clip, rec.Clock, Path.Combine(dir, $"handcam{slot + 1}.mp4")))
+                    if (!await cam.ExtractAsync(clip, Path.Combine(dir, $"handcam{slot + 1}.mp4")))
                         AppLog.Write("handcam", $"no footage from cam {slot + 1} for this clip");
                 }
                 catch (Exception e) { AppLog.Write("handcam", "cam clip failed: " + e); ErrorReporter.Report("webcam clip", e); Error?.Invoke("hand cam not saved: " + e.Message); }

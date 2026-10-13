@@ -33,11 +33,13 @@ public sealed class PacketRing : IDisposable
     Chunk? _open;
     int _nextChunk;
     bool _hasOrigin, _originFromCapture;
-    int _arrivalSamples;
-    long _arrivalOriginNs = long.MaxValue;
+    int _arrivalSamples, _captureSamples;
+    long _arrivalOriginNs = long.MaxValue, _captureOriginNs = long.MaxValue;
     /// <summary>Typical delay between a frame's capture and its packet arriving, used when libobs gives no capture time (secondary canvases).</summary>
     const long ArrivalLatencyNs = 90_000_000;
     const int ArrivalSamples = 120;
+    /// <summary>Frames over which the origin is refined from their capture times.</summary>
+    const int CaptureSamples = 120;
     readonly Func<long> _nowNs;
     double _lastVideoSec = double.NegativeInfinity;
 
@@ -72,14 +74,18 @@ public sealed class PacketRing : IDisposable
         double dts = p.Dts * scale, pts = p.Pts * scale;
         lock (_lock)
         {
-            if (p.IsVideo && !_originFromCapture)
+            if (p.IsVideo && p.CaptureNs != 0 && _captureSamples < CaptureSamples)
             {
-                if (p.CaptureNs != 0)
-                {
-                    OriginNs = (long)p.CaptureNs - (long)Math.Round(pts * 1e9);
-                    _hasOrigin = _originFromCapture = true;
-                }
-                else if (_arrivalSamples < ArrivalSamples)
+                // a late compositor tick only pushes a frame's capture time later, so the earliest (capture - pts) of the first frames is the truest origin;
+                // one frame alone (usually delayed while the capture starts up) would put every later frame off by that delay
+                _captureOriginNs = Math.Min(_captureOriginNs, (long)p.CaptureNs - (long)Math.Round(pts * 1e9));
+                OriginNs = _captureOriginNs;
+                _hasOrigin = _originFromCapture = true;
+                _captureSamples++;
+            }
+            else if (p.IsVideo && !_originFromCapture)
+            {
+                if (_arrivalSamples < ArrivalSamples)
                 {
                     // no capture time: the earliest (arrival - pts) over the first frames is the one with the least queueing delay
                     _arrivalOriginNs = Math.Min(_arrivalOriginNs, _nowNs() - (long)Math.Round(pts * 1e9));

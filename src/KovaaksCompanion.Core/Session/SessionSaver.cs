@@ -63,6 +63,10 @@ public sealed class SessionSaver
         var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario, run.Score, pb));
         Directory.CreateDirectory(folder);
 
+        // one wall-clock -> QPC mapping for the whole save: the mouse trajectory and the video offset both hang off the same instant
+        var anchor = _anchor();
+        var startQpc = anchor.ToQpc(run.Start);
+        var endQpc = anchor.ToQpc(run.End);
         var startUtc = DateTime.SpecifyKind(run.Start, DateTimeKind.Local).ToUniversalTime();
         var endUtc = DateTime.SpecifyKind(run.End, DateTimeKind.Local).ToUniversalTime();
 
@@ -73,9 +77,10 @@ public sealed class SessionSaver
             try { clip = await _extract(startUtc, endUtc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
             catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
         }
-        var videoCovers = skipVideo || clip != null && clip.ClipStartUtc <= startUtc && clip.ClipStartUtc + clip.Duration >= endUtc;
+        var clipEndQpc = clip == null ? 0 : clip.ClipStartQpc + (long)(clip.Duration.TotalSeconds * anchor.Frequency);
+        var videoCovers = skipVideo || clip != null && clip.ClipStartQpc <= startQpc && clipEndQpc >= endQpc;
 
-        var built = TrajectoryBuilder.Build(run, _buffer, _anchor());
+        var built = TrajectoryBuilder.Build(run, _buffer, anchor);
         if (built.Trajectory != null)
             await File.WriteAllBytesAsync(Path.Combine(folder, SessionFolder.TrajectoryFile), TrajectorySerializer.Serialize(built.Trajectory));
         File.Copy(csvPath, Path.Combine(folder, Path.GetFileName(csvPath)), overwrite: true);
@@ -84,7 +89,7 @@ public sealed class SessionSaver
         var info = new SessionInfo
         {
             Scenario = run.Scenario, Start = run.Start, End = run.End,
-            VideoOffsetSec = clip?.ToClipTime(startUtc).TotalSeconds ?? 0,
+            VideoOffsetSec = clip == null ? 0 : (startQpc - clip.ClipStartQpc) / (double)anchor.Frequency,
             SampleRateHz = 0, // the trajectory holds raw mouse movement, not fixed-rate samples
             Settings = run.Settings,
             Partial = built.Partial || !videoCovers,
