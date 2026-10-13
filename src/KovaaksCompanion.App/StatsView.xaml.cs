@@ -309,6 +309,7 @@ public partial class StatsView : UserControl
             return (RunLibrary.Scan(folder).Verified(infos).WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
         });
         _book = _book.WithLibrary(lib);
+        PlaySession.LiveIds = LiveRunLog.AssignRuns(_host.Settings.LiveRunFile, lib.AllRuns);
         (_sessions, _deletedBest, _hidden) = (sessions, deletedBest, hidden);
         foreach (var (n, c) in scores) { _book.SetCloud(n, c.Scores); _cloudFetched[n] = c.FetchedAt; }
         foreach (var (n, v) in deletedBest) _book.RaiseServerBest(n, v);

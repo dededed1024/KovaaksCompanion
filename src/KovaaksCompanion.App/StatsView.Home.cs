@@ -807,39 +807,41 @@ public partial class StatsView
             host.Children.Add(row);
         }
 
-        // Server scores of the day that have no local run (other PC, older plays): one line each.
-        var server = new List<(string Scenario, ScoreRecord Rec)>();
+        // Server scores of the day that have no local run (other PC, older plays): grouped into sessions by the same gap.
+        var allServer = new List<(string Scenario, ScoreRecord Rec)>();
         foreach (var n in _book.AllScenarios)
+            foreach (var rec in _book.For(n).Records.Where(r => r.Run == null)) allServer.Add((n, rec));
+        // Session ids are cached in live-runs.json; only records without one are grouped by the gap.
+        PlaySession.LiveIds = LiveRunLog.AssignServer(_host.Settings.LiveRunFile, allServer.Select(x => (x.Scenario, x.Rec.Time)));
+        var groups = allServer.Where(x => x.Rec.Time.Date == day)
+            .GroupBy(x => PlaySession.LiveIds.TryGetValue(KovaaksCompanion.Core.UiState.RunKey(x.Scenario, x.Rec.Time), out var id) ? id : 0)
+            .OrderByDescending(g => g.Max(x => x.Rec.Time))
+            .Select(g => g.ToList());
+        foreach (var grp in groups)
         {
-            var st = _book.For(n);
-            foreach (var rec in st.Records.Where(r => r.Run == null && r.Time.Date == day)) server.Add((n, rec));
-        }
-        if (server.Count == 0) return;
-        host.Children.Add(Text(L.T("Server records"), 12, DimB, FontWeights.SemiBold, new Thickness(10, 10, 0, 4)));
-        foreach (var (n, rec) in server.OrderByDescending(x => x.Rec.Time))
-        {
-            var g = new Grid { Margin = new Thickness(10, 0, 10, 0), MinHeight = 28 };
+            var start = grp.Min(x => x.Rec.Time);
+            var end = grp.Max(x => x.Rec.Time);
+            var scenarios = grp.Select(x => x.Scenario).Distinct().Count();
+            var pbCount = grp.Count(x => _book.For(x.Scenario).PersonalBests.Contains(x.Rec));
+            var g = new Grid { Margin = new Thickness(10, 0, 10, 0) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var name = Text(n, 12.5, FgB, FontWeights.SemiBold);
-            name.TextTrimming = TextTrimming.CharacterEllipsis;
-            name.VerticalAlignment = VerticalAlignment.Center;
-            g.Children.Add(name);
-            var score = Text(rec.Score.ToString("0.#"), 12.5, FgB, FontWeights.SemiBold, new Thickness(8, 0, 0, 0));
-            score.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(score, 1);
-            g.Children.Add(score);
-            if (_book.For(n).PersonalBests.Contains(rec))
+            if (pbCount >= 1) g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
+            info.Children.Add(Text(ClockFormat.Range(start, end), 12.5, DimB, FontWeights.Normal));
+            var counts = Text((grp.Count == 1 ? L.F("{0} play", grp.Count) : L.F("{0} plays", grp.Count)) + " · " + (scenarios == 1 ? L.F("{0} scenario", scenarios) : L.F("{0} scenarios", scenarios)), 12, DimB, null, new Thickness(0, 2, 0, 0));
+            counts.TextWrapping = TextWrapping.Wrap;
+            info.Children.Add(counts);
+            g.Children.Add(info);
+            if (pbCount >= 1)
             {
                 var green = (Brush)FindResource("Green");
-                var pill = new Grid { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-                pill.Children.Add(new Border { CornerRadius = new CornerRadius(8), Background = green, Opacity = 0.18 });
-                pill.Children.Add(Text("PB", 10.5, green, FontWeights.SemiBold, new Thickness(8, 1, 8, 1)));
-                Grid.SetColumn(pill, 2);
-                g.Children.Add(pill);
+                var badge = new Grid { Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.35 });
+                badge.Children.Add(new TextBlock { Text = pbCount >= 2 ? L.F("PB ×{0}", pbCount) : L.T("PB"), Foreground = green, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 3, 10, 3) });
+                Grid.SetColumn(badge, 1);
+                g.Children.Add(badge);
             }
-            host.Children.Add(g);
+            host.Children.Add(new Border { CornerRadius = new CornerRadius(10), Child = g, Margin = new Thickness(0, 0, 0, 2) });
         }
     }
 
