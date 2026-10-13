@@ -16,7 +16,7 @@ public sealed unsafe class ObsPlayer : IDisposable
     public int VideoHeight => _src == 0 ? 0 : (int)ObsNative.obs_source_get_height(_src);
     public double Position => _src == 0 ? 0 : ObsNative.obs_source_media_get_time(_src) / 1000.0;
 
-    public static ObsPlayer? Open(string path, bool hardware = true, bool audio = true)
+    public static ObsPlayer? Open(string path, bool hardware = true, bool audio = true, bool unbuffered = true)
     {
         if (!ObsRuntime.IsStarted) return null;
         return ObsRuntime.Run(() =>
@@ -33,6 +33,8 @@ public sealed unsafe class ObsPlayer : IDisposable
                 ObsNative.obs_data_set_bool(d, "clear_on_media_end", false);
                 var src = ObsNative.obs_source_create("ffmpeg_source", "kc_replay", d, 0);
                 if (src == 0) return null;
+                // show each decoded frame as soon as it arrives instead of after libobs' async buffer (about 80 ms behind the media clock)
+                ObsNative.obs_source_set_async_unbuffered(src, unbuffered);
                 // a source outside any scene is never active; mark it so the decoder runs and its audio is monitored
                 ObsNative.obs_source_inc_showing(src);
                 ObsNative.obs_source_inc_active(src);

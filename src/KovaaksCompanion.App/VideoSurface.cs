@@ -169,8 +169,8 @@ public sealed class VideoSurface : FrameworkElement
         if (_restoreAt != 0 && now >= _restoreAt)
         {
             _restoreAt = 0;
-            p.Seek(_restorePos);
-            if (_playing) p.Play(); else p.Pause();
+            if (_playing) { p.Seek(_restorePos); p.Play(); }
+            else { p.Pause(); p.Seek(_restorePos); } // pause first: a seek while playing keeps decoding past the keyframe before the pause lands
         }
         else if (_restoreAt != 0) return; // restarting: nothing worth drawing yet
         else if (!_ended && _playing && p.State == ObsPlayer.StateEnded)

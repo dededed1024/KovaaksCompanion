@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace KovaaksCompanion.Core.Video.Obs;
 
@@ -182,6 +182,8 @@ internal static unsafe partial class ObsNative
     [LibraryImport(Lib)] public static partial void obs_source_dec_showing(nint source);
     [LibraryImport(Lib)] public static partial void obs_source_inc_active(nint source);
     [LibraryImport(Lib)] public static partial void obs_source_dec_active(nint source);
+    [LibraryImport(Lib)] public static partial void obs_source_set_async_unbuffered(nint source, [MarshalAs(UnmanagedType.U1)] bool unbuffered);
+    [LibraryImport(Lib)] public static partial void obs_source_set_async_decoupled(nint source, [MarshalAs(UnmanagedType.U1)] bool decoupled);
 
     public static string? Str(nint p) => p == 0 ? null : Marshal.PtrToStringUTF8(p);
 }
