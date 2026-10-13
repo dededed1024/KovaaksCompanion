@@ -61,6 +61,7 @@ public static unsafe class ObsRuntime
                 }
                 ObsNative.base_set_log_handler((nint)(delegate* unmanaged[Cdecl]<int, byte*, nint, nint, void>)&LogHandler, 0);
                 if (!ObsNative.obs_startup("en-US", 0, 0)) { LastError = "obs_startup failed"; return false; }
+                ObsNative.obs_set_ui_task_handler((nint)(delegate* unmanaged[Cdecl]<nint, nint, byte, void>)&UiTaskHandler);
                 _started = true;
                 ObsNative.obs_add_data_path(Path.Combine(root, "data", "libobs") + "/");
                 ObsNative.obs_add_module_path(Path.Combine(root, "obs-plugins", "64bit"), Path.Combine(root, "data", "obs-plugins", "%module%"));
@@ -189,6 +190,15 @@ public static unsafe class ObsRuntime
         var l = new List<string>();
         for (nuint i = 0; ObsNative.obs_enum_source_types(i, out var p); i++) if (ObsNative.Str(p) is { } s) l.Add(s);
         return l;
+    }
+
+    /// <summary>libobs hands cleanup work (source destruction and the like) to a UI thread through this handler; the host has no such loop, so run the task here: inline when the caller waits, else on the pool.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    static void UiTaskHandler(nint task, nint param, byte wait)
+    {
+        var run = (delegate* unmanaged[Cdecl]<nint, void>)task;
+        if (wait != 0) { run(param); return; }
+        ThreadPool.UnsafeQueueUserWorkItem(_ => ((delegate* unmanaged[Cdecl]<nint, void>)task)(param), null);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]

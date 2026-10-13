@@ -71,6 +71,7 @@ internal static unsafe partial class ObsNative
     [LibraryImport(Lib)] public static partial void base_set_log_handler(nint handler, nint param);
     [LibraryImport(Lib)][return: MarshalAs(UnmanagedType.U1)] public static partial bool obs_startup([MarshalAs(UnmanagedType.LPUTF8Str)] string locale, nint moduleConfigPath, nint store);
     [LibraryImport(Lib)] public static partial void obs_shutdown();
+    [LibraryImport(Lib)] public static partial void obs_set_ui_task_handler(nint handler);
     [LibraryImport(Lib)] public static partial int obs_reset_video(ref VideoInfo ovi);
     [LibraryImport(Lib)][return: MarshalAs(UnmanagedType.U1)] public static partial bool obs_reset_audio(ref AudioInfo oai);
     [LibraryImport(Lib)] public static partial void obs_add_data_path([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
