@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core.Update;
 
 /// <summary>Newest published release: version without the leading "v" and its page URL.</summary>
-public sealed record ReleaseInfo(Version Version, string Url);
+public sealed record ReleaseInfo(Version Version, string Url, string Notes = "");
 
 /// <summary>GitHub latest-release lookup: JSON parsing and version comparison are pure; Fetch does the one HTTP call.</summary>
 public static class UpdateCheck
@@ -24,8 +24,9 @@ public static class UpdateCheck
             if (root.ValueKind != JsonValueKind.Object) return null;
             var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
             var url = root.TryGetProperty("html_url", out var u) ? u.GetString() : null;
+            var notes = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
             var v = ParseVersion(tag);
-            return v == null || string.IsNullOrEmpty(url) ? null : new(v, url);
+            return v == null || string.IsNullOrEmpty(url) ? null : new(v, url, notes?.Trim() ?? "");
         }
         catch (JsonException) { return null; }
     }

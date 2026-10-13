@@ -25,6 +25,8 @@ public partial class UpdateView : UserControl
         if (_open) return;
         _release = release;
         Versions.Text = $"v{App.CurrentVersion.ToString(3)} → v{release.Version.ToString(3)}";
+        Notes.Text = release.Notes;
+        NotesScroll.Visibility = release.Notes.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _open = true;
         var tok = ++_tok;
         Scrim.BeginAnimation(OpacityProperty, null); Scrim.Opacity = 0;
