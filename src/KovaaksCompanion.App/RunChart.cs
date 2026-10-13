@@ -45,11 +45,20 @@ public static class ChartSeriesInfo
 public sealed class RunChart : FrameworkElement
 {
     static Typeface Face => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+    static readonly Pen PlayheadPen = MakePlayheadPen();
+    static Pen MakePlayheadPen()
+    {
+        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x1D, 0x3A, 0xB8)), 2);
+        pen.Freeze();
+        return pen;
+    }
     IReadOnlyList<ChartPoint> _points = [];
     IReadOnlyList<double> _kills = [];
     readonly HashSet<ChartSeries> _visible = [];
     IReadOnlyList<ChartPoint> _ghost = [];
     double _duration, _playhead;
+
+    public bool HasData => _points.Count > 0;
 
     public bool Has(ChartSeries s) => _points.Any(p => !double.IsNaN(p[s]));
 
@@ -79,12 +88,12 @@ public sealed class RunChart : FrameworkElement
         InvalidateVisual();
     }
 
-    /// <summary>Running totals at a video time, or null before the first point.</summary>
+    /// <summary>Running totals at a video time, read off the same monotone curve the chart draws, or null before the first point.</summary>
     public ChartPoint? At(double videoSec)
     {
-        ChartPoint? last = null;
-        foreach (var p in _points) { if (p.VideoSec <= videoSec) last = p; else break; }
-        return last;
+        if (_points.Count == 0 || _points[0].VideoSec > videoSec) return null;
+        double V(ChartSeries s) => ChartPaths.YAt(_points.Where(p => !double.IsNaN(p[s])).Select(p => new Point(p.VideoSec, p[s])).ToList(), videoSec);
+        return new ChartPoint(videoSec, V(ChartSeries.Accuracy), V(ChartSeries.Score), V(ChartSeries.Kills), V(ChartSeries.Shots), V(ChartSeries.Hits), V(ChartSeries.MouseSpeed));
     }
 
     bool Shown(ChartSeries s) => _visible.Contains(s) && Has(s);
@@ -94,7 +103,17 @@ public sealed class RunChart : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
-        if (_duration <= 0 || _points.Count == 0) return;
+        if (_duration <= 0 || _points.Count == 0)
+        {
+            // nothing to plot: the empty frame keeps the same guide lines
+            var guide = new Pen((Brush)Application.Current.FindResource("Separator"), 1);
+            foreach (var f in new[] { 0.0, 0.5, 1.0 })
+            {
+                var gy = h - 4 - f * (h - 8);
+                dc.DrawLine(guide, new Point(0, gy), new Point(w, gy));
+            }
+            return;
+        }
 
         var dim = (Brush)Application.Current.FindResource("Dim");
         var red = (Brush)Application.Current.FindResource("Red");
@@ -140,7 +159,7 @@ public sealed class RunChart : FrameworkElement
                 new Pen(ChartSeriesInfo.Brush(s), s == ChartSeries.Accuracy ? 2 : 1.5) { LineJoin = PenLineJoin.Round }, s == shown[0] ? Y(0) : null);
 
         var x = X(_playhead);
-        dc.DrawLine(new Pen(Brushes.White, 1.5), new Point(x, 0), new Point(x, h));
+        dc.DrawLine(PlayheadPen, new Point(x, 0), new Point(x, h));
         if (At(_playhead) is { } cur)
             foreach (var s in shown.OrderByDescending(s => s))
                 if (!double.IsNaN(cur[s]))

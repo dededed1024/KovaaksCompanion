@@ -2,23 +2,22 @@
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using KovaaksCompanion.Core.Diagnostics;
-using KovaaksCompanion.Core.Video.Obs;
+using KovaaksCompanion.Core.Video.Ffmpeg;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>Video surface backed by libobs' ffmpeg_source (no Windows Media Player needed). The decoder seeks to the keyframe at or before the requested time,
-/// so <see cref="Position"/> after a seek can be up to one keyframe interval earlier than requested; changing the speed or replaying after the end reopens the file.</summary>
+/// <summary>Video surface backed by the FFmpeg libraries of the libobs bundle (no Windows Media Player needed). Seeks are frame accurate and speed changes keep the position.
+/// Decodes on the GPU (D3D11VA) when possible and plays the audio track through the default output device at any speed.</summary>
 public sealed class VideoSurface : FrameworkElement
 {
     const int OpenTimeoutMs = 8000;
-    const long RestartSettleMs = 120;
 
-    ObsPlayer? _p;
+    FfmpegPlayer? _p;
     WriteableBitmap? _bmp;
     int _ver, _bmpW, _bmpH;
     bool _opened, _ended, _playing, _hooked, _failed, _dirty;
-    double _speed = 1, _lastPos = -1, _restorePos;
-    long _openedAt, _restoreAt, _forceUntil;
+    double _speed = 1, _lastPos = -1;
+    long _openedAt, _forceUntil;
 
     public event Action? MediaOpened;
     public event Action? MediaEnded;
@@ -35,9 +34,15 @@ public sealed class VideoSurface : FrameworkElement
         {
             if (Math.Abs(value - _speed) < 1e-6) return;
             _speed = value;
-            if (_p is null || !_opened) return;
-            Reopen(Position);
+            _p?.SetSpeed(value);
         }
+    }
+
+    bool _muted;
+    public bool Muted
+    {
+        get => _muted;
+        set { _muted = value; if (_p is not null) _p.Muted = value; }
     }
 
     public double Position
@@ -45,7 +50,6 @@ public sealed class VideoSurface : FrameworkElement
         get
         {
             if (_p is null) return 0;
-            if (_restoreAt != 0) return _restorePos;
             return _ended ? Duration : _p.Position;
         }
         set
@@ -54,7 +58,6 @@ public sealed class VideoSurface : FrameworkElement
             _ended = false;
             _dirty = true;
             _forceUntil = Environment.TickCount64 + 1500;
-            if (_restoreAt != 0) { _restorePos = value; return; }
             _p.Seek(value);
         }
     }
@@ -68,12 +71,13 @@ public sealed class VideoSurface : FrameworkElement
         Hook(true);
         Task.Run(() =>
         {
-            ObsPlayer? p = null;
+            FfmpegPlayer? p = null;
             Exception? error = null;
             try
             {
-                if (!AppHost.EnsureObs()) error = new InvalidOperationException("libobs: " + ObsRuntime.LastError);
-                else { ObsRuntime.ResetAudio(); p = ObsPlayer.Open(path) ?? throw new InvalidOperationException("Cannot play the file."); }
+                var root = AppHost.ResolveLibobs();
+                if (root is null || !FfmpegNative.Load(System.IO.Path.Combine(root, "bin", "64bit"))) error = new InvalidOperationException("ffmpeg: " + (root is null ? "libobs bundle missing" : FfmpegNative.LastError));
+                else p = FfmpegPlayer.Open(path) ?? throw new InvalidOperationException("Cannot play the file.");
             }
             catch (Exception e) { error = e; }
             Dispatcher.BeginInvoke(() =>
@@ -81,6 +85,7 @@ public sealed class VideoSurface : FrameworkElement
                 if (ver != _ver) { p?.Dispose(); return; }
                 if (p is null) { Fail(error ?? new InvalidOperationException("Cannot play the file.")); return; }
                 _p = p;
+                p.Muted = _muted;
             });
         });
     }
@@ -93,7 +98,7 @@ public sealed class VideoSurface : FrameworkElement
         _p = null;
         if (p is not null) Task.Run(p.Dispose);
         _opened = _ended = _playing = _failed = _dirty = false;
-        _restoreAt = 0; _lastPos = -1;
+        _lastPos = -1;
         Duration = 0; NaturalVideoWidth = NaturalVideoHeight = 0;
         _bmp = null; _bmpW = _bmpH = 0;
         InvalidateVisual();
@@ -103,7 +108,7 @@ public sealed class VideoSurface : FrameworkElement
     {
         _playing = true;
         if (_p is null || !_opened) return;
-        if (_ended) { Reopen(0); return; }
+        _ended = false;
         _p.Play();
     }
 
@@ -114,23 +119,11 @@ public sealed class VideoSurface : FrameworkElement
         _p.Pause();
     }
 
-    /// <summary>obs_source_update restarts the file at 0; seek back to <paramref name="pos"/> once it runs again.</summary>
-    void Reopen(double pos)
-    {
-        if (_p is null) return;
-        _p.SetSpeed(_speed);
-        _ended = false;
-        _restorePos = pos;
-        _restoreAt = Environment.TickCount64 + RestartSettleMs;
-        _dirty = true;
-        _forceUntil = _restoreAt + 1500;
-    }
-
     void Fail(Exception e)
     {
         if (_failed) return;
         _failed = true;
-        AppLog.Write("replay", "libobs player failed: " + e);
+        AppLog.Write("replay", "ffmpeg player failed: " + e);
         Hook(false);
         MediaFailed?.Invoke(e);
     }
@@ -166,27 +159,20 @@ public sealed class VideoSurface : FrameworkElement
             if (_p is null) return;
         }
 
-        if (_restoreAt != 0 && now >= _restoreAt)
-        {
-            _restoreAt = 0;
-            if (_playing) { p.Seek(_restorePos); p.Play(); }
-            else { p.Pause(); p.Seek(_restorePos); } // pause first: a seek while playing keeps decoding past the keyframe before the pause lands
-        }
-        else if (_restoreAt != 0) return; // restarting: nothing worth drawing yet
-        else if (!_ended && _playing && p.State == ObsPlayer.StateEnded)
+        if (!_ended && _playing && p.State == FfmpegPlayer.StateEnded)
         {
             _ended = true; _playing = false;
             MediaEnded?.Invoke();
             return;
         }
 
-        double pos = _restoreAt != 0 ? _restorePos : p.Position;
+        double pos = p.Position;
         if (!_dirty && pos == _lastPos && now >= _forceUntil) return;
         _lastPos = pos; _dirty = false;
         Draw(p);
     }
 
-    void Draw(ObsPlayer p)
+    void Draw(FfmpegPlayer p)
     {
         if (ActualWidth < 1 || ActualHeight < 1 || NaturalVideoWidth <= 0 || NaturalVideoHeight <= 0) return;
         var dpi = VisualTreeHelper.GetDpi(this);
