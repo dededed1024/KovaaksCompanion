@@ -70,11 +70,11 @@ public sealed class ScoreChart : FrameworkElement
         base.OnMouseWheel(e);
         var n = _all.Count;
         if (!Zoomable || _miniBrush != null || n <= ZoomMin || ActualWidth <= 0 || ActualHeight <= 0) return;
-        e.Handled = true;
         var next = (int)Math.Round(_len * (e.Delta > 0 ? 0.8 : 1.25));
         if (next == _len) next += e.Delta > 0 ? -1 : 1;
         next = Math.Clamp(next, ZoomMin, n);
-        if (next == _len) return;
+        if (next == _len) return; // at the zoom limit: the wheel scrolls the page again
+        e.Handled = true;
         _manual = true;
         _len = next;
         ApplyWindow();
@@ -403,14 +403,15 @@ public sealed class ScoreChart : FrameworkElement
 
         // X labels (line only: bars are one per day, labelled the same way).
         var span = _points[^1].When - _points[0].When;
-        var fmt = span.TotalDays > 365 ? "MMM d, yy" : "MMM d";
+        var yearly = span.TotalDays > 365;
+        string Label(DateTime t) => L.Code == "en" ? t.ToString(yearly ? "MMM d, yy" : "MMM d", L.DateCulture) : yearly ? L.ShortDate(t) : L.MonthDay(t);
         var labels = Math.Min(5, n);
         string? prevText = null;
         var prevEnd = double.NegativeInfinity;
         for (var k = 0; k < labels; k++)
         {
             var i = labels == 1 ? 0 : (int)Math.Round(k * (n - 1) / (double)(labels - 1));
-            var txt = _points[i].When.ToString(fmt, CultureInfo.InvariantCulture);
+            var txt = Label(_points[i].When);
             if (txt == prevText) continue;
             var ft = Text(txt, 11, dim);
             var x = Math.Clamp(X(i) - ft.Width / 2, left, Math.Max(left, w - Right - ft.Width));
