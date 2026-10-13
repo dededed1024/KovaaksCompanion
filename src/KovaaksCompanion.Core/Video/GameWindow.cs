@@ -28,7 +28,7 @@ public static class GameWindow
     {
         if (!OperatingSystem.IsWindows()) return null;
         var pids = new HashSet<uint>();
-        foreach (var p in Process.GetProcessesByName(processName)) { pids.Add((uint)p.Id); p.Dispose(); }
+        foreach (var p in InSession(processName)) { pids.Add((uint)p.Id); p.Dispose(); }
         if (pids.Count == 0) return null;
 
         // physical pixels regardless of this process's DPI mode
@@ -74,8 +74,23 @@ public static class GameWindow
 
     public static bool IsProcessAlive(string processName)
     {
-        var ps = Process.GetProcessesByName(processName);
+        var ps = InSession(processName);
         foreach (var p in ps) p.Dispose();
-        return ps.Length > 0;
+        return ps.Count > 0;
+    }
+
+    /// <summary>Processes named <paramref name="processName"/> in this app's own Windows session (another user's game is neither capturable nor readable).</summary>
+    public static List<Process> InSession(string processName)
+    {
+        int mine = Process.GetCurrentProcess().SessionId;
+        var all = Process.GetProcessesByName(processName);
+        var keep = new List<Process>();
+        foreach (var p in all)
+        {
+            bool same;
+            try { same = p.SessionId == mine; } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { same = false; }
+            if (same) keep.Add(p); else p.Dispose();
+        }
+        return keep;
     }
 }

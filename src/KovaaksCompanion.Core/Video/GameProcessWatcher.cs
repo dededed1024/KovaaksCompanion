@@ -13,12 +13,7 @@ public sealed class GameProcessWatcher : IDisposable
 
     public GameProcessWatcher(string processName, TimeSpan? poll = null, Func<bool>? probe = null)
     {
-        _isRunning = probe ?? (() =>
-        {
-            var ps = Process.GetProcessesByName(processName);
-            foreach (var p in ps) p.Dispose();
-            return ps.Length > 0;
-        });
+        _isRunning = probe ?? (() => GameWindow.IsProcessAlive(processName));
         _poll = poll ?? TimeSpan.FromSeconds(1);
         _timer = new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
     }

@@ -44,16 +44,16 @@ public sealed class VideoCaptureService : IAsyncDisposable
     {
         try
         {
-            var ps = Process.GetProcessesByName(_o.GameProcessName);
+            var ps = GameWindow.InSession(_o.GameProcessName);
             DateTime? start = null;
             foreach (var p in ps)
             {
-                try { if (start is not { } s || p.StartTime < s) start = p.StartTime; } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+                try { if (start is not { } s || p.StartTime < s) start = p.StartTime; } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { /* elevated or protected game process: start time unreadable, fall back to now */ }
                 p.Dispose();
             }
             GameLaunched?.Invoke(start ?? DateTime.Now);
         }
-        catch (Exception e) { AppLog.Write("video", "launch time failed: " + e.Message); }
+        catch (Exception e) { ErrorReporter.Report("video launch time", e); }
     }
 
     private async Task StartRecordingAsync()
@@ -85,7 +85,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
             }
             else if (!cts.IsCancellationRequested) Error?.Invoke(rec.LastError);
         }
-        catch (Exception e) { AppLog.Write("video", "start failed: " + e); ErrorReporter.Report("video start", e); Error?.Invoke(e.Message); }
+        catch (Exception e) { ErrorReporter.Report("video start", e); Error?.Invoke(e.Message); }
         finally { _gate.Release(); }
         StateChanged?.Invoke();
     }
@@ -109,7 +109,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
                 if (await cam.StartAsync(id, encoder)) _cams.Add((slot, cam));
                 else { Error?.Invoke($"hand cam {slot + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
             }
-            catch (Exception e) { AppLog.Write("handcam", "start failed: " + e); ErrorReporter.Report("webcam start", e); Error?.Invoke($"hand cam {slot + 1} off: " + e.Message); }
+            catch (Exception e) { ErrorReporter.Report("webcam start", e); Error?.Invoke($"hand cam {slot + 1} off: " + e.Message); }
         }
     }
 
@@ -153,7 +153,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
                     if (!await cam.ExtractAsync(clip, Path.Combine(dir, $"handcam{slot + 1}.mp4")))
                         AppLog.Write("handcam", $"no footage from cam {slot + 1} for this clip");
                 }
-                catch (Exception e) { AppLog.Write("handcam", "cam clip failed: " + e); ErrorReporter.Report("webcam clip", e); Error?.Invoke("hand cam not saved: " + e.Message); }
+                catch (Exception e) { ErrorReporter.Report("webcam clip", e); Error?.Invoke("hand cam not saved: " + e.Message); }
             }
         }
         progress?.Invoke(1);
