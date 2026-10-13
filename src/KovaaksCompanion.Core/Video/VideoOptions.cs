@@ -19,6 +19,8 @@ public sealed record VideoOptions
     public bool CaptureAudio { get; init; } = true;
     /// <summary>libobs video encoder id; null = first working encoder of the fallback chain.</summary>
     public string? Encoder { get; init; }
-    /// <summary>Footage kept before the run start and after its end.</summary>
-    public TimeSpan ClipMargin { get; init; } = TimeSpan.FromSeconds(5);
+    /// <summary>Footage kept before the run start.</summary>
+    public TimeSpan ClipMarginBefore { get; init; } = TimeSpan.FromSeconds(5);
+    /// <summary>Footage kept after the run end.</summary>
+    public TimeSpan ClipMarginAfter { get; init; } = TimeSpan.FromSeconds(10);
 }

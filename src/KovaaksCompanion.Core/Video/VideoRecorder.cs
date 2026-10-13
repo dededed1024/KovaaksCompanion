@@ -36,7 +36,7 @@ public sealed class VideoRecorder : IAsyncDisposable
     /// <summary>Starts recording; tries each encoder of the fallback chain until one starts. Returns false if none works.</summary>
     public async Task<bool> StartAsync(IReadOnlyList<ObsCamSpec> cams, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(_o.BufferDir);
+        AccessGuard.Run(_o.BufferDir, true, () => Directory.CreateDirectory(_o.BufferDir));
         foreach (var f in Directory.GetFiles(_o.BufferDir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) TryDelete(f);
 
         Target = await GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);
@@ -79,19 +79,21 @@ public sealed class VideoRecorder : IAsyncDisposable
     }
 
     /// <summary>
-    /// Cuts [start, end] +/- margin out of the buffer. Waits (up to maxWait) for the buffer to reach end+margin; if recording already stopped, uses whatever was captured.
-    /// The clip starts at the keyframe at or before start - margin; <see cref="ClipResult.ClipStartQpc"/> is that frame's time. Start and end are QPC ticks (Stopwatch).
+    /// Cuts [start - ClipMarginBefore, end + ClipMarginAfter] out of the buffer. Waits (up to maxWait) for the buffer to reach end+margin; if recording already stopped, uses whatever was captured.
+    /// The clip starts at the keyframe at or before start - ClipMarginBefore; <see cref="ClipResult.ClipStartQpc"/> is that frame's time. Start and end are QPC ticks (Stopwatch).
     /// </summary>
     public async Task<ClipResult?> ExtractClipAsync(long startQpc, long endQpc, string outputPath, TimeSpan? maxWait = null)
     {
         var ring = _ring;
         if (ring == null || !ring.HasOrigin) return null;
-        var margin = (long)(_o.ClipMargin.TotalSeconds * Stopwatch.Frequency);
-        double from = ring.ToRingSec(QpcToNs(startQpc - margin)), to = ring.ToRingSec(QpcToNs(endQpc + margin));
-        var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(5));
+        var before = (long)(_o.ClipMarginBefore.TotalSeconds * Stopwatch.Frequency);
+        var after = (long)(_o.ClipMarginAfter.TotalSeconds * Stopwatch.Frequency);
+        double from = ring.ToRingSec(QpcToNs(startQpc - before)), to = ring.ToRingSec(QpcToNs(endQpc + after));
+        var deadline = DateTime.UtcNow + (maxWait ?? _o.ClipMarginAfter + TimeSpan.FromSeconds(2));
         while (ring.LastVideoSec < to && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+        var outDir = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
+        AccessGuard.Run(outDir, true, () => Directory.CreateDirectory(outDir));
         var (avc, aac) = Parameters(_capture);
         if (avc == null) return null;
         var span = await Task.Run(() => ring.WriteClip(outputPath, from, to, avc, aac));
@@ -125,13 +127,13 @@ public sealed class VideoRecorder : IAsyncDisposable
                 var sw = Stopwatch.StartNew();
                 while (cap.Output.IsActive && sw.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(50);
             }
-            catch (Exception e) { AppLog.Write("video", "stop failed: " + e.Message); }
+            catch (Exception e) { ErrorReporter.Report("video stop", e); }
             _capture = null;
             cap.Dispose();
         });
     }
 
-    private static void TryDelete(string f) { try { File.Delete(f); } catch { } }
+    private static void TryDelete(string f) { try { File.Delete(f); } catch (Exception e) { ErrorReporter.Report("delete " + Path.GetFileName(f), e); } }
 
     public async ValueTask DisposeAsync()
     {
