@@ -50,7 +50,7 @@ public partial class StatsView : UserControl
     {
         InitializeComponent();
         _host = host;
-        _index = new PlaylistIndex(App.Demo ? DemoIndexFile : host.Settings.PlaylistIndexFile);
+        _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
         Heading.Text = L.T("Loading…");
         host.SessionSaved += OnSessionSaved;
         host.RunFinished += OnRunFinished;
@@ -72,7 +72,7 @@ public partial class StatsView : UserControl
         PlaylistScroll.IsVisibleChanged += (_, _) => CopyImage.Visibility = PlaylistScroll.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         Popups.AddBase(HomeScroll);
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); UpdateTopButton(); };
-        HomeScroll.ScrollChanged += (_, _) => { UpdateLivePill(); UpdateTopButton(); };
+        HomeScroll.ScrollChanged += (_, _) => { UpdateLivePill(); UpdateTopButton(); LoadMoreBrowse(); };
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
         HomeScroll.Loaded += (_, _) =>
         {
