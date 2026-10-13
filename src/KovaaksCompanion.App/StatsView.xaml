@@ -98,46 +98,43 @@
         <!-- Playlist popup: scrim + card below the title bar -->
         <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
             <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1300" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
-                <Grid x:Name="Detail" Margin="28,20,28,18">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Border x:Name="DiffTrack" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource SegmentTrack}" VerticalAlignment="Center" Visibility="Collapsed">
-                            <StackPanel x:Name="DiffBar" Orientation="Horizontal"/>
-                        </Border>
-                        <WrapPanel VerticalAlignment="Center">
-                                <Border x:Name="HeadPill" Width="10" Height="10" CornerRadius="5" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Favorite'}" Click="OnStarClick" Visibility="Collapsed"/>
-                                <Button x:Name="CopyImage" Content="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Copy scenarios as image'}" Click="OnCopyImageClick" Visibility="Collapsed"/>
-                                <Button x:Name="Pin" Content="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
-                                        MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Show tier on Home'}" Click="OnPinClick" Visibility="Collapsed"/>
-                                <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                <Border x:Name="CodeChip" Background="{DynamicResource Wash}" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
-                                        ToolTip="{app:Loc 'Copy sharecode'}" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
-                                    <TextBlock x:Name="CodeText" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Dim}"/>
+                <Grid x:Name="Detail" Margin="8,18,8,6">
+                    <ScrollViewer x:Name="PlaylistScroll" Focusable="False" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+                        <StackPanel x:Name="Body" HorizontalAlignment="Center">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="DiffTrack" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource SegmentTrack}" VerticalAlignment="Center" Visibility="Collapsed">
+                                    <StackPanel x:Name="DiffBar" Orientation="Horizontal"/>
                                 </Border>
-                                <Button x:Name="PlayList" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="8,0,0,0" VerticalAlignment="Center"
-                                        ToolTip="{app:Loc 'Start in KovaaK\'s'}" Click="OnPlayListClick" Visibility="Collapsed"/>
-                            </WrapPanel>
-                    </Grid>
-                    <TextBlock x:Name="Summary" Grid.Row="1" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{DynamicResource Dim}"/>
-                    <ScrollViewer x:Name="PlaylistScroll" Focusable="False" Grid.Row="2" Margin="0,12,0,0" VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Visibility="Collapsed">
-                        <Grid x:Name="PageHost" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                                <WrapPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                                        <Border x:Name="HeadPill" Width="10" Height="10" CornerRadius="5" Margin="0,0,12,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                        <TextBlock x:Name="Heading" Style="{StaticResource LargeTitle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <Button x:Name="Star" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
+                                                MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Favorite'}" Click="OnStarClick" Visibility="Collapsed"/>
+                                        <Button x:Name="CopyImage" Content="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
+                                                MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Copy scenarios as image'}" Click="OnCopyImageClick" Visibility="Collapsed"/>
+                                        <Button x:Name="Pin" Content="&#xE718;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="0"
+                                                MinHeight="36" MinWidth="36" VerticalAlignment="Center" ToolTip="{app:Loc 'Show tier on Home'}" Click="OnPinClick" Visibility="Collapsed"/>
+                                        <TextBlock x:Name="HeadMark" FontSize="14" FontWeight="ExtraBold" Opacity="0.6" Margin="14,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                        <Border x:Name="CodeChip" Background="{DynamicResource Wash}" CornerRadius="8" Padding="10,5" Margin="14,0,0,0" VerticalAlignment="Center" Cursor="Hand"
+                                                ToolTip="{app:Loc 'Copy sharecode'}" MouseLeftButtonUp="OnCodeClick" Visibility="Collapsed">
+                                            <TextBlock x:Name="CodeText" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Dim}"/>
+                                        </Border>
+                                        <Button x:Name="PlayList" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                ToolTip="{app:Loc 'Start in KovaaK\'s'}" Click="OnPlayListClick" Visibility="Collapsed"/>
+                                    </WrapPanel>
+                            </Grid>
+                            <TextBlock x:Name="Summary" Margin="0,12,0,8" TextWrapping="Wrap" LineHeight="22" Foreground="{DynamicResource Dim}"/>
+                            <Grid x:Name="PageHost" Margin="0,12,0,12"/>
+                        </StackPanel>
                     </ScrollViewer>
                 </Grid>
             </Border>
@@ -168,7 +165,5 @@
                 <Grid x:Name="SessionHost"/>
             </Border>
         </Grid>
-        <!-- Confetti over everything -->
-        <app:Confetti x:Name="ConfettiLayer" IsHitTestVisible="False"/>
     </Grid>
 </UserControl>

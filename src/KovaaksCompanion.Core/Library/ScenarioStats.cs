@@ -6,12 +6,15 @@ namespace KovaaksCompanion.Core.Library;
 public sealed record ScoreRecord(DateTime Time, double Score, RunRecord? Run);
 
 /// <summary>
-/// Score history of one scenario: the local runs plus the server scores the library lacks (a server score within 5 minutes
+/// Score history of one scenario: the local runs plus the server scores the library lacks (a server score within <see cref="SameRunWindow"/>
 /// of a local run is that same run), oldest first. Everything score-based works on <see cref="Records"/>; accuracy, duration and
 /// drift exist only for the local <see cref="Runs"/>. Built and cached by <see cref="ScoreBook"/>.
 /// </summary>
 public sealed class ScenarioStats
 {
+    /// <summary>A server score this close to a local run's end is that run.</summary>
+    public static readonly TimeSpan SameRunWindow = TimeSpan.FromSeconds(10);
+
     readonly double[] _bestSoFar;
     readonly HashSet<RunRecord> _pbRuns = new(ReferenceEqualityComparer.Instance);
 
@@ -119,7 +122,7 @@ public sealed class ScenarioStats
         {
             var i = Array.BinarySearch(ends, c.Time);
             if (i < 0) i = ~i; // first end at or after the score
-            var same = (i < ends.Length && (ends[i] - c.Time).TotalMinutes < 5) || (i > 0 && (c.Time - ends[i - 1]).TotalMinutes < 5);
+            var same = (i < ends.Length && ends[i] - c.Time < SameRunWindow) || (i > 0 && c.Time - ends[i - 1] < SameRunWindow);
             if (same) continue;
             all.Add(new(c.Time, c.Score, null));
             added = true;

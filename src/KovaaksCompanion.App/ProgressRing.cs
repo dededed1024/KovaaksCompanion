@@ -26,7 +26,7 @@ sealed class ProgressRing : FrameworkElement
         var ring = new ProgressRing(brush, size, thickness, Math.Max(0, host.PendingProgress(scenario, end)));
         void On(string s, DateTime e, double f)
         {
-            if (s.Equals(scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((e - end).TotalSeconds) < Core.Session.SessionStore.RunMatchTolerance.TotalSeconds)
+            if (s.Equals(scenario, StringComparison.OrdinalIgnoreCase) && Math.Abs((e - end).TotalSeconds) < Core.Replays.ReplayStore.RunMatchTolerance.TotalSeconds)
                 ring.Dispatcher.BeginInvoke(() => ring.Set(f));
         }
         ring.Loaded += (_, _) => { host.EncodeProgress -= On; host.EncodeProgress += On; ring.Set(Math.Max(0, host.PendingProgress(scenario, end))); };

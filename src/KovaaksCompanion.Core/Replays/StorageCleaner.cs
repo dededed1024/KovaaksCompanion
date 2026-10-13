@@ -1,11 +1,11 @@
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 
-namespace KovaaksCompanion.Core.Session;
+namespace KovaaksCompanion.Core.Replays;
 
-public sealed record StoredSession(string Folder, SessionInfo Info, long Bytes);
+public sealed record StoredReplay(string Folder, ReplayInfo Info, long Bytes);
 
-/// <summary>Picks session folders to delete: earlier runs beaten later in the same play session, and the oldest ones while the sessions folder is over its size limit.</summary>
+/// <summary>Picks replay folders to delete: earlier runs beaten later in the same play session, and the oldest ones while the replays folder is over its size limit.</summary>
 public static class StorageCleaner
 {
     const long Gb = 1024L * 1024 * 1024;
@@ -18,17 +18,17 @@ public static class StorageCleaner
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
     }
 
-    /// <summary>Complete session folders with their sizes, newest first.</summary>
-    public static List<StoredSession> Scan(string root) =>
-        SessionStore.List(root).Select(s => new StoredSession(s.Folder, s.Info, FolderBytes(s.Folder))).ToList();
+    /// <summary>Complete replay folders with their sizes, newest first.</summary>
+    public static List<StoredReplay> Scan(string root) =>
+        ReplayStore.List(root).Select(s => new StoredReplay(s.Folder, s.Info, FolderBytes(s.Folder))).ToList();
 
     /// <summary>Runs that a later run of the same scenario in the same play session scored higher than. Runs for which <paramref name="keep"/> is true stay.</summary>
-    public static List<StoredSession> Superseded(IEnumerable<StoredSession> all, Func<SessionInfo, bool> keep, TimeSpan? maxGap = null)
+    public static List<StoredReplay> Superseded(IEnumerable<StoredReplay> all, Func<ReplayInfo, bool> keep, TimeSpan? maxGap = null)
     {
         var gap = maxGap ?? PlaySession.DefaultGap;
-        var result = new List<StoredSession>();
-        var group = new List<StoredSession>();
-        StoredSession? last = null;
+        var result = new List<StoredReplay>();
+        var group = new List<StoredReplay>();
+        StoredReplay? last = null;
 
         void Flush()
         {
@@ -54,13 +54,13 @@ public static class StorageCleaner
         return result;
     }
 
-    /// <summary>Sessions that beat every earlier run of their scenario, counting the deleted runs of <paramref name="deleted"/> (scenario to scores).</summary>
-    public static HashSet<StoredSession> PersonalBests(IEnumerable<StoredSession> all, IReadOnlyDictionary<string, List<CloudScore>> deleted)
+    /// <summary>Replays that beat every earlier run of their scenario, counting the cached scores of <paramref name="cached"/> (scenario to scores).</summary>
+    public static HashSet<StoredReplay> PersonalBests(IEnumerable<StoredReplay> all, IReadOnlyDictionary<string, List<CloudScore>> cached)
     {
-        var pbs = new HashSet<StoredSession>();
+        var pbs = new HashSet<StoredReplay>();
         foreach (var g in all.GroupBy(s => s.Info.Scenario, StringComparer.OrdinalIgnoreCase))
         {
-            var gone = deleted.FirstOrDefault(d => d.Key.Equals(g.Key, StringComparison.OrdinalIgnoreCase)).Value ?? [];
+            var gone = cached.FirstOrDefault(d => d.Key.Equals(g.Key, StringComparison.OrdinalIgnoreCase)).Value ?? [];
             var best = double.MinValue;
             foreach (var s in g.OrderBy(s => s.Info.Start))
             {
@@ -73,12 +73,12 @@ public static class StorageCleaner
     }
 
     /// <summary>
-    /// Sessions to delete so the rest fits <paramref name="limitBytes"/> (0 = no limit). The newest session and the ones <paramref name="keep"/> accepts are never chosen,
+    /// Replays to delete so the rest fits <paramref name="limitBytes"/> (0 = no limit). The newest replay and the ones <paramref name="keep"/> accepts are never chosen,
     /// so the result can still leave the folder over the limit.
     /// </summary>
-    public static List<StoredSession> OverLimit(IReadOnlyList<StoredSession> all, long limitBytes, Func<SessionInfo, bool> keep)
+    public static List<StoredReplay> OverLimit(IReadOnlyList<StoredReplay> all, long limitBytes, Func<ReplayInfo, bool> keep)
     {
-        var result = new List<StoredSession>();
+        var result = new List<StoredReplay>();
         if (limitBytes <= 0) return result;
         var total = all.Sum(s => s.Bytes);
         if (total <= limitBytes) return result;
@@ -92,20 +92,19 @@ public static class StorageCleaner
         return result;
     }
 
-    /// <summary>Sessions that ended more than <paramref name="days"/> days before <paramref name="now"/> (0 = no limit), except the ones <paramref name="keep"/> accepts.</summary>
-    public static List<StoredSession> Expired(IReadOnlyList<StoredSession> all, int days, DateTime now, Func<SessionInfo, bool> keep) =>
+    /// <summary>Replays that ended more than <paramref name="days"/> days before <paramref name="now"/> (0 = no limit), except the ones <paramref name="keep"/> accepts.</summary>
+    public static List<StoredReplay> Expired(IReadOnlyList<StoredReplay> all, int days, DateTime now, Func<ReplayInfo, bool> keep) =>
         days <= 0 ? [] : all.Where(s => s.Info.End < now.AddDays(-days) && !keep(s.Info)).ToList();
 
-    /// <summary>Permanently deletes the session folders and keeps each run's score in the cache like a server score. Returns how many were deleted; a folder in use is skipped.</summary>
-    public static int Delete(IEnumerable<StoredSession> victims, StatsCache cache)
+    /// <summary>Deletes the videos of the replay folders and keeps the rest of each replay in the cache (<paramref name="cacheRoot"/>). Returns how many were deleted; a folder in use is skipped.</summary>
+    public static int Delete(IEnumerable<StoredReplay> victims, StatsCache cache, string cacheRoot)
     {
         var n = 0;
         foreach (var s in victims)
         {
-            var record = SessionStore.ReadRecord(s.Folder);
-            try { Directory.Delete(s.Folder, true); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
-            cache.HideRun(s.Info.Scenario, s.Info.End, s.Info.Score, record);
+            var record = ReplayStore.ReadRecord(s.Folder);
+            if (ReplayStore.Retire(s.Folder, cacheRoot) == null) continue;
+            cache.Archive(record);
             n++;
         }
         return n;

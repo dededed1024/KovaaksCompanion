@@ -1,6 +1,7 @@
+using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Stats;
 
-namespace KovaaksCompanion.Core.Session;
+namespace KovaaksCompanion.Core.Replays;
 
 /// <summary>
 /// RUN-001/002: watches the stats folder; raises <see cref="RunFinished"/> for stats CSVs created after
@@ -18,6 +19,16 @@ public sealed class StatsWatcher : IDisposable
 
     public event Action<RunStats, string>? RunFinished;
 
+    /// <summary>The stats folder or a CSV in it could not be read for lack of permission (raised once per watcher).</summary>
+    public event Action<string>? AccessDenied;
+    int _denied;
+
+    void Denied(string path, Exception e)
+    {
+        AppLog.Write("stats", $"access denied: {path}: {e.Message}");
+        if (Interlocked.Exchange(ref _denied, 1) == 0) AccessDenied?.Invoke(_folder);
+    }
+
     public StatsWatcher(string folder, DateTime startedAt, TimeSpan? retryDelay = null, int maxAttempts = 40)
     {
         _folder = folder; _startedAt = startedAt; _maxAttempts = maxAttempts;
@@ -26,12 +37,15 @@ public sealed class StatsWatcher : IDisposable
 
     public void Start()
     {
-        Directory.CreateDirectory(_folder);
+        try { Directory.CreateDirectory(_folder); }
+        catch (UnauthorizedAccessException e) { Denied(_folder, e); return; }
         _fsw = new FileSystemWatcher(_folder, "*Stats.csv") { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite };
         _fsw.Created += (_, e) => Handle(e.FullPath);
         _fsw.Renamed += (_, e) => Handle(e.FullPath);
         _fsw.Changed += (_, e) => Handle(e.FullPath);
-        _fsw.EnableRaisingEvents = true;
+        _fsw.Error += (_, e) => AppLog.Write("stats", "watcher error: " + e.GetException().Message);
+        try { _fsw.EnableRaisingEvents = true; }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException) { Denied(_folder, e); }
     }
 
     /// <summary>Processes one path (also the entry point for tests). Returns the task of the background read.</summary>
@@ -64,7 +78,7 @@ public sealed class StatsWatcher : IDisposable
         catch (OperationCanceledException) { }
     }
 
-    static string? TryRead(string path)
+    string? TryRead(string path)
     {
         try
         {
@@ -73,7 +87,7 @@ public sealed class StatsWatcher : IDisposable
             return r.ReadToEnd();
         }
         catch (IOException) { return null; }
-        catch (UnauthorizedAccessException) { return null; }
+        catch (UnauthorizedAccessException e) { Denied(path, e); return null; }
     }
 
     public void Dispose() { _cts.Cancel(); _fsw?.Dispose(); }

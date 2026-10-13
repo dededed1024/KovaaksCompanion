@@ -4,10 +4,10 @@ using KovaaksCompanion.Core.Stats;
 using KovaaksCompanion.Core.Trajectory;
 using KovaaksCompanion.Core.Video;
 
-namespace KovaaksCompanion.Core.Session;
+namespace KovaaksCompanion.Core.Replays;
 
-/// <summary>Cuts one finished run into a session folder (SES-001): clip, CSV copy, trajectory.bin, session.json. Runs off the caller's thread (SES-004).</summary>
-public sealed class SessionSaver
+/// <summary>Cuts one finished run into a replay folder (SES-001): clip, CSV copy, trajectory.bin, session.json. Runs off the caller's thread (SES-004).</summary>
+public sealed class ReplaySaver
 {
     /// <param name="progress">0..1 of the clip work done.</param>
     public delegate Task<ClipResult?> ClipExtractor(long startQpc, long endQpc, string outputPath, Action<double> progress);
@@ -19,15 +19,15 @@ public sealed class SessionSaver
     readonly Func<RunStats, bool> _isPersonalBest;
     readonly Func<bool>? _pbOnly;
 
-    public event Action<SessionInfo, string>? Saved;
+    public event Action<ReplayInfo, string>? Saved;
     public event Action<string>? Error;
 
     /// <param name="anchor">Called once per run: QPC and the wall clock drift apart (sleep, clock sync), so a startup anchor misplaces the mouse window.</param>
     /// <param name="isPersonalBest">Whether the run beat every earlier run of its scenario; marks the folder name with PB.</param>
     /// <param name="pbOnly">Read per run: when true, only a personal best keeps its video clip.</param>
-    public SessionSaver(string sessionsRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest, Func<bool>? pbOnly = null)
+    public ReplaySaver(string replaysRoot, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest, Func<bool>? pbOnly = null)
     {
-        _root = sessionsRoot; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest; _pbOnly = pbOnly;
+        _root = replaysRoot; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest; _pbOnly = pbOnly;
     }
 
     /// <summary>Fire-and-forget save on a thread-pool thread; failures go to <see cref="Error"/>.</summary>
@@ -60,8 +60,8 @@ public sealed class SessionSaver
     public async Task<string> SaveAsync(RunStats run, string csvPath, Action<double>? progress = null)
     {
         var pb = _isPersonalBest(run); // asked once: it also records the run as the new best
-        var folder = Path.Combine(_root, SessionFolder.Name(run.Start, run.Scenario, run.Score, pb));
-        Directory.CreateDirectory(folder);
+        var folder = Path.Combine(_root, ReplayFolder.Name(run.Start, run.Scenario, run.Score, pb));
+        AccessGuard.Run(_root, true, () => Directory.CreateDirectory(folder));
 
         // one wall-clock -> QPC mapping for the whole save: the mouse trajectory and the video offset both hang off the same instant
         var anchor = _anchor();
@@ -72,7 +72,7 @@ public sealed class SessionSaver
         var skipVideo = _pbOnly?.Invoke() == true && !pb; // "save video for PB only": the clip of any other run is never cut
         if (!skipVideo)
         {
-            try { clip = await _extract(startQpc, endQpc, Path.Combine(folder, SessionFolder.VideoFile), progress ?? (_ => { })); }
+            try { clip = await _extract(startQpc, endQpc, Path.Combine(folder, ReplayFolder.VideoFile), progress ?? (_ => { })); }
             catch (Exception e) { Error?.Invoke($"Video clip failed: {e.Message}"); }
         }
         var clipEndQpc = clip == null ? 0 : clip.ClipStartQpc + (long)(clip.Duration.TotalSeconds * anchor.Frequency);
@@ -80,11 +80,11 @@ public sealed class SessionSaver
 
         var built = TrajectoryBuilder.Build(run, _buffer, anchor);
         if (built.Trajectory != null)
-            await File.WriteAllBytesAsync(Path.Combine(folder, SessionFolder.TrajectoryFile), TrajectorySerializer.Serialize(built.Trajectory));
+            await File.WriteAllBytesAsync(Path.Combine(folder, ReplayFolder.TrajectoryFile), TrajectorySerializer.Serialize(built.Trajectory));
         File.Copy(csvPath, Path.Combine(folder, Path.GetFileName(csvPath)), overwrite: true);
         await CopyPerfAsync(csvPath, folder);
 
-        var info = new SessionInfo
+        var info = new ReplayInfo
         {
             Scenario = run.Scenario, Start = run.Start, End = run.End,
             VideoOffsetSec = clip == null ? 0 : (startQpc - clip.ClipStartQpc) / (double)anchor.Frequency,
@@ -95,7 +95,7 @@ public sealed class SessionSaver
             DegreesAvailable = built.DegreesAvailable,
             Score = run.Score, Kills = run.Kills, HitCount = run.HitCount, MissCount = run.MissCount,
         };
-        SessionStore.WriteInfo(folder, info); // last: a folder with session.json is complete
+        ReplayStore.WriteInfo(folder, info); // last: a folder with session.json is complete
         Saved?.Invoke(info, folder);
         return folder;
     }

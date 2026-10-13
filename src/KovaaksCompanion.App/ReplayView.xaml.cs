@@ -13,18 +13,18 @@ using System.Windows.Threading;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 using KovaaksCompanion.Core.Perf;
-using KovaaksCompanion.Core.Session;
+using KovaaksCompanion.Core.Replays;
 using KovaaksCompanion.Core.Trajectory;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>What the popup reads: local runs, saved sessions (replays), server bests and tier thresholds.</summary>
-public sealed record ScenarioData(ScoreBook Book, IReadOnlyList<SessionInfo> Sessions, Func<string, List<ChartBand>?> TierBands, Func<string, Task<bool>> LoadCloud, IReadOnlySet<(string Scenario, DateTime End)> Hidden)
+/// <summary>What the popup reads: local runs, saved replays, server bests and tier thresholds.</summary>
+public sealed record ScenarioData(ScoreBook Book, IReadOnlyList<ReplayInfo> Replays, Func<string, List<ChartBand>?> TierBands, Func<string, Task<bool>> LoadCloud)
 {
     public RunLibrary Lib => Book.Lib;
 }
 
-public sealed record SessionItem(string Folder, SessionInfo Info);
+public sealed record ReplayItem(string Folder, ReplayInfo Info);
 
 /// <summary>One metric chip: colored dot, name and the value at the playhead. Hidden ones render dimmed.</summary>
 public sealed class MetricRow(ChartSeries series, bool visible) : INotifyPropertyChanged
@@ -63,7 +63,7 @@ public partial class ReplayView : UserControl
     static readonly TimeSpan SeekDelay = TimeSpan.FromSeconds(0.08);
 
     readonly AppHost _host;
-    readonly List<SessionItem> _items = [];
+    readonly List<ReplayItem> _items = [];
     readonly ObservableCollection<MetricRow> _metrics = [];
     readonly HashSet<ChartSeries> _visible = [];
     readonly Dictionary<DateTime, Border> _rows = [];
@@ -77,7 +77,7 @@ public partial class ReplayView : UserControl
     int _runIdx = -1;
     bool _open, _runMode;
     int _tok, _limit = Page;
-    LoadedSession? _s;
+    LoadedReplay? _replay;
     double _duration, _runLength;
     double[] _killTimes = [];
     IReadOnlyDictionary<float, ShotOutcome> _outcomes = new Dictionary<float, ShotOutcome>();
@@ -103,7 +103,7 @@ public partial class ReplayView : UserControl
         _host = host;
         Metrics.ItemsSource = _metrics;
         foreach (var n in host.Ui.VisibleSeries) if (Enum.TryParse<ChartSeries>(n, out var vs)) _visible.Add(vs);
-        foreach (var (folder, info) in SessionStore.List(host.SessionsFolder)) _items.Add(new SessionItem(folder, info));
+        foreach (var (folder, info) in ReplayStore.List(host.ReplaysFolder, host.CachedReplaysFolder)) _items.Add(new ReplayItem(folder, info));
         SetTransport(false);
         TrailBtn.IsChecked = host.Ui.ShowTrail;
         Overlay.Visibility = host.Ui.ShowTrail ? Visibility.Visible : Visibility.Collapsed;
@@ -111,7 +111,7 @@ public partial class ReplayView : UserControl
         _seekTimer.Tick += (_, _) => CommitSeek();
         _fsTimer.Tick += (_, _) => HideBar();
         PreviewMouseMove += OnFsMouse;
-        host.SessionSaved += OnSessionSaved;
+        host.ReplaySaved += OnReplaySaved;
         CompositionTarget.Rendering += OnRendering;
         Media.MediaOpened += OnMediaOpened;
         Media.MediaEnded += OnMediaEnded;
@@ -132,7 +132,7 @@ public partial class ReplayView : UserControl
 
     public void Detach()
     {
-        _host.SessionSaved -= OnSessionSaved;
+        _host.ReplaySaved -= OnReplaySaved;
         CompositionTarget.Rendering -= OnRendering;
         _seekTimer.Stop(); _fsTimer.Stop();
         Media.Close();
@@ -158,12 +158,44 @@ public partial class ReplayView : UserControl
     const double MinSide = 236, CompactSide = 300;
     bool _compactRows;
 
+    /// <summary>Aspect of the last opened video, kept while the next one loads so the card does not jump.</summary>
+    double _videoAspect;
+
+    /// <summary>Width of the stage (and so of the chart below it) for a card of width <paramref name="w"/>.</summary>
+    static double StageWidth(double w) => Math.Max(0, w - 2 - 32 - 12 - Math.Max(w * SideShare, MinSide));
+
     void LayoutCard(Size size)
     {
-        if (_fs is not null) return;
-        var w = Math.Max(0, Math.Min(Math.Min(1500, size.Width - 160), Math.Max(0, size.Height - 48 - 80) * CardAspect));
+        if (_fs is not null || size.Width < 1 || size.Height < 1) return; // not laid out yet: SizeChanged calls again
+        if (Media.NaturalVideoHeight > 0) _videoAspect = (double)Media.NaturalVideoWidth / Media.NaturalVideoHeight;
+        // The overview and runs without a video get the height of a 16:9 video.
+        var aspect = _runMode && !NoVideo && _videoAspect > 0 ? _videoAspect : 16.0 / 9;
+        // The video fills the stage width; the card is as tall as its content, so only a too tall card narrows.
+        var w = Math.Max(0, Math.Min(1500, size.Width - 160));
+        var limit = Math.Max(0, size.Height - 80);
+        for (var i = 0; i < 6; i++)
+        {
+            ApplyWidth(w);
+            var sw = StageWidth(w);
+            Stage.Height = sw / aspect;
+            // Header and run panel are measured on their own: the overview and the run list beside the stage scroll, so their full height must not size the card.
+            var vis = RunPanel.Visibility;
+            RunPanel.Visibility = Visibility.Hidden; // a collapsed panel measures 0
+            Header.Measure(new Size(sw, double.PositiveInfinity));
+            RunPanel.Measure(new Size(sw, double.PositiveInfinity));
+            var h = Header.DesiredSize.Height + RunPanel.DesiredSize.Height + 2 + 32;
+            RunPanel.Visibility = vis;
+            Card.Height = h;
+            var over = h + 48 - limit;
+            if (over <= 0.5 || w <= 400) break;
+            w = Math.Max(400, w - over * aspect / (1 - SideShare));
+        }
+    }
+
+    void ApplyWidth(double w)
+    {
         Card.Width = w;
-        Card.Height = w / CardAspect;
+        var nominal = w / CardAspect;
         SideCol.Width = new GridLength(Math.Max(Card.Width * SideShare, MinSide));
         var compact = SideCol.Width.Value < CompactSide;
         if (compact != _compactRows)
@@ -171,8 +203,8 @@ public partial class ReplayView : UserControl
             _compactRows = compact;
             if (IsLoaded && _rows.Count > 0) BuildRuns(); // rows drop or regain the tier column
         }
-        RunChartRow.Height = new GridLength(Math.Clamp(Card.Height * 0.16, 90, 220));
-        _bigChart.Height = Math.Clamp(Card.Height * 0.4, 120, 460);
+        RunChartRow.Height = new GridLength(Math.Clamp(nominal * 0.16, 90, 220));
+        _bigChart.Height = Math.Clamp(nominal * 0.4, 120, 460);
     }
 
     void OnHeaderSized(object sender, SizeChangedEventArgs e) => FitHeader();
@@ -182,9 +214,9 @@ public partial class ReplayView : UserControl
     {
         if (Header.ActualWidth <= 0) return;
         var inf = new Size(double.PositiveInfinity, double.PositiveInfinity);
-        HeaderTools.Measure(inf); PlayScn.Measure(inf);
+        HeaderTools.Measure(inf); PlayScn.Measure(inf); ScnStar.Measure(inf);
         var play = PlayScn.Visibility == Visibility.Visible ? PlayScn.DesiredSize.Width + PlayScn.Margin.Left : 0;
-        Heading.MaxWidth = Math.Max(60, Header.ActualWidth - HeaderTools.DesiredSize.Width - play - 12);
+        Heading.MaxWidth = Math.Max(60, Header.ActualWidth - HeaderTools.DesiredSize.Width - ScnStar.DesiredSize.Width - play - 12);
     }
 
     void OnCardSized(object sender, SizeChangedEventArgs e) =>
@@ -199,12 +231,12 @@ public partial class ReplayView : UserControl
     /// <summary>Opens the popup with the run that ended at <paramref name="end"/> selected; false when it has no recording, unless <paramref name="withoutRecording"/> selects it anyway.</summary>
     public bool ShowRun(ScenarioData data, string scenario, DateTime end, bool withoutRecording = false)
     {
-        if (!withoutRecording && SessionStore.FindRun(Infos(), scenario, end) < 0 && !_host.IsPending(scenario, end)) return false;
+        if (!withoutRecording && ReplayStore.FindRun(Infos(), scenario, end) < 0 && !_host.IsPending(scenario, end)) return false;
         Open(data, scenario, end, null);
         return true;
     }
 
-    /// <summary>Opens the most recent recorded session's run; false when nothing was recorded yet.</summary>
+    /// <summary>Opens the most recent recorded run; false when nothing was recorded yet.</summary>
     public bool ShowLatest(ScenarioData data)
     {
         if (_items.Count == 0) return false;
@@ -233,6 +265,8 @@ public partial class ReplayView : UserControl
             Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
             Scale.ScaleX = Scale.ScaleY = 0.94;
             Visibility = Visibility.Visible;
+            UpdateLayout();
+            LayoutCard(new Size(ActualWidth, ActualHeight));
             UpdateLayout();
         }
         if (wasOpen) return;
@@ -276,7 +310,7 @@ public partial class ReplayView : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (_fs is not null && e.Key == Key.Escape) { ExitFullscreen(); e.Handled = true; return true; }
-        if (!_open || !_runMode || _duration <= 0 || e.OriginalSource is TextBox) return false;
+        if (!_open || !_runMode || _duration <= 0 || NoVideo || e.OriginalSource is TextBox) return false;
         var big = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         switch (e.Key)
         {
@@ -293,20 +327,19 @@ public partial class ReplayView : UserControl
 
     // ---- sessions ----------------------------------------------------------------------------------------------
 
-    List<SessionInfo> Infos() => _items.Select(x => x.Info).ToList();
+    List<ReplayInfo> Infos() => _items.Select(x => x.Info).ToList();
 
-    void OnSessionSaved(SessionInfo info, string folder) => Dispatcher.BeginInvoke(async () =>
+    void OnReplaySaved(ReplayInfo info, string folder) => Dispatcher.BeginInvoke(async () =>
     {
         var i = 0;
         while (i < _items.Count && _items[i].Info.Start > info.Start) i++;
-        _items.Insert(i, new SessionItem(folder, info));
+        _items.Insert(i, new ReplayItem(folder, info));
         if (!_open || _d is null) return;
         var statsFolder = _host.Settings.StatsFolder;
         var tok = _tok;
         var infos = Infos();
-        var cacheFolder = _host.Settings.CacheFolder;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder).Verified(infos).WithArchived(new StatsCache(cacheFolder).ArchivedRuns()).WithDpiFixes(dpiFixes));
+        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder).Verified(infos).WithArchived(_host.Settings.OpenCache().ArchivedRuns()).WithDpiFixes(dpiFixes));
         if (!_open || tok != _tok || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         BuildAll();
@@ -314,8 +347,8 @@ public partial class ReplayView : UserControl
         {
             _runIdx = NearestRun(end);
             ApplySelection();
-            var si = SessionStore.FindRun(Infos(), _scenario, end);
-            if (si >= 0 && (_s is null || _s.Folder != _items[si].Folder)) LoadSession(_items[si]);
+            var si = ReplayStore.FindRun(Infos(), _scenario, end);
+            if (si >= 0 && (_replay is null || _replay.Folder != _items[si].Folder)) LoadReplay(_items[si]);
         }
         else if (!_runMode) BuildOverview();
     });
@@ -351,13 +384,17 @@ public partial class ReplayView : UserControl
 
     void ShowScenarioStar()
     {
-        if (_scenario.Length == 0) { ScnStar.Visibility = Visibility.Collapsed; return; }
-        var run = OpenRun();
-        var fav = run is { } r ? _host.Ui.IsFavoriteRun(r.Scenario, r.End) : _host.Ui.IsFavoriteScenario(_scenario);
-        ScnStar.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
-        ScnStar.Foreground = (Brush)FindResource(fav ? "Orange" : "Dim");
-        ScnStar.ToolTip = fav ? L.T("Remove from favorites") : L.T("Add to favorites");
-        ScnStar.Visibility = Visibility.Visible;
+        if (_scenario.Length == 0) { ScnStar.Visibility = Visibility.Collapsed; RunStar.Visibility = Visibility.Collapsed; return; }
+        void Style(Button b, bool fav)
+        {
+            b.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
+            b.Foreground = (Brush)FindResource(fav ? "Orange" : "Dim");
+            b.ToolTip = fav ? L.T("Remove from favorites") : L.T("Add to favorites");
+            b.Visibility = Visibility.Visible;
+        }
+        Style(ScnStar, _host.Ui.IsFavoriteScenario(_scenario));
+        if (OpenRun() is { } r) Style(RunStar, _host.Ui.IsFavoriteRun(r.Scenario, r.End));
+        else RunStar.Visibility = Visibility.Collapsed;
         FitHeader();
     }
 
@@ -368,8 +405,15 @@ public partial class ReplayView : UserControl
     void OnScenarioStar(object sender, RoutedEventArgs e)
     {
         if (_scenario.Length == 0) return;
-        if (OpenRun() is { } r) _host.Ui.ToggleFavoriteRun(r.Scenario, r.End);
-        else _host.Ui.ToggleFavoriteScenario(_scenario);
+        _host.Ui.ToggleFavoriteScenario(_scenario);
+        _host.SaveUi();
+        ShowScenarioStar();
+    }
+
+    void OnRunStar(object sender, RoutedEventArgs e)
+    {
+        if (OpenRun() is not { } r) return;
+        _host.Ui.ToggleFavoriteRun(r.Scenario, r.End);
         _host.SaveUi();
         ShowScenarioStar();
     }
@@ -399,7 +443,7 @@ public partial class ReplayView : UserControl
         RunsHost.Children.Clear();
         _rows.Clear();
         var order = Enumerable.Range(0, _stats.Runs.Count).Reverse().ToList();
-        foreach (var i in order.Where(i => !_d!.Hidden.Contains((_stats.Runs[i].Scenario.ToLowerInvariant(), _stats.Runs[i].End))).Take(_limit)) RunsHost.Children.Add(RunRow(_stats.Runs[i], _pbs.Contains(i)));
+        foreach (var i in order.Take(_limit)) RunsHost.Children.Add(RunRow(_stats.Runs[i], _pbs.Contains(i)));
         var left = order.Count - _limit;
         MoreBtn.Visibility = left > 0 ? Visibility.Visible : Visibility.Collapsed;
         MoreBtn.Content = "";
@@ -411,7 +455,7 @@ public partial class ReplayView : UserControl
     /// <summary>One run row for a scenario.</summary>
     Border RunRow(RunRecord r, bool pb)
     {
-        var replay = SessionStore.FindRun(Infos(), r.Scenario, r.End) >= 0;
+        var replay = ReplayStore.HasVideo(Infos(), r.Scenario, r.End);
         var g = new Grid { Margin = new Thickness(4, 0, 4, 0) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.5, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = _compactRows ? new GridLength(0) : new GridLength(1, GridUnitType.Star) });
@@ -426,9 +470,10 @@ public partial class ReplayView : UserControl
         }
         TextBlock T(string text, Brush? fg = null, bool bold = false) => new() { Text = text, FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = fg ?? FgB, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
         Put(T(L.MonthDay(r.End) + " " + L.Time(r.End), DimB), 0);
-        if (!_compactRows && TierOf(r.Score) is { } t)
+        if (!_compactRows && _d?.TierBands(_scenario) is { Count: > 0 } bands)
         {
-            var tierText = T(t.Label, ChartPaths.TextTone(t.Brush));
+            var t = bands.LastOrDefault(b => r.Score >= b.Value);
+            var tierText = t != null ? T(t.Label, ChartPaths.TextTone(t.Brush)) : T(L.T("UNRANKED"), DimB);
             tierText.HorizontalAlignment = HorizontalAlignment.Center;
             Put(tierText, 1);
         }
@@ -474,7 +519,15 @@ public partial class ReplayView : UserControl
     void ApplySelection()
     {
         foreach (var (end, row) in _rows) Paint(row, end, false);
+        PaintOverviewRow();
     }
+
+    void PaintOverviewRow() =>
+        OverviewRow.Background = !_runMode ? Solid("#330A84FF") : OverviewRow.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent;
+
+    void OnOverviewRowHover(object sender, MouseEventArgs e) => PaintOverviewRow();
+
+    void OnOverviewRow(object sender, MouseButtonEventArgs e) => ShowOverview();
 
     int NearestRun(DateTime end)
     {
@@ -482,7 +535,7 @@ public partial class ReplayView : UserControl
         for (var i = 0; i < _stats.Runs.Count; i++)
         {
             var gap = (_stats.Runs[i].End - end).Duration();
-            if (gap < SessionStore.RunMatchTolerance && (best < 0 || gap < (_stats.Runs[best].End - end).Duration())) best = i;
+            if (gap < ReplayStore.RunMatchTolerance && (best < 0 || gap < (_stats.Runs[best].End - end).Duration())) best = i;
         }
         return best;
     }
@@ -504,10 +557,19 @@ public partial class ReplayView : UserControl
         _runMode = run;
         OverviewScroll.Visibility = run ? Visibility.Collapsed : Visibility.Visible;
         RunPanel.Visibility = run ? Visibility.Visible : Visibility.Collapsed;
-        FolderBtn.Visibility = run ? Visibility.Visible : Visibility.Collapsed;
-        RunDelBtn.Visibility = run ? Visibility.Visible : Visibility.Collapsed;
+        UpdateRunButtons();
         DisarmDelete();
         ShowScenarioStar();
+        PaintOverviewRow();
+        LayoutCard(new Size(ActualWidth, ActualHeight));
+    }
+
+    /// <summary>The video folder and delete buttons exist only while the open run has a replay folder of its own (not a cached one, nor none at all).</summary>
+    void UpdateRunButtons()
+    {
+        var cached = _replay != null && _replay.Folder.StartsWith(_host.CachedReplaysFolder, StringComparison.OrdinalIgnoreCase);
+        FolderBtn.Visibility = _runMode && _replay is { } f && Directory.Exists(f.Folder) ? Visibility.Visible : Visibility.Collapsed;
+        RunDelBtn.Visibility = _runMode && _replay != null && !cached ? Visibility.Visible : Visibility.Collapsed;
     }
 
     bool _delArmed;
@@ -516,7 +578,7 @@ public partial class ReplayView : UserControl
     {
         _delArmed = false;
         RunDelBtn.Foreground = DimB;
-        RunDelBtn.ToolTip = L.T("Delete Recording");
+        RunDelBtn.ToolTip = L.T("Delete Replay");
     }
 
     /// <summary>Trash button of the open run: the first click arms it (red), the second deletes the run and closes the popup.</summary>
@@ -640,6 +702,23 @@ public partial class ReplayView : UserControl
         return g;
     }
 
+    /// <summary>The colour with less saturation and more lightness, same hue.</summary>
+    static Color Washed(Color c)
+    {
+        double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+        double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), d = max - min;
+        var l = (max + min) / 2;
+        var sat = d == 0 ? 0 : d / (1 - Math.Abs(2 * l - 1));
+        var h = d == 0 ? 0 : max == r ? ((g - b) / d % 6 + 6) % 6 : max == g ? (b - r) / d + 2 : (r - g) / d + 4;
+        sat = Math.Min(1, sat * 0.9); l = 0.86;
+        var chroma = (1 - Math.Abs(2 * l - 1)) * sat;
+        var x = chroma * (1 - Math.Abs(h % 2 - 1));
+        var m = l - chroma / 2;
+        var (r1, g1, b1) = (int)h switch { 0 => (chroma, x, 0.0), 1 => (x, chroma, 0.0), 2 => (0.0, chroma, x), 3 => (0.0, x, chroma), 4 => (x, 0.0, chroma), _ => (chroma, 0.0, x) };
+        byte B(double v) => (byte)Math.Round(Math.Clamp(v + m, 0, 1) * 255);
+        return Color.FromRgb(B(r1), B(g1), B(b1));
+    }
+
     /// <summary>The best bar with the average bar drawn over it, so the part past the average shows how far the best reaches. When both are the same only the best bar is drawn.</summary>
     static UIElement OverlapBar(double avg, double best, Brush avgFill, Brush bestFill, double height = 6)
     {
@@ -714,7 +793,6 @@ public partial class ReplayView : UserControl
     {
         var groups = ScenarioInsights.BySensitivity(s.Runs);
         if (groups.Count == 0) return null;
-        var top = groups.Count > 1 ? groups.MaxBy(g => g.Average) : null;
         // The bars zoom into the scenario's own score range: the axis starts where the lowest average fills 5% of the bar and ends at the best score.
         var hi = groups.Max(g => g.Best);
         var lo0 = groups.Min(g => g.Average);
@@ -724,10 +802,10 @@ public partial class ReplayView : UserControl
         List<RunRecord> RunsOf(SensGroup g) => s.Runs.Where(r => r.Cm360 is > 0 && Math.Abs(Math.Round(r.Cm360.Value, 2) - g.Cm360) < 1e-6).ToList();
         // Only the listed sensitivities are plotted, each in its own colour that the row below repeats.
         var dots = s.Runs.Where(r => r.Cm360 is > 0 && groups.Any(g => Math.Abs(g.Cm360 - Math.Round(r.Cm360!.Value, 2)) < 1e-6)).ToList();
-        if (groups.Count > 1 && dots.Count >= 5)
+        if (dots.Count > 0)
         {
             var chart = new ScatterChart { Height = 170, Margin = new Thickness(0, 0, 0, 8) };
-            chart.Set(dots.Select(r => (r.Cm360!.Value, r.Score, $"{r.Cm360!.Value:0.##} cm/360 · {L.Stamp(r.End)}")).ToList(), "0.#", "0.#",
+            chart.Set(dots.Select(r => (r.Cm360!.Value, r.Score, $"{r.Cm360!.Value:0.##} cm/360 · {L.Stamp(r.End)}")).ToList(), "0.## \"cm\"", "0.#",
                 dots.Select(r => groups.FindIndex(g => Math.Abs(g.Cm360 - Math.Round(r.Cm360!.Value, 2)) < 1e-6)).ToList());
             chart.GroupNote = gi => gi < groups.Count && RunsOf(groups[gi]) is { Count: > 0 } rs ? $"DPI {rs[0].EffectiveDpi} · " + L.T("Click to edit") : "";
             chart.GroupClick += gi => { if (gi < groups.Count) ShowDpiEditor(chart, RunsOf(groups[gi])); };
@@ -736,23 +814,25 @@ public partial class ReplayView : UserControl
         for (var gi = 0; gi < groups.Count; gi++)
         {
             var g = groups[gi];
-            var bestTone = TierOf(g.Best) is { } t ? ChartPaths.TextTone(t.Brush) : FgB;
+            var tone = ScatterChart.GroupColors[gi % ScatterChart.GroupColors.Length];
+            var full = new SolidColorBrush(tone);
+            var washed = new SolidColorBrush(Washed(tone));
             var head = new Grid { Margin = new Thickness(4, 8, 4, 5), Background = Brushes.Transparent, Cursor = Cursors.Hand };
             head.MouseLeftButtonUp += (_, _) => ShowDpiEditor(head, RunsOf(g));
             var label = new StackPanel { Orientation = Orientation.Horizontal };
-            if (groups.Count > 1 && dots.Count >= 5)
+            if (dots.Count > 0)
                 label.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, Fill = new SolidColorBrush(ScatterChart.GroupColors[gi % ScatterChart.GroupColors.Length]) });
             label.Children.Add(new TextBlock { Text = $"{g.Cm360:0.##} cm/360", Foreground = DimB, FontSize = 13 });
             head.Children.Add(label);
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             right.Children.Add(new TextBlock { Text = L.F("{0} plays", g.Runs), Foreground = DimB, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) });
-            right.Children.Add(new TextBlock { Text = g.Average.ToString("0.#"), Foreground = g == top ? (Brush)FindResource("Green") : FgB, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-            right.Children.Add(new TextBlock { Text = " / " + g.Best.ToString("0.#"), Foreground = bestTone, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            right.Children.Add(new TextBlock { Text = g.Average.ToString("0.#"), Foreground = washed, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            right.Children.Add(new TextBlock { Text = " / " + g.Best.ToString("0.#"), Foreground = full, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             head.Children.Add(right);
             body.Children.Add(head);
+            // The bar is the sensitivity's own colour (as in the scatter above); the average part is the same hue washed out and lighter.
             var same = string.Equals(g.Average.ToString("0.#"), g.Best.ToString("0.#"));
-            var behind = !same && bestTone is SolidColorBrush sb ? new SolidColorBrush(Color.FromArgb(0x70, sb.Color.R, sb.Color.G, sb.Color.B)) : bestTone;
-            var bar = OverlapBar(same ? Frac(g.Best) : Frac(g.Average), Frac(g.Best), g == top ? (Brush)FindResource("Green") : (Brush)FindResource("Accent"), behind);
+            var bar = OverlapBar(same ? Frac(g.Best) : Frac(g.Average), Frac(g.Best), same ? full : washed, full);
             bar.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 4, 2));
             body.Children.Add(bar);
         }
@@ -810,20 +890,19 @@ public partial class ReplayView : UserControl
     {
         try
         {
-            var path = Path.Combine(folder, SessionFolder.TrajectoryFile);
+            var path = Path.Combine(folder, ReplayFolder.TrajectoryFile);
             return File.Exists(path) ? MouseSpeedStats.Analyze(TrajectorySerializer.Deserialize(File.ReadAllBytes(path))) : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TrajectoryFormatException) { return null; }
     }
 
-    readonly record struct SpeedPlay(DateTime End, double Score, SessionItem? Item, RunSpeed? Cached);
+    readonly record struct SpeedPlay(DateTime End, double Score, ReplayItem? Item, RunSpeed? Cached);
 
     /// <summary>Fills the mouse-speed card from every play of the scenario that has mouse data. Reading trajectories takes a moment, so the card appears once they are in.</summary>
     async Task LoadSpeedAsync(string scenario, Border host)
     {
         var items = _items.Where(x => x.Info.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase)).ToList();
-        var cacheFolder = _host.Settings.CacheFolder;
-        var archived = await Task.Run(() => new StatsCache(cacheFolder).ArchivedRuns().Where(r => r.Speed != null && r.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase)).ToList());
+        var archived = await Task.Run(() => _host.Settings.OpenCache().ArchivedRuns().Where(r => r.Speed != null && r.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase)).ToList());
         // Recorded plays (trajectory on disk) and deleted ones (speed kept in the cache).
         var plays = items.Select(x => new SpeedPlay(x.Info.End, x.Info.Score, x, null))
             .Concat(archived.Select(r => new SpeedPlay(r.End, r.Score, null, r.Speed))).ToList();
@@ -840,7 +919,7 @@ public partial class ReplayView : UserControl
 
     /// <summary>
     /// Mouse-speed figures as bars, one block per unit separated by lines (bars of a block share one scale). Each figure shows the top 5%
-    /// of plays by score, the average and the bottom 5%; with fewer than 10 plays only the average.
+    /// of plays by score, the average and the bottom 5%.
     /// </summary>
     UIElement? SpeedCard(IReadOnlyList<(double Score, RunSpeed Speed)> runs)
     {
@@ -865,7 +944,7 @@ public partial class ReplayView : UserControl
         string Show(double v, string format) => string.Format(System.Globalization.CultureInfo.InvariantCulture, format, v);
 
         var ordered = runs.OrderByDescending(r => r.Score).Select(r => r.Speed).ToList();
-        var split = ordered.Count >= 10;
+        var split = ordered.Count >= 1;
         var k = Math.Max(1, (int)Math.Ceiling(ordered.Count * 0.05));
         var topBrush = (Brush)FindResource("Green");
         var avgBrush = (Brush)FindResource("Accent");
@@ -875,7 +954,7 @@ public partial class ReplayView : UserControl
             : [(avgBrush, ordered)];
 
         var host = new StackPanel();
-        var head = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 4) };
         head.Children.Add(new TextBlock { Text = L.T("Mouse speed"), Foreground = FgB, FontSize = 15, FontWeight = FontWeights.SemiBold });
         var legend = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         void Key(string text, Brush brush)
@@ -889,52 +968,99 @@ public partial class ReplayView : UserControl
         head.Children.Add(legend);
         host.Children.Add(head);
 
-        void Block((string Label, Func<RunSpeed, double?> Get, string Format)[] specs, bool shared)
+        const double AxisT = 1.5, Tail = 132, TailY = 12, CapMin = 0.2, CapMax = 0.95, BarH = 8, SlotH = 13, RowPad = 6, LabelW = 124, NumW = 84;
+        (string Name, (string Label, Func<RunSpeed, double?> Get, string Format)[] Specs)[] groups =
+        [
+            ("General", [speed[0], speed[1], speed[2], speed[3], time[2], ratio[1], other[1]]),
+            ("Tracking", [ratio[2], other[2]]),
+            ("Flick", [speed[4], time[0], time[1], ratio[0], other[0]]),
+        ];
+
+        void Group(string name, (string Label, Func<RunSpeed, double?> Get, string Format)[] specs)
         {
             var rows = specs.Select(sp => (Spec: sp, Values: lines.Select(l => { var xs = l.Runs.Select(sp.Get).OfType<double>().ToList(); return xs.Count == 0 ? (double?)null : xs.Average(); }).ToList()))
                 .Where(x => x.Values.Any(v => v != null)).ToList();
             if (rows.Count == 0) return;
-            if (host.Children.Count > 1) host.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(0, 4, 0, 12) });
-            var blockMax = rows.SelectMany(x => x.Values).OfType<double>().DefaultIfEmpty(0).Max();
-            var grid = new UniformGrid { Columns = 3 };
-            Responsive(grid, 3, 230);
-            foreach (var (spec, values) in rows)
+            host.Children.Add(new TextBlock { Text = L.T(name), Foreground = FgB, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, host.Children.Count > 1 ? 12 : 2, 0, 3) });
+            host.Children.Add(new Border { Height = 1, Background = Solid("#26FFFFFF"), Margin = new Thickness(0, 0, 0, 2) });
+
+            // Horizontal bars: one row per figure (label left, bars of the lines stacked), each row scaled to its own largest value.
+            var chart = new Grid();
+            chart.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(LabelW) });
+            chart.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(NumW) });
+            chart.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (var r = 0; r < rows.Count; r++) chart.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            chart.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TailY) });
+            var axisColor = (Color)ColorConverter.ConvertFromString("#66FFFFFF");
+            var axisClear = Color.FromArgb(0, 255, 255, 255);
+            LinearGradientBrush Fade(Color from, Color to, bool horizontal) => new(from, to, horizontal ? 0 : 90);
+
+            for (var r = 0; r < rows.Count; r++)
             {
-                var scale = shared ? blockMax : values.OfType<double>().DefaultIfEmpty(0).Max();
-                var avg = values[split ? 1 : 0];
-                var g = new StackPanel { Margin = new Thickness(0, 0, 8, 10) };
-                g.Children.Add(new TextBlock { Text = L.T(spec.Label), Foreground = DimB, FontSize = 12, Margin = new Thickness(0, 0, 0, 8), TextTrimming = TextTrimming.CharacterEllipsis });
+                var (spec, values) = rows[r];
+                // Length = (value / largest)^1.2: a small gap shows a little, a big gap shows a lot, all bars of a row shift left together by the shortest one's share, so the longest sits at CapMin of the width for close values, gaps intact, and moves out to CapMax as the spread grows.
+                var hi = values.OfType<double>().DefaultIfEmpty(0).Max();
+                var lo = values.OfType<double>().DefaultIfEmpty(0).Min();
+                var low = hi > 0 ? Math.Pow(Math.Max(0, lo) / hi, 1.2) : 1;
+                var shift = 1 - (CapMin + (CapMax - CapMin) * (1 - low));
+                var label = new TextBlock { Text = L.T(spec.Label), Foreground = DimB, FontSize = 12.5, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, RowPad, 8, RowPad) };
+                Grid.SetRow(label, r);
+                chart.Children.Add(label);
+                // Row separator = an x axis: solid across the plot, a short fixed tail fading out to the left under the numbers.
+                var sep = new Border { Height = AxisT, Background = new SolidColorBrush(axisColor), VerticalAlignment = VerticalAlignment.Bottom };
+                Grid.SetRow(sep, r);
+                Grid.SetColumn(sep, 2);
+                chart.Children.Add(sep);
+                var sepTail = new Border { Height = AxisT, Width = Tail, Background = Fade(axisClear, axisColor, true), VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Right };
+                Grid.SetRow(sepTail, r);
+                Grid.SetColumnSpan(sepTail, 2); // spans label + number columns so the tail is not clipped to the number column
+                chart.Children.Add(sepTail);
+
+                var nums = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, RowPad, 8, RowPad) };
+                var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, RowPad, 0, RowPad) };
                 for (var i = 0; i < lines.Length; i++)
                 {
-                    var v = values[i];
-                    var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    if (split) row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
-                    var bar = MeterBar(v is { } x && scale > 0 ? x / scale : 0, lines[i].Brush, 6);
-                    ((FrameworkElement)bar).VerticalAlignment = VerticalAlignment.Center;
-                    ((FrameworkElement)bar).Margin = new Thickness(0, 0, 8, 0);
-                    row.Children.Add(bar);
-                    var t = new TextBlock { Text = v is { } y ? Show(y, spec.Format) : "–", Foreground = FgB, FontSize = 12.5, FontWeight = FontWeights.SemiBold, MinWidth = 58, TextAlignment = TextAlignment.Right };
-                    Grid.SetColumn(t, 1);
-                    row.Children.Add(t);
-                    if (split && i != 1 && v is { } z && avg is { } a && a != 0)
-                    {
-                        var d = new TextBlock { Text = ((z / a - 1) * 100).ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture) + "%", Foreground = DimB, FontSize = 11, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-                        Grid.SetColumn(d, 2);
-                        row.Children.Add(d);
-                    }
-                    g.Children.Add(row);
+                    if (values[i] is not { } y) continue;
+                    var frac = hi > 0 ? Math.Max(0.01, Math.Pow(Math.Max(0, y) / hi, 1.2) - shift) : 0;
+                    nums.Children.Add(new TextBlock { Text = Show(y, spec.Format), Foreground = FgB, FontSize = 12, Height = SlotH, TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, LineHeight = SlotH });
+                    var bar = new Grid { Height = SlotH };
+                    bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(frac, 0.0001), GridUnitType.Star) });
+                    bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(1 - frac, 0.0001), GridUnitType.Star) });
+                    bar.Children.Add(new Border { Height = BarH, Background = lines[i].Brush, CornerRadius = new CornerRadius(0, 2, 2, 0), MinWidth = 2, VerticalAlignment = VerticalAlignment.Center });
+                    stack.Children.Add(bar);
                 }
-                grid.Children.Add(g);
+                Grid.SetColumn(nums, 1);
+                Grid.SetRow(nums, r);
+                chart.Children.Add(nums);
+                Grid.SetColumn(stack, 2);
+                Grid.SetRow(stack, r);
+                chart.Children.Add(stack);
             }
-            host.Children.Add(grid);
+            // Vertical guides at 25 / 50 / 75% of the bar length, behind the bars (added first so they draw underneath).
+            var guides = new Grid();
+            for (var c = 0; c < 4; c++)
+            {
+                guides.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                if (c == 0) continue;
+                var guide = new Border { Width = 1, Background = Solid("#17FFFFFF"), HorizontalAlignment = HorizontalAlignment.Left };
+                Grid.SetColumn(guide, c);
+                guides.Children.Add(guide);
+            }
+            Grid.SetColumn(guides, 2);
+            Grid.SetRowSpan(guides, rows.Count);
+            chart.Children.Insert(0, guides);
+            var yAxis = new Border { Width = AxisT, Background = new SolidColorBrush(axisColor), HorizontalAlignment = HorizontalAlignment.Left };
+            Grid.SetColumn(yAxis, 2);
+            Grid.SetRowSpan(yAxis, rows.Count);
+            chart.Children.Add(yAxis);
+            var yTail = new Border { Width = AxisT, Background = Fade(axisColor, axisClear, false), HorizontalAlignment = HorizontalAlignment.Left };
+            Grid.SetColumn(yTail, 2);
+            Grid.SetRow(yTail, rows.Count);
+            chart.Children.Add(yTail);
+            host.Children.Add(chart);
         }
-        Block(speed, true);
-        Block(time, true);
-        Block(ratio, true);
-        Block(other, false);
-        return new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(18, 14, 18, 4), Margin = new Thickness(0, 12, 0, 0), Child = host };
+        foreach (var (name, specs) in groups) Group(name, specs);
+        return new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(18, 12, 18, 2), Margin = new Thickness(0, 12, 0, 0), Child = host };
     }
 
     /// <summary>Brings the server scores up to date (older runs, other PCs) and rebuilds the sheet from the score book when they changed.</summary>
@@ -975,13 +1101,13 @@ public partial class ReplayView : UserControl
         _selEnd = end;
         _runIdx = NearestRun(end);
         if (_runIdx >= 0) _selEnd = _stats.Runs[_runIdx].End;
-        var si = SessionStore.FindRun(Infos(), _scenario, end);
+        var si = ReplayStore.FindRun(Infos(), _scenario, end);
         SetMode(true);
         ApplySelection();
         if (si < 0) { if (_host.IsPending(_scenario, end)) ShowEncoding(end); else NoRecording(); return; }
         var item = _items[si];
-        if (_s is not null && _s.Folder == item.Folder && (_duration > 0 || Notice.Visibility == Visibility.Visible)) return;
-        LoadSession(item);
+        if (_replay is not null && _replay.Folder == item.Folder && (_duration > 0 || Notice.Visibility == Visibility.Visible)) return;
+        LoadReplay(item);
     }
 
     void SetRecorded(bool on)
@@ -1003,12 +1129,12 @@ public partial class ReplayView : UserControl
     void NoRecording()
     {
         UnloadMedia();
-        SetRecorded(false);
-        Notice.Text = L.T("No recording for this play");
+        ShowEmptyChart();
+        Notice.Text = L.T("No video for this play");
         Notice.Visibility = Visibility.Visible;
     }
 
-    /// <summary>Stops playback and releases the loaded session and its video.</summary>
+    /// <summary>Stops playback and releases the loaded replay and its video.</summary>
     void UnloadMedia()
     {
         ExitFullscreen();
@@ -1016,7 +1142,7 @@ public partial class ReplayView : UserControl
         _seekTimer.Stop(); _seekPending = false; _dragging = false; _resumeAfterDrag = false; _holdUntil = 0;
         Media.Close();
         PendingHost.Child = null; PendingHost.Visibility = Visibility.Collapsed;
-        _s = null;
+        _replay = null;
         _duration = 0;
         SetTransport(false);
         Overlay.Set(null, default, 0, 0, 0);
@@ -1026,23 +1152,30 @@ public partial class ReplayView : UserControl
         _metrics.Clear();
         TimeNow.Text = "0:00"; TimeTotal.Text = "0:00";
         FitScreen();
+        UpdateRunButtons();
     }
 
-    void LoadSession(SessionItem item)
+    void LoadReplay(ReplayItem item)
+    {
+        LoadReplayCore(item);
+        UpdateRunButtons();
+    }
+
+    void LoadReplayCore(ReplayItem item)
     {
         UnloadMedia();
         SetRecorded(true);
-        try { _s = SessionStore.Load(item.Folder); }
-        catch (Exception ex) { _s = null; SetRecorded(false); Notice.Text = ex.Message; Notice.Visibility = Visibility.Visible; return; }
+        try { _replay = ReplayStore.Load(item.Folder); }
+        catch (Exception ex) { _replay = null; ShowEmptyChart(); Notice.Text = ex.Message; Notice.Visibility = Visibility.Visible; return; }
 
-        _runLength = (_s.Info.End - _s.Info.Start).TotalSeconds;
-        _killTimes = _s.Stats is { } st
+        _runLength = (_replay.Info.End - _replay.Info.Start).TotalSeconds;
+        _killTimes = _replay.Stats is { } st
             ? st.KillEvents.Select(k => (k.Time - st.Start).TotalSeconds).ToArray()
-            : (_s.Trajectory?.Events.Where(x => x.Type == TrajectoryEventType.Kill).Select(x => (double)x.TSec).ToArray() ?? []);
+            : (_replay.Trajectory?.Events.Where(x => x.Type == TrajectoryEventType.Kill).Select(x => (double)x.TSec).ToArray() ?? []);
         _outcomes = ClassifyShots();
-        _held = _s.Trajectory is { } tj ? new HeldAccuracy(tj.Events, _s.Perf, _runLength) : null;
+        _held = _replay.Trajectory is { } tj ? new HeldAccuracy(tj.Events, _replay.Perf, _runLength) : null;
 
-        if (_s.VideoPath is { } path)
+        if (_replay.VideoPath is { } path)
         {
             Notice.Visibility = Visibility.Collapsed;
             Media.Open(path); // plays on its own; paused again in OnMediaOpened
@@ -1050,24 +1183,44 @@ public partial class ReplayView : UserControl
         else
         {
             Media.Close();
-            SetRecorded(false);
-            Notice.Text = L.T("No video for this session");
+            Notice.Text = L.T("No video for this play");
             Notice.Visibility = Visibility.Visible;
+            // the cache keeps perf and CSV without the video: the chart still shows, on the run-time axis (empty without stats)
+            _duration = _runLength;
+            ChartCard.Visibility = Visibility.Visible; TransportBar.Visibility = Visibility.Visible;
+            BuildChart();
+            var end = Chart.At(_duration);
+            foreach (var m in _metrics) m.Value = end is { } c ? ChartSeriesInfo.Format(m.Series, c[m.Series]) : "–";
+            TimeNow.Text = Clock(_runLength); TimeTotal.Text = Clock(_runLength);
         }
     }
 
+    /// <summary>No stats to plot: the same chart card stays, with an empty chart and no transport.</summary>
+    void ShowEmptyChart()
+    {
+        ChartCard.Visibility = Visibility.Visible; TransportBar.Visibility = Visibility.Visible;
+        Chart.Set([], 0);
+        ShowMetrics();
+    }
+
+    /// <summary>True for a cached replay without its video: only the chart is shown.</summary>
+    bool NoVideo => _replay is not null && _replay.VideoPath is null;
+
+    /// <summary>Chart x position of a mouse time: video seconds, or run seconds when there is no video.</summary>
+    double ChartTime(double mouseSec) => NoVideo ? mouseSec : _replay!.Info.VideoTime(mouseSec);
+
     IReadOnlyDictionary<float, ShotOutcome> ClassifyShots()
     {
-        if (_s?.Trajectory is not { } traj || _s.Stats is not { } st) return new Dictionary<float, ShotOutcome>();
+        if (_replay?.Trajectory is not { } traj || _replay.Stats is not { } st) return new Dictionary<float, ShotOutcome>();
         var kills = st.KillEvents.Select((k, i) => new KillShots(_killTimes[i], k.Shots, k.Hits)).ToList();
-        return ShotClassifier.Classify(traj.Events, kills, _s.Perf, out _);
+        return ShotClassifier.Classify(traj.Events, kills, _replay.Perf, out _);
     }
 
     // ---- player ------------------------------------------------------------------------------------------------
 
     void SetTransport(bool on)
     {
-        TransportBar.IsEnabled = on; FolderBtn.IsEnabled = on && _s?.VideoPath is { } p && File.Exists(p);
+        TransportBar.IsEnabled = on;
     }
 
     // ---- fullscreen --------------------------------------------------------------------------------------------
@@ -1109,6 +1262,21 @@ public partial class ReplayView : UserControl
 
     void OnFsClick(object sender, RoutedEventArgs e) => ToggleFullscreen();
 
+    static bool _muted;
+
+    void OnMuteClick(object sender, RoutedEventArgs e)
+    {
+        _muted = !_muted;
+        ApplyMute();
+    }
+
+    void ApplyMute()
+    {
+        Media.Muted = _muted;
+        MuteBtn.Content = _muted ? "" : "";
+        MuteBtn.ToolTip = L.T(_muted ? "Unmute" : "Mute");
+    }
+
     void OnDelLeave(object sender, MouseEventArgs e) => DisarmDelete();
 
     void OnScreenDown(object sender, MouseButtonEventArgs e)
@@ -1124,7 +1292,7 @@ public partial class ReplayView : UserControl
 
     void EnterFullscreen()
     {
-        if (_fs is not null || !_open || !_runMode || _duration <= 0 || Window.GetWindow(this) is not { } win) return;
+        if (_fs is not null || !_open || !_runMode || _duration <= 0 || NoVideo || Window.GetWindow(this) is not { } win) return;
         var chrome = System.Windows.Shell.WindowChrome.GetWindowChrome(win);
         if (chrome is null || PresentationSource.FromVisual(win) is not System.Windows.Interop.HwndSource src) return;
         var max = win.WindowState == WindowState.Maximized;
@@ -1142,7 +1310,7 @@ public partial class ReplayView : UserControl
         win.Left = tl.X; win.Top = tl.Y; win.Width = br.X - tl.X; win.Height = br.Y - tl.Y;
 
         Card.HorizontalAlignment = HorizontalAlignment.Stretch; Card.VerticalAlignment = VerticalAlignment.Stretch;
-        Card.ClearValue(WidthProperty); Card.ClearValue(HeightProperty);
+        Card.ClearValue(WidthProperty); Card.ClearValue(HeightProperty); Stage.ClearValue(HeightProperty);
         Card.Margin = new Thickness(0); Card.CornerRadius = new CornerRadius(0); Card.BorderThickness = new Thickness(0);
         var bg = (Brush)FindResource("Bg");
         Card.Background = bg; Screen.Background = bg; Card.Effect = null; Clipper.Clip = null;
@@ -1224,18 +1392,22 @@ public partial class ReplayView : UserControl
 
     void OnShowVideo(object sender, RoutedEventArgs e)
     {
-        if (_s?.VideoPath is { } p && File.Exists(p)) Process.Start("explorer.exe", $"/select,\"{p}\"");
+        if (_replay is null) return;
+        if (_replay.VideoPath is { } p && File.Exists(p)) Process.Start("explorer.exe", $"/select,\"{p}\"");
+        else if (Directory.Exists(_replay.Folder)) Process.Start("explorer.exe", $"\"{_replay.Folder}\"");
     }
 
     void OnMediaOpened()
     {
-        if (_s is null || Media.Duration <= 0) return;
+        if (_replay is null || Media.Duration <= 0) return;
         _duration = Media.Duration;
         Media.SpeedRatio = _speed;
+        ApplyMute();
         Media.Pause();
-        Media.Position = Math.Clamp(_s.Info.VideoTime(0) - 1, 0, _duration);
+        Media.Position = Math.Clamp(_replay.Info.VideoTime(0) - 1, 0, _duration);
         BuildChart();
         SetTransport(true);
+        LayoutCard(new Size(ActualWidth, ActualHeight));
         FitScreen();
         if (!_playing) TogglePlay();
     }
@@ -1245,7 +1417,7 @@ public partial class ReplayView : UserControl
     void FitScreen()
     {
         double W = Stage.ActualWidth, H = Stage.ActualHeight;
-        if (Media.NaturalVideoHeight <= 0 || W <= 0 || H <= 0)
+        if (Media.NaturalVideoHeight <= 0 || W <= 0 || H <= 0 || _fs is null)
         {
             Screen.Margin = new Thickness(0);
             return;
@@ -1286,26 +1458,32 @@ public partial class ReplayView : UserControl
 
     void OnRendering(object? sender, EventArgs e)
     {
-        if (!_open || !_runMode || _s is null || _duration <= 0) return;
+        if (!_open || !_runMode || _replay is null || _duration <= 0 || NoVideo) return;
         var pos = CurPos;
-        var t = _s.Info.MouseTime(pos);
-        TimeNow.Text = Clock(Math.Min(t, _runLength)); TimeTotal.Text = Clock(_runLength);
-        Chart.SetPlayhead(pos);
-        var cur = Chart.At(pos);
-        foreach (var m in _metrics) m.Value = cur is { } c ? ChartSeriesInfo.Format(m.Series, c[m.Series]) : "–";
+        var t = _replay.Info.MouseTime(pos);
+        ShowReadout(pos, t);
 
         if (!_host.Ui.ShowTrail) return;
-        if (_s.Trajectory is not { Samples.Count: > 0 } traj || Media.NaturalVideoHeight == 0 || t < 0 || t > _runLength + 0.5)
+        if (_replay.Trajectory is not { Samples.Count: > 0 } traj || Media.NaturalVideoHeight == 0 || t < 0 || t > _runLength + 0.5)
         {
             Overlay.Set(null, default, 0, 0, 0);
             return;
         }
         double videoAspect = (double)Media.NaturalVideoWidth / Media.NaturalVideoHeight;
-        var st = _s.Info.Settings;
+        var st = _replay.Info.Settings;
         var renderAspect = ViewProjection.ParseAspect(st.Resolution) ?? videoAspect;
         var hfov = ViewProjection.HorizontalFovDeg(st.Fov, st.FovScale, renderAspect);
         Overlay.Set(CameraPath.BuildTrail(traj.Samples, traj.Events, t, outcomes: _outcomes), CameraPath.At(traj.Samples, t), hfov, videoAspect, renderAspect, _held);
     }
+    /// <summary>Playhead, clock and metric values at a chart position; without a video the chart axis is run seconds.</summary>
+    void ShowReadout(double pos, double? runSec = null)
+    {
+        TimeNow.Text = Clock(Math.Min(runSec ?? pos, _runLength)); TimeTotal.Text = Clock(_runLength);
+        Chart.SetPlayhead(pos);
+        var cur = Chart.At(pos);
+        foreach (var m in _metrics) m.Value = cur is { } c ? ChartSeriesInfo.Format(m.Series, c[m.Series]) : "–";
+    }
+
     void BeginDrag()
     {
         _shownPos = Media.Position;
@@ -1333,7 +1511,7 @@ public partial class ReplayView : UserControl
         Media.Position = _dragPos;
     }
 
-    void OnChartDown(object sender, MouseButtonEventArgs e) { if (_duration <= 0) return; BeginDrag(); _dragging = true; Chart.CaptureMouse(); SeekToChart(e); }
+    void OnChartDown(object sender, MouseButtonEventArgs e) { if (_duration <= 0) return; if (!NoVideo) BeginDrag(); _dragging = true; Chart.CaptureMouse(); SeekToChart(e); }
     void OnChartMove(object sender, MouseEventArgs e) { if (_dragging && Chart.IsMouseCaptured) SeekToChart(e); }
     void OnChartUp(object sender, MouseButtonEventArgs e)
     {
@@ -1341,12 +1519,14 @@ public partial class ReplayView : UserControl
         SeekToChart(e);
         Chart.ReleaseMouseCapture();
         _dragging = false;
+        if (NoVideo) return;
         CommitSeek();
         if (_resumeAfterDrag) { _resumeAfterDrag = false; Media.Play(); }
     }
     void SeekToChart(MouseEventArgs e)
     {
         var sec = Math.Clamp(e.GetPosition(Chart).X / Math.Max(1, Chart.ActualWidth), 0, 1) * _duration;
+        if (NoVideo) { ShowReadout(sec); return; }
         DragTo(sec);
     }
 
@@ -1359,7 +1539,7 @@ public partial class ReplayView : UserControl
         _playing = !_playing;
         if (_playing)
         {
-            if (Media.Position >= _duration - 0.05) Media.Position = Math.Max(0, _s!.Info.VideoTime(0));
+            if (Media.Position >= _duration - 0.05) Media.Position = Math.Max(0, _replay!.Info.VideoTime(0));
             Media.Play();
         }
         else Media.Pause();
@@ -1421,15 +1601,15 @@ public partial class ReplayView : UserControl
     /// <summary>Running accuracy per second from the .perf, else per kill.</summary>
     void BuildChart()
     {
-        if (_s?.Perf is { Buckets.Count: > 0 } perf && _duration > 0)
+        if (_replay?.Perf is { Buckets.Count: > 0 } perf && _duration > 0)
         {
             var series = PerfSeries.Build(perf);
             var speeds = SpeedAt(series.Select(p => p.TSec).ToList());
-            Chart.Set(series.Select((p, i) => new ChartPoint(_s.Info.VideoTime(p.TSec), p.Accuracy, p.Score, p.Kills, p.Shots, p.Hits, speeds[i])).ToList(), _duration, KillVideoTimes());
+            Chart.Set(series.Select((p, i) => new ChartPoint(ChartTime(p.TSec), p.Accuracy, p.Score, p.Kills, p.Shots, p.Hits, speeds[i])).ToList(), _duration, KillVideoTimes());
             ShowMetrics();
             return;
         }
-        if (_s?.Stats is not { KillEvents.Count: > 0 } st || _duration <= 0) { Chart.Set([], 0); ShowMetrics(); return; }
+        if (_replay?.Stats is not { KillEvents.Count: > 0 } st || _duration <= 0) { Chart.Set([], 0); ShowMetrics(); return; }
         int shots = 0, hits = 0;
         var pts = new List<ChartPoint>();
         var killSpeeds = SpeedAt(_killTimes);
@@ -1437,7 +1617,7 @@ public partial class ReplayView : UserControl
         {
             var ev = st.KillEvents[k];
             shots += ev.Shots; hits += ev.Hits;
-            pts.Add(new ChartPoint(_s.Info.VideoTime(_killTimes[k]), shots == 0 ? 0 : (double)hits / shots, Kills: k + 1, Shots: shots, Hits: hits, MouseSpeed: killSpeeds[k]));
+            pts.Add(new ChartPoint(ChartTime(_killTimes[k]), shots == 0 ? 0 : (double)hits / shots, Kills: k + 1, Shots: shots, Hits: hits, MouseSpeed: killSpeeds[k]));
         }
         Chart.Set(pts, _duration, KillVideoTimes());
         ShowMetrics();
@@ -1446,20 +1626,20 @@ public partial class ReplayView : UserControl
     /// <summary>Mean mouse speed of the stretch ending at each mouse time; all NaN without a recorded trajectory.</summary>
     double[] SpeedAt(IReadOnlyList<double> ends)
     {
-        if (_s?.Trajectory is { } t) return MouseSpeedStats.Averages(t, ends);
+        if (_replay?.Trajectory is { } t) return MouseSpeedStats.Averages(t, ends);
         var none = new double[ends.Count];
         Array.Fill(none, double.NaN);
         return none;
     }
 
-    double[] KillVideoTimes() => _killTimes.Select(k => _s!.Info.VideoTime(k)).ToArray();
+    double[] KillVideoTimes() => _killTimes.Select(ChartTime).ToArray();
 
     /// <summary>One chip per series that has data; applies the saved selection to the chart.</summary>
     void ShowMetrics()
     {
         _metrics.Clear();
         foreach (var series in ChartSeriesInfo.All)
-            if (Chart.Has(series)) _metrics.Add(new MetricRow(series, _visible.Contains(series)));
+            if (Chart.Has(series) || !Chart.HasData) _metrics.Add(new MetricRow(series, _visible.Contains(series)));
         Chart.SetVisible(_visible);
         UpdatePrev();
     }
@@ -1467,13 +1647,13 @@ public partial class ReplayView : UserControl
     (string Folder, PerfData Perf)? _prev;
 
     /// <summary>The newest earlier local run of the scenario that has a .perf, parsed once per folder.</summary>
-    (string Folder, PerfData Perf, SessionInfo Info)? FindPrev()
+    (string Folder, PerfData Perf, ReplayInfo Info)? FindPrev()
     {
-        if (_s is null) return null;
-        foreach (var it in _items.Where(x => x.Info.Start < _s.Info.Start && x.Info.Scenario.Equals(_s.Info.Scenario, StringComparison.OrdinalIgnoreCase)).OrderByDescending(x => x.Info.Start))
+        if (_replay is null) return null;
+        foreach (var it in _items.Where(x => x.Info.Start < _replay.Info.Start && x.Info.Scenario.Equals(_replay.Info.Scenario, StringComparison.OrdinalIgnoreCase)).OrderByDescending(x => x.Info.Start))
         {
             if (_prev is { } c && c.Folder == it.Folder) return (c.Folder, c.Perf, it.Info);
-            if (!Directory.Exists(it.Folder) || Directory.GetFiles(it.Folder, SessionFolder.PerfPattern).FirstOrDefault() is not { } path) continue;
+            if (!Directory.Exists(it.Folder) || Directory.GetFiles(it.Folder, ReplayFolder.PerfPattern).FirstOrDefault() is not { } path) continue;
             try
             {
                 var perf = PerfParser.Parse(File.ReadAllBytes(path));
@@ -1492,9 +1672,9 @@ public partial class ReplayView : UserControl
         var prev = Chart.Has(ChartSeries.Accuracy) ? FindPrev() : null;
         PrevChip.Visibility = prev is null ? Visibility.Collapsed : Visibility.Visible;
         PrevChip.Opacity = _host.Ui.ComparePrev ? 1 : 0.5;
-        if (prev is not { } p || !_host.Ui.ComparePrev || _s is null) { Chart.SetGhost([]); return; }
+        if (prev is not { } p || !_host.Ui.ComparePrev || _replay is null) { Chart.SetGhost([]); return; }
         PrevChip.ToolTip = L.F("Previous play · {0}", L.Stamp(p.Info.Start));
-        Chart.SetGhost(PerfSeries.Build(p.Perf).Select(x => new ChartPoint(_s.Info.VideoTime(x.TSec), x.Accuracy, x.Score, x.Kills, x.Shots, x.Hits)).ToList());
+        Chart.SetGhost(PerfSeries.Build(p.Perf).Select(x => new ChartPoint(ChartTime(x.TSec), x.Accuracy, x.Score, x.Kills, x.Shots, x.Hits)).ToList());
     }
 
     void OnPrevClick(object sender, MouseButtonEventArgs e)

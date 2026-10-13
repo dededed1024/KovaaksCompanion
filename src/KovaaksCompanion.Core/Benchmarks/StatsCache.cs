@@ -3,28 +3,19 @@ using KovaaksCompanion.Core.Library;
 
 namespace KovaaksCompanion.Core.Benchmarks;
 
-public sealed record CachedProgress(string Json, DateTime FetchedAt);
 public sealed record CachedScores(List<CloudScore> Scores, DateTime FetchedAt);
+record CachedRun(DateTime Time, double Score, RunRecord? Record);
+record CachedRuns(List<CachedRun> Runs, DateTime FetchedAt);
 
 /// <summary>
-/// Signed, masked binary cache (<see cref="SignedFile"/>) of server data under one folder (benchmark progress, cloud last scores, usernames) so the app can show
+/// Signed, masked binary cache (<see cref="SignedFile"/>) of server data under one folder (server bests, run history, usernames; the run history lives in <c>runsFolder</c> when given) so the app can show
 /// data at startup and offline. Writes are atomic; unreadable files are treated as missing.
 /// </summary>
-public sealed class StatsCache(string folder)
+public sealed partial class StatsCache(string folder, string? runsFolder = null)
 {
     readonly object _gate = new();
 
-    string FilePath(string name) => Path.Combine(folder, name);
-
-    /// <summary>Raw player-progress JSON per KovaaksBenchmarkId; parse with <see cref="BenchmarkProgress.Parse"/>.</summary>
-    public CachedProgress? LoadProgress(string benchmarkId) => Read<CachedProgress>("progress.dat").GetValueOrDefault(benchmarkId);
-    public void SaveProgress(string benchmarkId, string json, DateTime? now = null) =>
-        Update<CachedProgress>("progress.dat", d => d[benchmarkId] = new(json, now ?? DateTime.Now));
-
-    /// <summary>Every cached progress entry in one read (the per-id loaders re-read the file each time).</summary>
-    public Dictionary<string, CachedProgress> LoadAllProgress() => Read<CachedProgress>("progress.dat");
-    public void SaveProgressBatch(IReadOnlyDictionary<string, string> items, DateTime? now = null) =>
-        Update<CachedProgress>("progress.dat", d => { foreach (var (id, json) in items) d[id] = new(json, now ?? DateTime.Now); });
+    string FilePath(string name) => Path.Combine(name == RunsFile ? runsFolder ?? folder : folder, name);
 
     /// <summary>The player's server bests per scenario (one sync); empty until the first sync has run.</summary>
     public Dictionary<string, ServerBest> LoadServerBests(string steamId)
@@ -45,66 +36,84 @@ public sealed class StatsCache(string folder)
             }
         });
 
-    /// <summary>Every cached cloud-scores entry in one read, with the scores of deleted runs merged in.</summary>
-    public Dictionary<string, CachedScores> LoadAllScores()
-    {
-        var all = Read<CachedScores>("scores.dat");
-        foreach (var (n, l) in Read<List<CloudScore>>(DeletedFile))
-            all[n] = all.TryGetValue(n, out var c) ? c with { Scores = Merge(c.Scores, l) } : new(l, DateTime.MinValue);
-        return all;
-    }
-    public void SaveScoresBatch(IReadOnlyDictionary<string, List<CloudScore>> items, DateTime? now = null) =>
-        Update<CachedScores>("scores.dat", d => { foreach (var (n, l) in items) d[n] = new(l, now ?? DateTime.Now); });
+    public const string RunsFile = "runs.dat";
 
-    /// <summary>Cloud last scores per scenario name.</summary>
+    /// <summary>Every cached run score per scenario in one read, whatever its origin (server, played here, deleted), with the time the server was last asked.</summary>
+    public Dictionary<string, CachedScores> LoadAllScores() =>
+        Read<CachedRuns>(RunsFile).ToDictionary(kv => kv.Key, kv => new CachedScores(kv.Value.Runs.Select(r => new CloudScore(r.Time, r.Score)).OrderBy(s => s.Time).ToList(), kv.Value.FetchedAt), StringComparer.OrdinalIgnoreCase);
+
     public CachedScores? LoadScores(string scenario) => LoadAllScores().GetValueOrDefault(scenario);
-    public void SaveScores(string scenario, IEnumerable<CloudScore> scores, DateTime? now = null) =>
-        Update<CachedScores>("scores.dat", d => d[scenario] = new(scores.ToList(), now ?? DateTime.Now));
 
-    const string DeletedFile = "deleted.dat";
-
-    /// <summary>Remembers a deleted run: it stays in the score history like a server score, and <see cref="HiddenRuns"/> keeps it out of run lists.</summary>
-    public void HideRun(string scenario, DateTime end, double score, RunRecord? record = null)
-    {
-        Update<List<CloudScore>>(DeletedFile, d =>
+    public void SaveScoresBatch(IReadOnlyDictionary<string, List<CloudScore>> items, DateTime? now = null) =>
+        Update<CachedRuns>(RunsFile, d =>
         {
-            if (!d.TryGetValue(scenario, out var l)) d[scenario] = l = [];
-            if (!l.Any(s => s.Time == end)) l.Add(new CloudScore(end, score));
+            foreach (var (n, l) in items)
+                d[n] = new(Merge(d.GetValueOrDefault(n)?.Runs ?? [], l.Select(c => new CachedRun(c.Time, c.Score, null))), now ?? DateTime.Now);
         });
-        if (record != null)
-            Update<List<RunRecord>>(ArchivedFile, d =>
+
+    public void SaveScores(string scenario, IEnumerable<CloudScore> scores, DateTime? now = null) =>
+        SaveScoresBatch(new Dictionary<string, List<CloudScore>> { [scenario] = scores.ToList() }, now);
+
+    /// <summary>Keeps runs' full statistics (accuracy, kills, drift, sens), e.g. of a replay folder, so they still count once it is deleted.</summary>
+    public void Archive(IEnumerable<RunRecord> records)
+    {
+        var list = records.ToList();
+        if (list.Count == 0) return;
+        Update<CachedRuns>(RunsFile, d =>
+        {
+            foreach (var g in list.GroupBy(r => r.Scenario, StringComparer.OrdinalIgnoreCase))
             {
-                if (!d.TryGetValue(scenario, out var l)) d[scenario] = l = [];
-                if (!l.Any(r => r.End == end)) l.Add(record);
-            });
+                var old = d.GetValueOrDefault(g.Key);
+                d[g.Key] = new(Merge(old?.Runs ?? [], g.Select(r => new CachedRun(r.End, r.Score, r))), old?.FetchedAt ?? DateTime.MinValue);
+            }
+        });
     }
 
-    const string ArchivedFile = "deletedruns.dat";
+    /// <summary>Keeps the statistics of the runs the cache holds none of yet (matched by scenario and end time), e.g. stats-folder runs played without the app.</summary>
+    public int ArchiveNew(IEnumerable<RunRecord> runs)
+    {
+        var have = Read<CachedRuns>(RunsFile).SelectMany(p => p.Value.Runs).Where(r => r.Record != null).Select(r => (r.Record!.Scenario.ToLowerInvariant(), r.Record.End)).ToHashSet();
+        var fresh = runs.Where(r => !have.Contains((r.Scenario.ToLowerInvariant(), r.End))).ToList();
+        Archive(fresh);
+        return fresh.Count;
+    }
 
-    /// <summary>Full statistics (accuracy, kills, drift, sens) of the deleted runs, so they still count after the session folder is gone.</summary>
-    public List<RunRecord> ArchivedRuns() => Read<List<RunRecord>>(ArchivedFile).SelectMany(p => p.Value).ToList();
+    public void Archive(RunRecord? record) { if (record != null) Archive([record]); }
 
-    /// <summary>Scores of deleted runs per scenario.</summary>
-    public Dictionary<string, List<CloudScore>> DeletedScores() => Read<List<CloudScore>>(DeletedFile);
+    /// <summary>Runs with kept statistics.</summary>
+    public List<RunRecord> ArchivedRuns() => Read<CachedRuns>(RunsFile).SelectMany(p => p.Value.Runs.Select(r => r.Record).OfType<RunRecord>()).ToList();
 
-    /// <summary>Deleted runs as (lower-case scenario, end time).</summary>
-    public HashSet<(string Scenario, DateTime End)> HiddenRuns() =>
-        Read<List<CloudScore>>(DeletedFile).SelectMany(p => p.Value.Select(s => (p.Key.ToLowerInvariant(), s.Time))).ToHashSet();
-
-    /// <summary>Best score of the deleted runs per scenario.</summary>
-    public Dictionary<string, double> DeletedBest()
+    /// <summary>Best cached score per scenario.</summary>
+    public Dictionary<string, double> BestScores()
     {
         var best = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (n, l) in Read<List<CloudScore>>(DeletedFile)) if (l.Count > 0) best[n] = l.Max(s => s.Score);
+        foreach (var (n, c) in Read<CachedRuns>(RunsFile)) if (c.Runs.Count > 0) best[n] = c.Runs.Max(r => r.Score);
         return best;
     }
 
-    /// <summary>Scores fetched from the server plus the scenario's deleted runs, oldest first, without repeats.</summary>
-    public List<CloudScore> WithDeleted(string scenario, IEnumerable<CloudScore> scores) =>
-        Merge(scores, Read<List<CloudScore>>(DeletedFile).GetValueOrDefault(scenario) ?? []);
+    /// <summary>The given scores plus what is already cached for the scenario, oldest first, without repeats.</summary>
+    public List<CloudScore> WithCached(string scenario, IEnumerable<CloudScore> scores) =>
+        Merge(Read<CachedRuns>(RunsFile).GetValueOrDefault(scenario)?.Runs ?? [], scores.Select(c => new CachedRun(c.Time, c.Score, null)))
+            .Select(r => new CloudScore(r.Time, r.Score)).ToList();
 
-    static List<CloudScore> Merge(IEnumerable<CloudScore> a, IEnumerable<CloudScore> b) =>
-        a.Concat(b).GroupBy(s => (s.Time, s.Score)).Select(g => g.First()).OrderBy(s => s.Time).ToList();
+    /// <summary>
+    /// Union by time and score; an entry with statistics wins over one without, and a score without statistics within
+    /// <see cref="ScenarioStats.SameRunWindow"/> of an entry with statistics is that run.
+    /// </summary>
+    static List<CachedRun> Merge(IEnumerable<CachedRun> a, IEnumerable<CachedRun> b)
+    {
+        var all = a.Concat(b).GroupBy(r => (r.Time, r.Score)).Select(g => g.FirstOrDefault(r => r.Record != null) ?? g.First()).OrderBy(r => r.Time).ToList();
+        var recorded = all.Where(r => r.Record != null).Select(r => r.Time).ToArray();
+        if (recorded.Length == 0) return all;
+        return all.Where(r =>
+        {
+            if (r.Record != null) return true;
+            var i = Array.BinarySearch(recorded, r.Time);
+            if (i >= 0) return false;
+            i = ~i;
+            return !((i < recorded.Length && recorded[i] - r.Time < ScenarioStats.SameRunWindow) || (i > 0 && r.Time - recorded[i - 1] < ScenarioStats.SameRunWindow));
+        }).ToList();
+    }
 
     /// <summary>Resolved webapp username per steamId.</summary>
     public string? LoadUsername(string steamId) => Read<string>("usernames.dat").GetValueOrDefault(steamId);
@@ -124,7 +133,7 @@ public sealed class StatsCache(string folder)
         {
             var d = Read<V>(name);
             change(d);
-            Directory.CreateDirectory(folder);
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath(name))!);
             SignedFile.WriteMasked(FilePath(name), JsonSerializer.SerializeToUtf8Bytes(d));
         }
     }

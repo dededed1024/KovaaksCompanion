@@ -8,7 +8,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
-using KovaaksCompanion.Core.Session;
+using KovaaksCompanion.Core.Replays;
 
 namespace KovaaksCompanion.App;
 
@@ -31,12 +31,10 @@ public partial class StatsView : UserControl
     /// <summary>Best score of the deleted runs per scenario; counted like a server score.</summary>
     Dictionary<string, double> _deletedBest = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Deleted runs (lower-case scenario, end): they still count in statistics but are left out of session and replay lists.</summary>
-    HashSet<(string Scenario, DateTime End)> _hidden = [];
-    bool IsHidden(RunRecord r) => _hidden.Contains((r.Scenario.ToLowerInvariant(), r.End));
     /// <summary>Local runs joined with server scores; every score-based statistic comes from here.</summary>
     ScoreBook _book = new(new RunLibrary([]));
     RunLibrary _lib => _book.Lib;
-    List<SessionInfo> _sessions = [];
+    List<ReplayInfo> _replays = [];
     readonly PlaylistIndex _index;
     readonly Dictionary<string, int> _diffChoice = new(StringComparer.OrdinalIgnoreCase);
     BrowserItem? _popupItem;
@@ -52,7 +50,7 @@ public partial class StatsView : UserControl
         _host = host;
         _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
         Heading.Text = L.T("Loading…");
-        host.SessionSaved += OnSessionSaved;
+        host.ReplaySaved += OnReplaySaved;
         host.RunFinished += OnRunFinished;
         host.GameStateChanged += OnGameStateChanged;
         host.UiChanged += OnUiChanged;
@@ -61,7 +59,7 @@ public partial class StatsView : UserControl
         _liveTimer.Start();
         _favSig = FavSig();
         DiffTrack.SizeChanged += (_, _) => FitHeading();
-        Detail.SizeChanged += (_, _) => FitHeading();
+        Body.SizeChanged += (_, _) => FitHeading();
         foreach (var sv in new[] { PlaylistScroll, HomeScroll })
         {
             sv.PreviewMouseWheel += OnWheel;
@@ -69,7 +67,7 @@ public partial class StatsView : UserControl
         }
         MiddleScroll.Started += _ => StopEase();
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
-        PlaylistScroll.IsVisibleChanged += (_, _) => CopyImage.Visibility = PlaylistScroll.IsVisible ? Visibility.Visible : Visibility.Collapsed;
+        PageHost.IsVisibleChanged += (_, _) => CopyImage.Visibility = PageHost.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         Popups.AddBase(HomeScroll);
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); UpdateTopButton(); };
         HomeScroll.ScrollChanged += (_, _) => { UpdateLivePill(); UpdateTopButton(); LoadMoreBrowse(); };
@@ -86,7 +84,7 @@ public partial class StatsView : UserControl
         {
             if (SessionPopup.ActualWidth > 0 && SessionPopup.ActualHeight > 0)
             {
-                SessionCardBorder.Width = Math.Min(1200, SessionPopup.ActualWidth - 160);
+                SessionCardBorder.Width = Math.Min(1300, SessionPopup.ActualWidth - 160);
                 SessionCardBorder.MaxHeight = Math.Max(0, SessionPopup.ActualHeight - 128);
             }
         };
@@ -164,7 +162,7 @@ public partial class StatsView : UserControl
     /// <summary>The difficulty control sits right of the title, or wraps below it when they do not fit together.</summary>
     void FitHeading()
     {
-        var avail = Detail.ActualWidth - (CodeChip.Visibility == Visibility.Visible ? 200 : 0); // minus the sharecode controls
+        var avail = Body.ActualWidth - (CodeChip.Visibility == Visibility.Visible ? 200 : 0); // minus the sharecode controls
         var diff = DiffTrack.Visibility == Visibility.Visible;
         Heading.MaxWidth = double.PositiveInfinity;
         Heading.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -177,10 +175,10 @@ public partial class StatsView : UserControl
         Heading.MaxWidth = Math.Max(120, avail - 180 - (diff && !below ? dw : 0));
     }
 
-    /// <summary>Playlist page: up to 1100px wide, centred.</summary>
+    /// <summary>Playlist page: up to 1200px wide, centred.</summary>
     void FitHost()
     {
-        PageHost.Width = Math.Max(0, Math.Min(1100, PlaylistScroll.ActualWidth - 14));
+        Body.Width = Math.Max(0, Math.Min(1200, PlaylistScroll.ActualWidth - 14));
     }
 
     const double HomeMaxWidth = 1100;
@@ -197,7 +195,7 @@ public partial class StatsView : UserControl
 
     public void Detach()
     {
-        _host.SessionSaved -= OnSessionSaved; _host.RunFinished -= OnRunFinished; _host.GameStateChanged -= OnGameStateChanged; _host.UiChanged -= OnUiChanged;
+        _host.ReplaySaved -= OnReplaySaved; _host.RunFinished -= OnRunFinished; _host.GameStateChanged -= OnGameStateChanged; _host.UiChanged -= OnUiChanged;
         _liveTimer.Stop();
         _cts.Cancel();
     }
@@ -292,7 +290,7 @@ public partial class StatsView : UserControl
         ShowHome();
     }
 
-    void OnSessionSaved(SessionInfo info, string folder) => Dispatcher.InvokeAsync(() =>
+    void OnReplaySaved(ReplayInfo info, string folder) => Dispatcher.InvokeAsync(() =>
     {
         _celebrateNext = true;
         Reload();
@@ -301,17 +299,20 @@ public partial class StatsView : UserControl
     async void Reload()
     {
         var folder = _host.Settings.StatsFolder;
-        var sessionsFolder = _host.SessionsFolder;
+        var replaysFolder = _host.ReplaysFolder;
+        var cachedReplays = _host.CachedReplaysFolder;
         var cache = Cache;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var (lib, sessions, serverBest, deletedBest, hidden, scores) = await Task.Run(() => {
-            var infos = SessionStore.List(sessionsFolder).Select(s => s.Info).ToList();
-            return (RunLibrary.Scan(folder).Verified(infos).WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.DeletedBest(), cache.HiddenRuns(), cache.LoadAllScores());
+        var (lib, replays, serverBest, deletedBest, scores) = await Task.Run(() => {
+            var infos = ReplayStore.List(replaysFolder, cachedReplays).Select(s => s.Info).ToList();
+            var scanned = RunLibrary.Scan(folder).Verified(infos);
+            try { cache.ArchiveNew(scanned.AllRuns); } catch (System.IO.IOException) { } // stats-folder runs played without the app would be lost with their CSV
+            return (scanned.WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.BestScores(), cache.LoadAllScores());
         });
         _book = _book.WithLibrary(lib);
         PlaySession.LiveIds = LiveRunLog.AssignRuns(_host.Settings.LiveRunFile, lib.AllRuns);
-        (_sessions, _deletedBest, _hidden) = (sessions, deletedBest, hidden);
-        foreach (var (n, c) in scores) { _book.SetCloud(n, c.Scores); _cloudFetched[n] = c.FetchedAt; }
+        (_replays, _deletedBest) = (replays, deletedBest);
+        foreach (var (n, c) in scores) _book.SetCloud(n, c.Scores);
         foreach (var (n, v) in deletedBest) _book.RaiseServerBest(n, v);
         if (_rawProgress.Count == 0 || serverBest.Count != _serverBest.Count) { _serverBest = serverBest; RebuildProgress(); }
         else ReapplyLocal();
@@ -428,7 +429,7 @@ public partial class StatsView : UserControl
         PopupCard.BeginAnimation(OpacityProperty, null); PopupCard.Opacity = 0;
         Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         Scale.ScaleX = Scale.ScaleY = 0.94;
-        PlaylistScroll.Visibility = Visibility.Collapsed;
+        PageHost.Visibility = Visibility.Collapsed;
         Popup.Visibility = Visibility.Visible;
         Animate(true, null);
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => { if (_popupOpen) Popup.Focus(); });
@@ -489,7 +490,7 @@ public partial class StatsView : UserControl
     void SetLayout(string kind)
     {
         if (kind != "playlist") _bal = null;
-        PlaylistScroll.Visibility = kind == "playlist" ? Visibility.Visible : Visibility.Collapsed;
+        PageHost.Visibility = kind == "playlist" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>One segment per difficulty (hidden for a single one); choosing it re-renders the benchmark for that difficulty.</summary>
@@ -528,7 +529,7 @@ public partial class StatsView : UserControl
 
     async void ShowBenchmark(BrowserItem item, bool keepScroll = false)
     {
-        var keep = keepScroll && PlaylistScroll.Visibility == Visibility.Visible ? PlaylistScroll.VerticalOffset : 0;
+        var keep = keepScroll && PageHost.Visibility == Visibility.Visible ? PlaylistScroll.VerticalOffset : 0;
         var b = item.Bench;
         var d = Chosen(b);
         _diffChoice[b.BenchmarkName] = d.KovaaksBenchmarkId;
@@ -708,8 +709,8 @@ public partial class StatsView : UserControl
         return r;
     }
 
-    /// <summary>The sheet's data: the score book, sessions (replays) and tier bands.</summary>
-    public ScenarioData SheetData() => new(_book, _sessions, TierBands, LoadCloudScoresAsync, _hidden);
+    /// <summary>The sheet's data: the score book, replays and tier bands.</summary>
+    public ScenarioData SheetData() => new(_book, _replays, TierBands, LoadCloudScoresAsync);
 
     /// <summary>Brings one scenario's server scores up to date in the score book (the sheet re-reads it afterwards).</summary>
     Task<bool> LoadCloudScoresAsync(string scenario) => EnsureCloudAsync([scenario]);

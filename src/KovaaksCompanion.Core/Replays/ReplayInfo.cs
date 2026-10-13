@@ -2,12 +2,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using KovaaksCompanion.Core.Stats;
 
-namespace KovaaksCompanion.Core.Session;
+namespace KovaaksCompanion.Core.Replays;
 
-public sealed class SessionFormatException(string message) : Exception(message);
+public sealed class ReplayFormatException(string message) : Exception(message);
 
 /// <summary>session.dat payload (SES-001). Times are local wall clock, as in the CSV.</summary>
-public sealed record SessionInfo
+public sealed record ReplayInfo
 {
     public const int CurrentVersion = 1;
 
@@ -46,14 +46,14 @@ public sealed record SessionInfo
 
     public string ToJson() => JsonSerializer.Serialize(this, Options);
 
-    public static SessionInfo FromJson(string json)
+    public static ReplayInfo FromJson(string json)
     {
         int? version;
         try { version = JsonDocument.Parse(json).RootElement.GetProperty("FormatVersion").GetInt32(); }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
-        { throw new SessionFormatException("session.json is unreadable or has no FormatVersion."); }
+        { throw new ReplayFormatException("session.json is unreadable or has no FormatVersion."); }
         if (version != CurrentVersion)
-            throw new SessionFormatException($"Unsupported session format version {version} (this app reads version {CurrentVersion}).");
-        return JsonSerializer.Deserialize<SessionInfo>(json, Options) ?? throw new SessionFormatException("session.json is empty.");
+            throw new ReplayFormatException($"Unsupported session format version {version} (this app reads version {CurrentVersion}).");
+        return JsonSerializer.Deserialize<ReplayInfo>(json, Options) ?? throw new ReplayFormatException("session.json is empty.");
     }
 }

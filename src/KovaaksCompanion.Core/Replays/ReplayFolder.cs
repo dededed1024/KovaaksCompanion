@@ -1,6 +1,6 @@
-namespace KovaaksCompanion.Core.Session;
+namespace KovaaksCompanion.Core.Replays;
 
-public static class SessionFolder
+public static class ReplayFolder
 {
     public const string TrajectoryFile = "trajectory.bin", InfoFile = "session.dat", LegacyInfoFile = "session.json", VideoFile = "video.mp4", PerfPattern = "*Performance.perf";
 

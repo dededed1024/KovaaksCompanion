@@ -12,11 +12,14 @@
   <data name="Close" xml:space="preserve"><value>닫기</value></data>
   <data name="Play" xml:space="preserve"><value>플레이</value></data>
   <data name="Start in KovaaK's" xml:space="preserve"><value>KovaaK's에서 시작</value></data>
-  <data name="Show video file in Explorer" xml:space="preserve"><value>탐색기에서 영상 파일 보기</value></data>
+  <data name="Mute" xml:space="preserve"><value>음소거</value></data>
+  <data name="Unmute" xml:space="preserve"><value>음소거 해제</value></data>
+  <data name="Show in Explorer" xml:space="preserve"><value>탐색기에서 보기</value></data>
   <data name="Add to favorites" xml:space="preserve"><value>즐겨찾기에 추가</value></data>
   <data name="Remove from favorites" xml:space="preserve"><value>즐겨찾기에서 제거</value></data>
   <data name="Up to 6 favorites" xml:space="preserve"><value>즐겨찾기는 최대 6개</value></data>
   <data name="Overlay the previous local play" xml:space="preserve"><value>이전 플레이 겹쳐 보기</value></data>
+  <data name="Overview" xml:space="preserve"><value>개요</value></data>
   <data name="Prev play" xml:space="preserve"><value>이전 플레이</value></data>
   <data name="Trail" xml:space="preserve"><value>궤적</value></data>
   <data name="Show or hide the trail (T)" xml:space="preserve"><value>궤적 표시/숨김 (T)</value></data>
@@ -89,7 +92,7 @@
   <data name="Exit" xml:space="preserve"><value>종료</value></data>
   <data name="Copy as image" xml:space="preserve"><value>이미지로 복사</value></data>
   <data name="No scenarios" xml:space="preserve"><value>시나리오 없음</value></data>
-  <data name="UNRANK" xml:space="preserve"><value>UNRANK</value></data>
+  <data name="UNRANKED" xml:space="preserve"><value>UNRANKED</value></data>
   <data name="Complete!" xml:space="preserve"><value>Complete!</value></data>
   <data name="Tier Up!" xml:space="preserve"><value>Tier Up!</value></data>
   <data name="Fanfare!" xml:space="preserve"><value>팡파레!</value></data>
@@ -123,8 +126,7 @@
   <data name="Top tier reached" xml:space="preserve"><value>최고 티어 달성</value></data>
   <data name="{0} to {1} ({2})" xml:space="preserve"><value>{1}까지 {0} ({2})</value></data>
   <data name="TIER THRESHOLDS" xml:space="preserve"><value>티어 기준</value></data>
-  <data name="No recording for this play" xml:space="preserve"><value>이 플레이는 녹화되지 않았어요</value></data>
-  <data name="No video for this session" xml:space="preserve"><value>이 세션은 영상이 없어요</value></data>
+  <data name="No video for this play" xml:space="preserve"><value>이 플레이는 영상이 없어요</value></data>
   <data name="Video failed to load: " xml:space="preserve"><value>영상을 불러오지 못했어요: </value></data>
   <data name="Previous play · {0}" xml:space="preserve"><value>이전 플레이 · {0}</value></data>
   <data name="Max age (0 days = unlimited)" xml:space="preserve"><value>최대 보관 기간 (0일 = 무제한)</value></data>
@@ -132,7 +134,6 @@
   <data name="Must be 17 digits" xml:space="preserve"><value>17자리 숫자여야 해요</value></data>
   <data name="Enter 30–1000" xml:space="preserve"><value>30–1000 사이로 입력</value></data>
   <data name="Size" xml:space="preserve"><value>크기</value></data>
-  <data name="Webcam {0}" xml:space="preserve"><value>웹캠 {0}</value></data>
   <data name="Checking…" xml:space="preserve"><value>확인 중…</value></data>
   <data name="Could not check" xml:space="preserve"><value>확인 실패</value></data>
   <data name="Up to date" xml:space="preserve"><value>최신 버전</value></data>
@@ -155,7 +156,7 @@
   <data name="{0} · {1} · {2} scenarios · {3} plays · " xml:space="preserve"><value>{0} · {1} · 시나리오 {2}개 · {3}회 · </value></data>
   <data name="{0} PBs" xml:space="preserve"><value>PB {0}개</value></data>
   <data name="Copy session as image" xml:space="preserve"><value>세션을 이미지로 복사</value></data>
-  <data name="Delete Recording" xml:space="preserve"><value>기록 삭제</value></data>
+  <data name="Delete Replay" xml:space="preserve"><value>리플레이 삭제</value></data>
   <data name="Click again to delete the replay for good" xml:space="preserve"><value>한 번 더 누르면 리플레이가 완전히 삭제돼요</value></data>
     <data name="Copied" xml:space="preserve"><value>복사됨</value></data>
   <data name="{0} of {1} scenarios played · {2} plays · {3}" xml:space="preserve"><value>시나리오 {1}개 중 {0}개 플레이 · 플레이 {2}회 · {3}</value></data>
@@ -224,8 +225,8 @@
   <data name="Reaction time" xml:space="preserve"><value>반응 시간</value></data>
   <data name="Path efficiency" xml:space="preserve"><value>경로 효율</value></data>
   <data name="Time between kills" xml:space="preserve"><value>킬 간격</value></data>
-  <data name="Speed variation" xml:space="preserve"><value>속도 일관성 (변동)</value></data>
-  <data name="Jerk" xml:space="preserve"><value>부드러움 (저크)</value></data>
+  <data name="Speed variation" xml:space="preserve"><value>속도 일관성</value></data>
+  <data name="Jerk" xml:space="preserve"><value>부드러움</value></data>
   <data name="Top 5%" xml:space="preserve"><value>상위 5%</value></data>
   <data name="Bottom 5%" xml:space="preserve"><value>하위 5%</value></data>
   <data name="The following information is sent together with this report." xml:space="preserve"><value>다음 정보가 이 신고와 함께 전송됩니다.</value></data>

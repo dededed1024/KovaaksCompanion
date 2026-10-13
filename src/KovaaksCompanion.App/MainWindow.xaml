@@ -98,5 +98,7 @@
                 <Button Style="{StaticResource CloseButton}" Content="&#xE8BB;" Click="OnClose" ToolTip="{app:Loc 'Close'}"/>
             </StackPanel>
         </Grid>
+        <!-- Confetti over everything, title bar and popups included -->
+        <app:Confetti x:Name="ConfettiLayer" Panel.ZIndex="2" IsHitTestVisible="False"/>
     </Grid>
 </Window>

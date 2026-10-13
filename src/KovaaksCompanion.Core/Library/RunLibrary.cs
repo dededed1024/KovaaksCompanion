@@ -1,5 +1,5 @@
 ﻿using KovaaksCompanion.Core.Perf;
-using KovaaksCompanion.Core.Session;
+using KovaaksCompanion.Core.Replays;
 using KovaaksCompanion.Core.Stats;
 
 namespace KovaaksCompanion.Core.Library;
@@ -24,15 +24,11 @@ public sealed class RunLibrary
         _byScenario.TryGetValue(scenario, out var l) ? l : [];
 
     /// <summary>
-    /// Drops runs whose score differs from the signed score of their session (matched by <see cref="SessionStore.FindRun"/>):
-    /// the stats CSV was edited. Runs without a session cannot be checked and stay.
+    /// Drops runs whose score differs from the signed score of their replay (matched by <see cref="ReplayStore.FindRun"/>):
+    /// the stats CSV was edited. Runs without a replay cannot be checked and stay.
     /// </summary>
-    public RunLibrary Verified(IReadOnlyList<SessionInfo> sessions) => new(AllRuns.Where(r =>
-        SessionStore.FindRun(sessions, r.Scenario, r.End) is var i && (i < 0 || Math.Abs(sessions[i].Score - r.Score) < 1e-6)));
-
-    /// <summary>Drops the deleted runs (lower-case scenario, end time) given by <see cref="Benchmarks.StatsCache.HiddenRuns"/>.</summary>
-    public RunLibrary Without(IReadOnlySet<(string Scenario, DateTime End)> hidden) =>
-        hidden.Count == 0 ? this : new(AllRuns.Where(r => !hidden.Contains((r.Scenario.ToLowerInvariant(), r.End))));
+    public RunLibrary Verified(IReadOnlyList<ReplayInfo> replays) => new(AllRuns.Where(r =>
+        ReplayStore.FindRun(replays, r.Scenario, r.End) is var i && (i < 0 || Math.Abs(replays[i].Score - r.Score) < 1e-6)));
 
     /// <summary>Adds the archived statistics of deleted runs whose stats CSV is gone (matched by scenario and end time).</summary>
     public RunLibrary WithArchived(IReadOnlyCollection<RunRecord> archived)

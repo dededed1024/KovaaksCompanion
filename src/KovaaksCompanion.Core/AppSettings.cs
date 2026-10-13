@@ -8,11 +8,11 @@ public sealed record AppSettings
 {
     /// <summary>Empty = auto-detect (Steam libraries).</summary>
     public string KovaaksPath { get; init; } = "";
-    /// <summary>Parent location of the data root: sessions and buffer live in its "KovaaksCompanion" subfolder. Empty = the root of the disk holding the KovaaK's folder.</summary>
+    /// <summary>Parent location of the data root: replays and buffer live in its "KovaaksCompanion" subfolder. Empty = the root of the disk holding the KovaaK's folder.</summary>
     public string DataFolder { get; init; } = "";
     /// <summary>SteamID64 used for server scores. Empty = detect from Steam's loginusers.vdf.</summary>
     public string SteamId { get; init; } = "";
-    public bool StartWithWindows { get; init; }
+    public bool StartWithWindows { get; init; } = true;
     /// <summary>UI language code ("en", "ko"); empty = follow Windows.</summary>
     public string Language { get; init; } = "";
     /// <summary>Color theme name (surfaces and accent together): Dark, Light, Black, Violet, Rose, Forest, Ember or Ocean.</summary>
@@ -29,7 +29,7 @@ public sealed record AppSettings
     /// <summary>Keep the video only of runs that set a personal best; the clip of any other run is not saved (its stats and mouse trail still are).</summary>
     public bool VideoPbOnly { get; init; }
 
-    /// <summary>Maximum size of the sessions folder in GB; 0 = unlimited.</summary>
+    /// <summary>Maximum size of the replays folder in GB; 0 = unlimited.</summary>
     public int StorageLimitGb { get; init; }
     /// <summary>Maximum age of a replay in days; older ones are deleted. 0 = unlimited.</summary>
     public int MaxAgeDays { get; init; }
@@ -71,17 +71,26 @@ public sealed record AppSettings
             return string.Equals(last, "KovaaksCompanion", StringComparison.OrdinalIgnoreCase) ? d : Path.Combine(d, "KovaaksCompanion");
         }
     }
-    [JsonIgnore] public string SessionsFolder => Path.Combine(DataRoot, "sessions");
+    [JsonIgnore] public string ReplaysFolder => Path.Combine(DataRoot, "sessions");
     [JsonIgnore] public string UiFile => Path.Combine(DataRoot, "ui.json");
     [JsonIgnore] public string LiveRunFile => Path.Combine(DataRoot, "live-runs.json");
     /// <summary>Cache and playlist-scenarios data live in LocalAppData, not in the user-chosen data root.</summary>
     [JsonIgnore] public string CacheFolder => Path.Combine(DefaultDataFolder, "cache");
+    /// <summary>Deleted runs keep their replay data here (everything but the video), so their graphs still show.</summary>
+    [JsonIgnore] public string CachedReplaysFolder => Path.Combine(CacheFolder, "sessions");
+    /// <summary>The run history cache (runs.dat) lives in the data root so it survives with the replays.</summary>
+    [JsonIgnore] public string RunsCacheFolder => Path.Combine(DataRoot, "history");
+    public Benchmarks.StatsCache OpenCache() => new(CacheFolder, RunsCacheFolder);
     [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DefaultDataFolder, "playlist-scenarios.dat");
-    /// <summary>Pre-1.5 locations, removed after the first successful rebuild.</summary>
-    [JsonIgnore] public string LegacyCacheFolder => Path.Combine(DataRoot, "cache");
-    [JsonIgnore] public string LegacyPlaylistIndexFile => Path.Combine(DataRoot, "playlist-scenarios.dat");
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
     [JsonIgnore] public string CapturesFolder => Path.Combine(DataRoot, "captures");
+    /// <summary><see cref="CapturesFolder"/>, created (with a UAC grant when the location needs one).</summary>
+    public string EnsureCapturesFolder()
+    {
+        var dir = CapturesFolder;
+        AccessGuard.Run(dir, true, () => Directory.CreateDirectory(dir));
+        return dir;
+    }
 
     /// <summary>Fills KovaaksPath from detection when it is empty or missing; unchanged when nothing is found.</summary>
     public AppSettings WithDetectedPaths(Func<string?>? findKovaaks = null, Func<string, bool>? dirExists = null)
@@ -95,17 +104,22 @@ public sealed record AppSettings
     /// <summary>Defaults when the file is missing or unreadable.</summary>
     public static AppSettings Load(string? path = null)
     {
+        path ??= DefaultFile;
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path ?? DefaultFile), Options) ?? new();
+            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), Options) ?? new();
         }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return new(); }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            if (File.Exists(path)) Diagnostics.ErrorReporter.Report("settings load " + path, e); // unreadable or corrupt, not just first run
+            return new();
+        }
     }
 
     public void Save(string? path = null)
     {
         path ??= DefaultFile;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(this, Options));
+        var dir = Path.GetDirectoryName(path)!;
+        AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); File.WriteAllText(path, JsonSerializer.Serialize(this, Options)); });
     }
 }

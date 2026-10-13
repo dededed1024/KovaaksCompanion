@@ -12,7 +12,7 @@ using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
-using KovaaksCompanion.Core.Session;
+using KovaaksCompanion.Core.Replays;
 
 namespace KovaaksCompanion.App;
 
@@ -751,7 +751,7 @@ public partial class StatsView
     void FillDay(StackPanel host, DateTime day, IReadOnlySet<RunRecord> pbs)
     {
         host.Children.Clear();
-        var sessions = PlaySession.Group(_lib.AllRuns.Where(r => !IsHidden(r)), all: _lib.AllRuns, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
+        var sessions = PlaySession.Group(_lib.AllRuns, all: _lib.AllRuns, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
         host.Children.Add(Text(DayLabel(day) + " · " + (sessions.Count == 1 ? L.F("{0} session", sessions.Count) : L.F("{0} sessions", sessions.Count)), 15, FgB, FontWeights.SemiBold, new Thickness(0, 0, 0, 8)));
         DateTime? liveStart = null;
         if (LiveNow())
@@ -860,13 +860,12 @@ public partial class StatsView
             holder.Measure(new Size(width, double.PositiveInfinity));
             holder.Arrange(new Rect(0, 0, width, holder.DesiredSize.Height));
             holder.UpdateLayout();
-            var scale = CaptureScale;
+            var scale = VisualTreeHelper.GetDpi(this).DpiScaleX; // the screen's own pixels-per-DIP
             var rtb = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(holder.ActualHeight * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(holder);
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = _host.Settings.CapturesFolder;
-            Directory.CreateDirectory(dir);
+            var dir = _host.Settings.EnsureCapturesFolder();
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
             using var fs = File.Create(System.IO.Path.Combine(dir, $"session_{s.Number}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));
@@ -1026,7 +1025,7 @@ public partial class StatsView
     {
         var name = r.Scenario;
         var end = r.End;
-        var replay = SessionStore.FindRun(_sessions, name, end) >= 0;
+        var replay = ReplayStore.HasVideo(_replays, name, end);
         var bands = TierBands(name);
         var tier = bands?.LastOrDefault(b => r.Score >= b.Value);
 
@@ -1053,7 +1052,7 @@ public partial class StatsView
         var benchText = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         benchText.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(benchText, 2, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        var ac = Text(tier?.Label ?? (bands != null ? L.T("UNRANK") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold);
+        var ac = Text(tier?.Label ?? (bands != null ? L.T("UNRANKED") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold);
         Put(ac, 3, new Thickness(0), HorizontalAlignment.Center);
         var scoreFg = tier != null ? ChartPaths.TextTone(tier.Brush) : FgB;
         var sc = Text(r.Score.ToString("0.#"), 13, scoreFg, FontWeights.SemiBold);
@@ -1272,7 +1271,7 @@ public partial class StatsView
         var bench = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         bench.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(bench, 1, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        Put(Text(tier?.Label ?? (stats.Best > 0 && TierBands(name) != null ? L.T("UNRANK") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
+        Put(Text(tier?.Label ?? (stats.Best > 0 && TierBands(name) != null ? L.T("UNRANKED") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
         var sc = Text(stats.Best > 0 ? stats.Best.ToString("0.#") : "-", 13, tier != null ? ChartPaths.TextTone(tier.Brush) : FgB, FontWeights.SemiBold);
         System.Windows.Documents.Typography.SetNumeralAlignment(sc, FontNumeralAlignment.Tabular);
         Put(sc, 3, new Thickness(0), HorizontalAlignment.Right);
@@ -1288,7 +1287,7 @@ public partial class StatsView
         var ui = _host.Ui;
         var data = RankData();
         var pbs = PbSet();
-        return _lib.AllRuns.Where(r => !IsHidden(r))
+        return _lib.AllRuns
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
             .OrderByDescending(i => i.Fav).ThenByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
             .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
@@ -1313,7 +1312,7 @@ public partial class StatsView
             var pct = p!.OverallRank >= p.RankNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
             info.Children.Add(Text($"{TierText.Label(p.OverallRankName)} · {pct}", 12, ChartPaths.TextTone(RankBrush(d, p.OverallRankName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
         }
-        else info.Children.Add(Text(L.T("UNRANK"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+        else info.Children.Add(Text(L.T("UNRANKED"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
 
         var card = new Border { CornerRadius = new CornerRadius(14), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(TileGap / 2), Cursor = Cursors.Hand };
         if (ranked && RankBrush(d, p!.OverallRankName) is SolidColorBrush rankBrush)
@@ -1352,7 +1351,7 @@ public partial class StatsView
         var ranked = p != null && p.OverallRankName.Length > 0;
         var tier = ranked ? RankBrush(d, p!.OverallRankName) : (Brush)FindResource("Dim");
         var history = p == null ? [] : Tier.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.RankMaxes)));
-        var watermark = ranked ? TierText.Label(p!.OverallRankName) : L.T("UNRANK");
+        var watermark = ranked ? TierText.Label(p!.OverallRankName) : L.T("UNRANKED");
         var complete = p != null && p.IsTierComplete(p.OverallRank);
         return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
     }

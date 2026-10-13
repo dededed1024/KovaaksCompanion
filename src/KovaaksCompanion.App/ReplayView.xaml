@@ -101,7 +101,7 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Stage: scenario overview, or one run (stats strip + video + chart + transport) -->
-                    <Grid Grid.Column="0">
+                    <Grid x:Name="StageCol" Grid.Column="0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -110,18 +110,21 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="Heading" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                        <Button x:Name="PlayScn" Grid.Column="1" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
+                        <Button x:Name="ScnStar" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="8,0" Margin="-8,0,4,0"
+                                MinHeight="30" MinWidth="30" VerticalAlignment="Center" ToolTip="{app:Loc 'Add to favorites'}" Click="OnScenarioStar" Visibility="Collapsed"/>
+                        <TextBlock x:Name="Heading" Grid.Column="1" Style="{StaticResource Title}" FontSize="20" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        <Button x:Name="PlayScn" Grid.Column="2" Content="{app:Loc 'Play'}" Style="{StaticResource Primary}" MinHeight="30" Padding="14,0" Margin="12,0,0,0" VerticalAlignment="Center"
                                 ToolTip="{app:Loc 'Start in KovaaK\'s'}" Click="OnPlayScenario" Visibility="Collapsed"/>
-                        <StackPanel x:Name="HeaderTools" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button x:Name="ScnStar" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
-                                    MinHeight="30" MinWidth="30" VerticalAlignment="Center" ToolTip="{app:Loc 'Add to favorites'}" Click="OnScenarioStar" Visibility="Collapsed"/>
-                            <Button x:Name="RunDelBtn" Content="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Delete Recording'}" Click="OnDeleteRun" MouseLeave="OnDelLeave"
+                        <StackPanel x:Name="HeaderTools" Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="RunStar" Content="&#xE734;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Background="Transparent" Padding="10,0" Margin="6,0,0,0"
+                                    MinHeight="30" MinWidth="30" VerticalAlignment="Center" ToolTip="{app:Loc 'Add to favorites'}" Click="OnRunStar" Visibility="Collapsed"/>
+                            <Button x:Name="RunDelBtn" Content="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Delete Replay'}" Click="OnDeleteRun" MouseLeave="OnDelLeave"
                                     MinHeight="30" MinWidth="30" Padding="10,0" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                            <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Show video file in Explorer'}" Click="OnShowVideo"
+                            <Button x:Name="FolderBtn" Content="&#xE838;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Background="Transparent" ToolTip="{app:Loc 'Show in Explorer'}" Click="OnShowVideo"
                                     MinHeight="30" MinWidth="30" Padding="10,0" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                         </StackPanel>
                     </Grid>
@@ -161,10 +164,10 @@
                             </Border>
 
                             <!-- Run chart: stats as series; shares its x axis with the seek bar below -->
-                            <Border x:Name="ChartCard" Grid.Row="2" Margin="0,12,0,0" Style="{StaticResource SheetCard}" Padding="16,12,16,10">
+                            <Border x:Name="ChartCard" Grid.Row="2" Margin="0,12,0,0" Style="{StaticResource SheetCard}" Padding="16,8,16,10">
                                 <Grid>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="22"/>
                                         <RowDefinition x:Name="RunChartRow" Height="110"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
@@ -173,11 +176,12 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <ItemsControl x:Name="Metrics" Focusable="False">
-                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                            <ItemsControl x:Name="Metrics" Focusable="False">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Style="{StaticResource Chip}" Cursor="Hand" Padding="8,2" Margin="0,0,4,0" CornerRadius="8" Opacity="{Binding Opacity}" MouseLeftButtonUp="OnMetricClick">
+                                                    <Border Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="0,0,4,0" CornerRadius="8" Opacity="{Binding Opacity}" MouseLeftButtonUp="OnMetricClick">
                                                         <StackPanel Orientation="Horizontal">
                                                             <Ellipse Width="9" Height="9" Fill="{Binding Brush}" VerticalAlignment="Center"/>
                                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Dim}" FontSize="12.5" Margin="8,0,8,0"/>
@@ -187,8 +191,9 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
+                                        </Viewbox>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,4" Margin="12,0,0,0" CornerRadius="8" Visibility="Collapsed"
+                                            <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="12,0,0,0" CornerRadius="8" Visibility="Collapsed"
                                                     ToolTip="{app:Loc 'Overlay the previous local play'}" MouseLeftButtonUp="OnPrevClick">
                                                 <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev play'}" Foreground="{DynamicResource Dim}" FontSize="12.5"/>
                                             </Border>                                        </StackPanel>
@@ -197,7 +202,7 @@
                                 </Grid>
                             </Border>
 
-                            <Grid x:Name="TransportBar" Grid.Row="4" Margin="0,8,0,0">
+                            <Grid x:Name="TransportBar" Grid.Row="4" Margin="0,2,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -222,6 +227,7 @@
                                             <StackPanel x:Name="SpeedMenu"/>
                                         </Border>
                                     </Popup>
+                                    <Button x:Name="MuteBtn" Content="&#xE767;" FontSize="16" Width="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="{app:Loc 'Mute'}" Click="OnMuteClick"/>
                                     <Button x:Name="FsBtn" Content="&#xE740;" FontSize="16" Width="40" Style="{StaticResource PlayerButton}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" ToolTip="{app:Loc 'Fullscreen (F)'}" Click="OnFsClick"/>
                                 </StackPanel>
                             </Grid>
@@ -233,14 +239,22 @@
                     <Grid x:Name="Side" Grid.Column="2">
                         <Border Style="{StaticResource SheetCard}" Background="{DynamicResource Tint}" ClipToBounds="True">
                             <Grid>
-                                <ScrollViewer x:Name="RunsScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <StackPanel Margin="6,6,6,6">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Border x:Name="OverviewRow" Height="34" Margin="6,6,6,0" CornerRadius="8" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnOverviewRow"
+                                        MouseEnter="OnOverviewRowHover" MouseLeave="OnOverviewRowHover">
+                                    <TextBlock Text="{app:Loc 'Overview'}" FontSize="13" VerticalAlignment="Center" Margin="10,0" Foreground="{DynamicResource Fg}" FontWeight="SemiBold"/>
+                                </Border>
+                                <ScrollViewer x:Name="RunsScroll" Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel Margin="6,2,6,6">
                                         <StackPanel x:Name="RunsHost"/>
                                         <Button x:Name="MoreBtn" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,0,0,2" Padding="8,0,8,0" MinHeight="26" Background="Transparent"
                                                 Foreground="{DynamicResource Accent}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Click="OnMore"/>
                                     </StackPanel>
                                 </ScrollViewer>
-                                <TextBlock x:Name="NoRuns" Text="{app:Loc 'No local plays yet'}" Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="NoRuns" Grid.Row="1" Text="{app:Loc 'No local plays yet'}" Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                             </Grid>
                         </Border>
                     </Grid>

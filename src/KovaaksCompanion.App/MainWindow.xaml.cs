@@ -24,6 +24,7 @@ public partial class MainWindow : Window
         _stats = new StatsView(host);
         _replay = new ReplayView(host);
         _settings = new SettingsView(host);
+        _stats.ConfettiLayer = ConfettiLayer;
         Pages.Children.Add(_stats);
         Root.Children.Add(_replay); // above the pages, below the title bar (ZIndex 1), so the caption buttons keep working
         Root.Children.Add(_settings);
@@ -121,7 +122,7 @@ public partial class MainWindow : Window
         return _replay.ShowRun(_stats.SheetData(), scenario, end, withoutRecording);
     }
 
-    /// <summary>Opens the most recent recorded session's run; false (window only) when nothing was recorded.</summary>
+    /// <summary>Opens the most recent recorded run; false (window only) when nothing was recorded.</summary>
     public bool ShowLatestReplay()
     {
         _settings.Close();

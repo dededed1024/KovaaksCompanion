@@ -16,6 +16,9 @@ public partial class StatsView
 
     Dictionary<string, TierMark>? _tierMarks;
     bool _celebrateNext, _confettiPending;
+
+    /// <summary>Topmost confetti layer owned by the main window, so it covers popups and the title bar.</summary>
+    public Confetti ConfettiLayer { get; set; } = new();
     List<string> _celebrated = [];
     readonly HashSet<string> _celebratedComplete = new(StringComparer.OrdinalIgnoreCase);
     List<Color> _celebrationColors = [];
