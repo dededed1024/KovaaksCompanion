@@ -68,7 +68,7 @@ public partial class ReplayView : UserControl
     readonly HashSet<ChartSeries> _visible = [];
     readonly Dictionary<DateTime, Border> _rows = [];
     readonly DispatcherTimer _seekTimer;
-    readonly ScoreChart _bigChart = new() { Cursor = Cursors.Hand };
+    readonly ScoreChart _bigChart = new() { Cursor = Cursors.Hand, Zoomable = true };
     ScenarioData? _d;
     ScenarioStats _stats = new("", []);
     HashSet<int> _pbs = [];

@@ -25,8 +25,69 @@ public sealed class ScoreChart : FrameworkElement
 
     public void Set(IReadOnlyList<(DateTime When, double Value)> points, string format = "0.#", ChartKind kind = ChartKind.Line, bool overlays = false, IReadOnlyList<ChartBand>? bands = null)
     {
-        _points = points; _format = format; _kind = kind; _overlays = overlays; _bands = bands ?? []; _miniBrush = null;
+        _all = points; _format = format; _kind = kind; _overlays = overlays; _bands = bands ?? []; _miniBrush = null;
+        _manual = false;
+        ApplyWindow();
         AttachVisuals(false);
+        _hover = -1;
+        InvalidateVisual();
+    }
+
+    IReadOnlyList<(DateTime When, double Value)> _all = [];
+    int _off, _len;
+    bool _manual;
+    const int AutoMax = 70, ZoomMin = 5;
+
+    /// <summary>Line mode: the view follows the recent trend and the mouse wheel zooms. Right click goes back to the automatic range.</summary>
+    public bool Zoomable { get; set; }
+
+    /// <summary>Last N runs to show: the recent runs inside the current tier and the one below it, at most <see cref="AutoMax"/>. All runs when there are no more than that.</summary>
+    int AutoWindow()
+    {
+        var p = _all;
+        var n = p.Count;
+        if (n <= AutoMax) return n;
+        var t = _bands.Count(b => b.Value <= p[n - 1].Value);
+        if (t < 2) return AutoMax;
+        var floor = _bands.OrderBy(b => b.Value).ElementAt(t - 2).Value;
+        var w = 0;
+        while (w < n && w < AutoMax && p[n - 1 - w].Value >= floor) w++;
+        return Math.Max(w, Math.Min(ZoomMin, n));
+    }
+
+    void ApplyWindow()
+    {
+        var n = _all.Count;
+        if (!Zoomable || _kind != ChartKind.Line || n <= ZoomMin) { _points = _all; _off = 0; _len = n; return; }
+        if (!_manual) _len = AutoWindow();
+        _len = Math.Clamp(_len, Math.Min(ZoomMin, n), n);
+        _off = n - _len;
+        _points = _len == n ? _all : _all.Skip(_off).Take(_len).ToList();
+    }
+
+    protected override void OnMouseWheel(MouseWheelEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        var n = _all.Count;
+        if (!Zoomable || _miniBrush != null || n <= ZoomMin || ActualWidth <= 0 || ActualHeight <= 0) return;
+        e.Handled = true;
+        var next = (int)Math.Round(_len * (e.Delta > 0 ? 0.8 : 1.25));
+        if (next == _len) next += e.Delta > 0 ? -1 : 1;
+        next = Math.Clamp(next, ZoomMin, n);
+        if (next == _len) return;
+        _manual = true;
+        _len = next;
+        ApplyWindow();
+        _hover = -1;
+        InvalidateVisual();
+    }
+
+    protected override void OnMouseRightButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseRightButtonUp(e);
+        if (!Zoomable || !_manual) return;
+        _manual = false;
+        ApplyWindow();
         _hover = -1;
         InvalidateVisual();
     }
@@ -111,7 +172,7 @@ public sealed class ScoreChart : FrameworkElement
     /// <summary>Card mode: only the line over a gradient (tier colour at the bottom, transparent on top), with the tier name as a card-high watermark behind it. No axes, bands, labels or hover.</summary>
     public void SetMini(IReadOnlyList<(DateTime When, double Value)> points, Brush tier, string tierName, bool complete = false, string? progress = null)
     {
-        _points = points; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _progress = progress; _hover = -1;
+        _points = _all = points; _off = 0; _bands = []; _miniBrush = tier; _watermark = tierName; _complete = complete; _progress = progress; _hover = -1;
         IsHitTestVisible = false;
         AttachVisuals(true);
         InvalidateVisual();
@@ -137,7 +198,37 @@ public sealed class ScoreChart : FrameworkElement
         if (_marquee || h > MiniStackAbove)
             for (var y = h - pitch; y > -pitch; y -= pitch)
                 dc.DrawText(ft, new Point(x, y - ft.Baseline));
-        if (_marquee && IsLoaded) StartDrift(pitch); else StopDrift();
+        _pitch = pitch;
+        if (_manualDrift) { StopDrift(); _markShift.Y = _phase * pitch; }
+        else if (_marquee && IsLoaded) StartDrift(pitch);
+        else StopDrift();
+    }
+
+    bool _manualDrift;
+    double _phase, _pitch;
+
+    /// <summary>Frame-by-frame capture: stops the clock-driven drift so <see cref="SetDriftPhase"/> sets the watermark position.</summary>
+    public void BeginManualDrift()
+    {
+        _manualDrift = true;
+        _phase = 0;
+        StopDrift();
+        _markShift.Y = 0;
+    }
+
+    /// <summary>Watermark position as a fraction of one loop (0..1); 1 equals 0.</summary>
+    public void SetDriftPhase(double fraction)
+    {
+        _phase = fraction;
+        if (_pitch > 0) _markShift.Y = fraction * _pitch;
+    }
+
+    public void EndManualDrift()
+    {
+        _manualDrift = false;
+        _phase = 0;
+        _markShift.Y = 0;
+        InvalidateVisual();
     }
 
     /// <summary>Bottom right tag: COMPLETE once the top tier is reached, else the progress number plus a "%" at 3/4 size on the same baseline. Null when there is nothing to show.</summary>
@@ -147,7 +238,7 @@ public sealed class ScoreChart : FrameworkElement
         if (string.IsNullOrEmpty(tagText)) return null;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var probe = new FormattedText(_watermark.Length > 0 ? _watermark : "A", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, 100, Brushes.White, dpi);
-        var tagBrush = new SolidColorBrush(Color.FromArgb(0x66, 255, 255, 255)); tagBrush.Freeze();
+        var tagBrush = new SolidColorBrush(Color.FromArgb(0xB3, 255, 255, 255)); tagBrush.Freeze();
         // Scales with the card height, up to twice the watermark's height cap.
         var tagSize = 100 * Math.Min(h, MiniTextCap * 2) * 1.7 / probe.Height / 4.5;
         var tag = new FormattedText(tagText, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, tagSize, tagBrush, dpi);
@@ -368,11 +459,12 @@ public sealed class ScoreChart : FrameworkElement
             if (_overlays)
             {
                 var best = double.NegativeInfinity;
+                for (var i = 0; i < _off; i++) best = Math.Max(best, _all[i].Value);
                 for (var i = 0; i < n; i++)
                 {
                     if (_points[i].Value > best)
                     {
-                        if (i > 0) dc.DrawEllipse(pbBrush, null, pts[i], 3, 3);
+                        if (i + _off > 0) dc.DrawEllipse(pbBrush, null, pts[i], 3, 3);
                         best = _points[i].Value;
                     }
                 }
@@ -465,7 +557,7 @@ public sealed class ScoreChart : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (PointClicked is null) return;
         var idx = IndexAt(e);
-        if (idx >= 0) PointClicked(idx);
+        if (idx >= 0) PointClicked(idx + _off);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)
