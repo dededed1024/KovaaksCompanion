@@ -197,7 +197,10 @@ public sealed class ScatterChart : FrameworkElement
 
     (double Left, double Pw, double Ph, double XLo, double XHi, double YLo, double YHi, List<double> XTicks, List<double> YTicks) Layout(double w, double h)
     {
-        double xMin = _points.Min(p => p.X), xMax = _points.Max(p => p.X), yMin = _points.Min(p => p.Y), yMax = _points.Max(p => p.Y);
+        double xMin = _points.Min(p => p.X), xMax = _points.Max(p => p.X), yMax = _points.Max(p => p.Y);
+        // The axis starts at the lowest group median, not the lowest dot: one bad run would squash everything near the top flat. Dots below are drawn on the axis line.
+        var yMin = Enumerable.Range(0, _points.Count).GroupBy(i => _groups is { } gl && i < gl.Count ? gl[i] : 0)
+            .Min(g => { var ys = g.Select(i => _points[i].Y).OrderBy(v => v).ToList(); return ys[ys.Count / 2]; });
         double Pad(double lo, double hi) => hi - lo < 1e-9 ? Math.Max(Math.Abs(hi) * 0.05, 1e-3) : (hi - lo) * 0.08;
         var xt = ScoreChart.NiceTicks(xMin - Pad(xMin, xMax), xMax + Pad(xMin, xMax), _xFormat.EndsWith('%'));
         var yt = ScoreChart.NiceTicks(yMin - Pad(yMin, yMax), yMax + Pad(yMin, yMax), _yFormat.EndsWith('%'));
@@ -227,7 +230,7 @@ public sealed class ScatterChart : FrameworkElement
         var sep = InsightDraw.WithAlpha(InsightDraw.Res("Separator"), 0.5);
         var (left, pw, ph, xLo, xHi, yLo, yHi, xt, yt) = Layout(w, h);
         double X(double v) => left + (v - xLo) / (xHi - xLo) * pw;
-        double Y(double v) => Top + (1 - (v - yLo) / (yHi - yLo)) * ph;
+        double Y(double v) => Top + (1 - (Math.Max(v, yLo) - yLo) / (yHi - yLo)) * ph;
         var dashed = new Pen(sep, 1) { DashStyle = new DashStyle([2, 3], 0) };
         foreach (var t in yt)
         {
@@ -308,7 +311,7 @@ public sealed class ScatterChart : FrameworkElement
         for (var i = 0; i < _points.Count; i++)
         {
             var px = left + (_points[i].X - xLo) / (xHi - xLo) * pw;
-            var py = Top + (1 - (_points[i].Y - yLo) / (yHi - yLo)) * ph;
+            var py = Top + (1 - (Math.Max(_points[i].Y, yLo) - yLo) / (yHi - yLo)) * ph;
             var d = (px - m.X) * (px - m.X) + (py - m.Y) * (py - m.Y);
             if (d < bestD) { bestD = d; best = i; }
         }
