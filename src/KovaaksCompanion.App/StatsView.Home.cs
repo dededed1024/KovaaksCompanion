@@ -1050,11 +1050,10 @@ public partial class StatsView
         nm.Inlines.Add(new System.Windows.Documents.Run(name));
         nm.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(nm, 1, new Thickness(4, 0, 16, 0));
-        var bench = tier != null ? TierBenchmarkName(name) : null;
-        var benchText = Text(bench ?? "-", 12, DimB);
+        var benchText = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         benchText.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(benchText, 2, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        var ac = Text(tier?.Label ?? "-", 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold);
+        var ac = Text(tier?.Label ?? (bands != null ? L.T("UNRANK") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold);
         Put(ac, 3, new Thickness(0), HorizontalAlignment.Center);
         var scoreFg = tier != null ? ChartPaths.TextTone(tier.Brush) : FgB;
         var sc = Text(r.Score.ToString("0.#"), 13, scoreFg, FontWeights.SemiBold);
@@ -1251,7 +1250,7 @@ public partial class StatsView
         var bench = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         bench.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(bench, 1, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        Put(Text(tier?.Label ?? "-", 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
+        Put(Text(tier?.Label ?? (stats.Best > 0 && TierBands(name) != null ? L.T("UNRANK") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
         var sc = Text(stats.Best > 0 ? stats.Best.ToString("0.#") : "-", 13, tier != null ? ChartPaths.TextTone(tier.Brush) : FgB, FontWeights.SemiBold);
         System.Windows.Documents.Typography.SetNumeralAlignment(sc, FontNumeralAlignment.Tabular);
         Put(sc, 3, new Thickness(0), HorizontalAlignment.Right);
