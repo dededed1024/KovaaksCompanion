@@ -13,7 +13,8 @@ public sealed class PacketRing : IDisposable
     public const string ChunkPrefix = "kc_";
     public const string ChunkExt = ".chunk";
 
-    sealed record Entry(bool IsVideo, bool Key, double DtsSec, double PtsSec, int Length, int Chunk, long Offset);
+    /// <param name="CaptureNs">os_gettime_ns the frame was captured at (0 for audio and for outputs libobs gives no capture time).</param>
+    sealed record Entry(bool IsVideo, bool Key, double DtsSec, double PtsSec, int Length, int Chunk, long Offset, long CaptureNs = 0);
 
     sealed class Chunk
     {
@@ -98,7 +99,7 @@ public sealed class PacketRing : IDisposable
             var w = _open.Writer!;
             var off = w.Position;
             w.Write(data);
-            _entries.Add(new Entry(p.IsVideo, p.Keyframe, dts, pts, data.Length, _open.Id, off));
+            _entries.Add(new Entry(p.IsVideo, p.Keyframe, dts, pts, data.Length, _open.Id, off, (long)p.CaptureNs));
             _open.LastDtsSec = dts; _open.Entries++;
             if (p.IsVideo) _lastVideoSec = dts;
         }
@@ -158,7 +159,10 @@ public sealed class PacketRing : IDisposable
             paths = _chunks.ToDictionary(c => c.Id, c => c.Path);
         }
 
-        var samples = sel.Select(e => new Mp4Sample(e.IsVideo, e.Key, e.DtsSec, e.PtsSec, e.Length)).ToList();
+        // Video frames are stamped with the time each one was really captured (like the per-frame RTCTIME of the ffmpeg recorder), not with a grid of
+        // frame number x interval: a frame that libobs rendered late keeps its true time. Audio keeps the encoder clock.
+        var times = FrameTimes(sel);
+        var samples = sel.Select((e, i) => new Mp4Sample(e.IsVideo, e.Key, times[i], e.PtsSec + (times[i] - e.DtsSec), e.Length)).ToList();
         var readers = new Dictionary<int, FileStream>();
         try
         {
@@ -175,7 +179,27 @@ public sealed class PacketRing : IDisposable
             }, originSec);
         }
         finally { foreach (var r in readers.Values) r.Dispose(); }
-        return (sel[0].DtsSec, sel.Last(e => e.IsVideo).DtsSec);
+        int firstV = sel.FindIndex(e => e.IsVideo), lastV = sel.FindLastIndex(e => e.IsVideo);
+        return (times[firstV], times[lastV]);
+    }
+
+    /// <summary>Strictly increasing ring time of every selected entry: captured frames use their capture time, the rest their packet time.</summary>
+    double[] FrameTimes(List<Entry> sel)
+    {
+        const double MinStep = 1e-4;
+        var t = new double[sel.Count];
+        var prev = double.NegativeInfinity;
+        for (int i = 0; i < sel.Count; i++)
+        {
+            var e = sel[i];
+            if (!e.IsVideo) { t[i] = e.DtsSec; continue; }
+            var v = e.CaptureNs != 0 ? (e.CaptureNs - OriginNs) / 1e9 : e.DtsSec;
+            // never earlier than the packet's own clock (the origin is the earliest capture - pts): a frame cannot be captured before it was timed
+            v = Math.Max(v, e.DtsSec);
+            if (v <= prev) v = prev + MinStep;
+            t[i] = prev = v;
+        }
+        return t;
     }
 
     public void Dispose()
