@@ -41,7 +41,9 @@
                                 BorderBrush="{DynamicResource Edge}" BorderThickness="0">
                             <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
                         </Border>
-                        <UniformGrid x:Name="CelebrationHost" Grid.Row="2" Columns="2" HorizontalAlignment="Center" Margin="0,16,0,0" Visibility="Collapsed"/>
+                        <Border x:Name="CelebrationCard" Grid.Row="2" HorizontalAlignment="Stretch" Margin="0,16,0,0" Padding="8,16,8,8" CornerRadius="18" BorderThickness="1" Visibility="Collapsed">
+                            <UniformGrid x:Name="CelebrationHost" Columns="1"/>
+                        </Border>
                     </Grid>
                 </Viewbox>
                 <Grid x:Name="HomeHost" HorizontalAlignment="Center" Margin="0,24,0,24"/>

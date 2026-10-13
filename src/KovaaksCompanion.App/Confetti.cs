@@ -10,11 +10,7 @@ public sealed class Confetti : FrameworkElement
     {
         public double X, Y, Vx, Vy, Rot, Vr, W, H, Flip, Vf, Age, Life;
         public Brush Fill;
-        /// <summary>Stays on the floor once landed instead of fading out.</summary>
-        public bool Rests, Landed;
     }
-
-    const double RestShare = 0.12;
 
     const double Drag = 2.4;
     readonly List<Piece> _pieces = [];
@@ -29,7 +25,6 @@ public sealed class Confetti : FrameworkElement
         if (w <= 0 || h <= 0) return;
         var palette = colors.Concat([Color.FromRgb(0xFF, 0x37, 0x5F), Color.FromRgb(0xFF, 0x9F, 0x0A), Color.FromRgb(0xFF, 0xD6, 0x0A), Color.FromRgb(0x30, 0xD1, 0x58), Color.FromRgb(0x0A, 0x84, 0xFF), Color.FromRgb(0xBF, 0x5A, 0xF2)])
             .Select(c => { var b = new SolidColorBrush(c); b.Freeze(); return (Brush)b; }).ToArray();
-        _pieces.RemoveAll(p => p.Landed);
         Cannon(0, h, 1, palette, h);
         Cannon(w, h, -1, palette, h);
         if (_running) return;
@@ -38,11 +33,17 @@ public sealed class Confetti : FrameworkElement
         CompositionTarget.Rendering += OnFrame;
     }
 
+    /// <summary>Removes every piece.</summary>
+    public void Clear()
+    {
+        _pieces.Clear();
+        InvalidateVisual();
+    }
+
     void Cannon(double x, double y, int dir, Brush[] palette, double h)
     {
         for (var i = 0; i < 110; i++)
         {
-            var rests = _rng.NextDouble() < RestShare;
             var angle = (50 + _rng.NextDouble() * 30) * Math.PI / 180; // above the horizontal, toward the middle
             var speed = h * (1.5 + _rng.NextDouble() * 1.5);
             var size = 9 + _rng.NextDouble() * 9;
@@ -55,7 +56,6 @@ public sealed class Confetti : FrameworkElement
                 Flip = _rng.NextDouble() * Math.PI * 2, Vf = 6 + _rng.NextDouble() * 8,
                 Age = -_rng.NextDouble() * 0.2, Life = 3 + _rng.NextDouble() * 1.8,
                 Fill = palette[_rng.Next(palette.Length)],
-                Rests = rests,
             });
         }
     }
@@ -70,16 +70,8 @@ public sealed class Confetti : FrameworkElement
         for (var i = _pieces.Count - 1; i >= 0; i--)
         {
             var p = _pieces[i];
-            if (p.Landed) continue;
             p.Age += dt;
-            if (p.Rests && p.Age > 0 && p.Vy > 0 && p.Y >= ActualHeight - p.H - 2)
-            {
-                p.Landed = true; p.Vx = p.Vy = 0; p.Flip = 0;
-                p.Y = ActualHeight - p.H / 2 - _rng.NextDouble() * 12;
-                _pieces[i] = p;
-                continue;
-            }
-            if ((!p.Rests && p.Age >= p.Life) || p.Y > ActualHeight + 40) { _pieces.RemoveAt(i); continue; }
+            if (p.Age >= p.Life || p.Y > ActualHeight + 40) { _pieces.RemoveAt(i); continue; }
             moving = true;
             if (p.Age > 0)
             {
@@ -99,7 +91,7 @@ public sealed class Confetti : FrameworkElement
         foreach (var p in _pieces)
         {
             if (p.Age <= 0) continue;
-            var fade = p.Rests ? 1 : Math.Clamp((p.Life - p.Age) / (p.Life * 0.3), 0, 1);
+            var fade = Math.Clamp((p.Life - p.Age) / (p.Life * 0.3), 0, 1);
             dc.PushOpacity(fade);
             dc.PushTransform(new TranslateTransform(p.X, p.Y));
             dc.PushTransform(new RotateTransform(p.Rot));

@@ -90,6 +90,9 @@
   <data name="Copy as image" xml:space="preserve"><value>이미지로 복사</value></data>
   <data name="No scenarios" xml:space="preserve"><value>시나리오 없음</value></data>
   <data name="UNRANK" xml:space="preserve"><value>UNRANK</value></data>
+  <data name="Complete!" xml:space="preserve"><value>Complete!</value></data>
+  <data name="Tier Up!" xml:space="preserve"><value>Tier Up!</value></data>
+  <data name="Fanfare!" xml:space="preserve"><value>팡파레!</value></data>
   <data name="SCENARIO" xml:space="preserve"><value>시나리오</value></data>
   <data name="Last played {0}" xml:space="preserve"><value>마지막 플레이 {0}</value></data>
   <data name="Not played yet" xml:space="preserve"><value>아직 플레이하지 않음</value></data>
