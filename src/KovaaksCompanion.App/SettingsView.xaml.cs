@@ -274,29 +274,17 @@ public partial class SettingsView : UserControl
     {
         var root = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
         var head = new Grid();
-        head.ColumnDefinitions.Add(new ColumnDefinition());
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 64 });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = new TextBlock { Foreground = (Brush)FindResource("Fg"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+        var title = new TextBlock { Foreground = (Brush)FindResource("Fg"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 8, 0) };
         var remove = new Button { Content = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = (Brush)FindResource("Red"), ToolTip = "Remove", Style = (Style)FindResource("SheetClose"), Width = 34, Height = 30 };
-        Grid.SetColumn(remove, 1);
-        head.Children.Add(title); head.Children.Add(remove);
-        var devices = new ComboBox { Margin = new Thickness(0, 6, 0, 0) };
-        var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        Slider Row(int r, string label, double min, double max, double val)
-        {
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var margin = new Thickness(0, r == 0 ? 0 : 8, 0, 0);
-            var l = new TextBlock { Text = label, Foreground = (Brush)FindResource("Fg"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, margin.Top, 0, 0) };
-            var sl = new Slider { Minimum = min, Maximum = max, Value = val, SmallChange = 1, LargeChange = 5, IsSnapToTickEnabled = true, TickFrequency = 1, Margin = margin, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetRow(l, r); Grid.SetRow(sl, r);
-            Grid.SetColumn(sl, 1);
-            grid.Children.Add(l); grid.Children.Add(sl);
-            return sl;
-        }
-        var size = Row(0, L.T("Size"), 10, 40, slot.Size);
-        root.Children.Add(head); root.Children.Add(devices); root.Children.Add(grid);
+        var devices = new ComboBox { VerticalAlignment = VerticalAlignment.Center };
+        var size = new Slider { Minimum = 10, Maximum = 40, Value = slot.Size, SmallChange = 1, LargeChange = 5, IsSnapToTickEnabled = true, TickFrequency = 1, Margin = new Thickness(12, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Size") };
+        Grid.SetColumn(devices, 1); Grid.SetColumn(size, 2); Grid.SetColumn(remove, 3);
+        head.Children.Add(title); head.Children.Add(devices); head.Children.Add(size); head.Children.Add(remove);
+        root.Children.Add(head);
 
         var number = new TextBlock { Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
         var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85, Cursor = Cursors.SizeAll, Child = number };
@@ -393,7 +381,7 @@ public partial class SettingsView : UserControl
         for (int i = 0; i < _cards.Count; i++)
         {
             var c = _cards[i];
-            c.Title.Text = L.F("Webcam {0}", i + 1);
+            c.Title.Text = (i + 1).ToString();
             var (l, t, w, h) = CamBox(c);
             c.Marker.Width = w; c.Marker.Height = h;
             c.Marker.Background = (Brush)FindResource(CamColors[i % CamColors.Length]);

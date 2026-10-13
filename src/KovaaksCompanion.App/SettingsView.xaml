@@ -180,7 +180,7 @@
                                     <TextBlock Text="{app:Loc 'Save video for PB only'}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnPbOnlyLabel"/>
                                     <CheckBox Grid.Column="1" x:Name="PbOnly" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
                                 </Grid>
-                                <Grid Margin="0,4,0,0">
+                                <Grid Margin="0,6,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -188,7 +188,7 @@
                                     <TextBlock Text="{app:Loc 'Keep personal best replays'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnKeepPbLabel"/>
                                     <CheckBox Grid.Column="1" x:Name="KeepPb" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
                                 </Grid>
-                                <Grid Margin="0,4,0,0">
+                                <Grid Margin="0,6,0,0">
                                 <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
