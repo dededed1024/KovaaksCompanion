@@ -25,7 +25,7 @@ public static class AccessGuard
         AppLog.Write("access", "preflight blocked: " + string.Join("; ", blocked.Select(b => b.Folder)));
         var ok = GrantMany(blocked);
         AppLog.Write("access", ok ? "preflight granted" : "preflight grant failed or declined");
-        lock (Gate) foreach (var b in blocked) Asked[(b.Write ? "w:" : "r:") + b.Folder] = ok;
+        lock (Gate) foreach (var b in blocked) Asked.Add((b.Write ? "w:" : "r:") + b.Folder);
         return blocked.Where(b => !Accessible(b.Folder, b.Write)).Select(b => b.Folder).ToList();
     }
 
@@ -52,20 +52,12 @@ public static class AccessGuard
     }
 
     static readonly object Gate = new();
-    static readonly Dictionary<string, bool> Asked = new(StringComparer.OrdinalIgnoreCase);
+    static readonly HashSet<string> Asked = new(StringComparer.OrdinalIgnoreCase);
 
-    public static T Run<T>(string folder, bool write, Func<T> op)
+    public static void Run(string folder, bool write, Action op)
     {
-        try { return op(); }
-        catch (UnauthorizedAccessException e) when (TryGrant(folder, write, e)) { return op(); }
-    }
-
-    public static void Run(string folder, bool write, Action op) => Run(folder, write, () => { op(); return 0; });
-
-    public static async Task<T> RunAsync<T>(string folder, bool write, Func<Task<T>> op)
-    {
-        try { return await op(); }
-        catch (UnauthorizedAccessException e) when (TryGrant(folder, write, e)) { return await op(); }
+        try { op(); }
+        catch (UnauthorizedAccessException e) when (TryGrant(folder, write, e)) { op(); }
     }
 
     static bool TryGrant(string folder, bool write, UnauthorizedAccessException e)
@@ -73,10 +65,10 @@ public static class AccessGuard
         var key = (write ? "w:" : "r:") + folder;
         lock (Gate)
         {
-            if (Asked.ContainsKey(key)) return false; // already asked: a second denial is a real failure
+            if (Asked.Contains(key)) return false; // already asked: a second denial is a real failure
             AppLog.Write("access", $"denied: {folder}: {e.Message}; requesting {(write ? "modify" : "read")} grant");
             var ok = GrantMany([(folder, write)]);
-            Asked[key] = ok;
+            Asked.Add(key);
             AppLog.Write("access", ok ? $"granted: {folder}" : $"grant failed or declined: {folder}");
             return ok;
         }

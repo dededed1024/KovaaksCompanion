@@ -70,7 +70,7 @@ public static class Autostart
         catch (System.ComponentModel.Win32Exception) { }
     }
 
-    static int Run(params string[] args)
+    static void Run(params string[] args)
     {
         var psi = new ProcessStartInfo("schtasks.exe")
         { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
@@ -79,6 +79,5 @@ public static class Autostart
         p.StandardOutput.ReadToEnd();
         p.StandardError.ReadToEnd();
         p.WaitForExit();
-        return p.ExitCode;
     }
 }
