@@ -7,7 +7,7 @@ namespace KovaaksCompanion.App;
 public static class ChartPaths
 {
     /// <summary>Fritsch-Carlson tangents (dy/dx per point); x must be non-decreasing.</summary>
-    static double[] Tangents(IReadOnlyList<Point> p)
+    public static double[] Tangents(IReadOnlyList<Point> p)
     {
         var n = p.Count;
         var d = new double[n - 1];
@@ -38,8 +38,8 @@ public static class ChartPaths
         }
     }
 
-    /// <summary>Y of the curve <see cref="CurveTo"/> draws at <paramref name="x"/>: the Bezier x is linear in t, so each segment is a cubic Hermite in x. NaN outside the points.</summary>
-    public static double YAt(IReadOnlyList<Point> p, double x)
+    /// <summary>Y of the curve <see cref="CurveTo"/> draws at <paramref name="x"/>: the Bezier x is linear in t, so each segment is a cubic Hermite in x. NaN outside the points. Pass <paramref name="tangents"/> (from <see cref="Tangents"/>) when sampling the same points repeatedly.</summary>
+    public static double YAt(IReadOnlyList<Point> p, double x, double[]? tangents = null)
     {
         var n = p.Count;
         if (n == 0 || x < p[0].X) return double.NaN;
@@ -49,7 +49,7 @@ public static class ChartPaths
         var dx = p[i + 1].X - p[i].X;
         var t = (x - p[i].X) / dx;
         if (n == 2) return p[i].Y + (p[i + 1].Y - p[i].Y) * t;
-        var m = Tangents(p);
+        var m = tangents ?? Tangents(p);
         double y0 = p[i].Y, y3 = p[i + 1].Y, y1 = y0 + m[i] * dx / 3, y2 = y3 - m[i + 1] * dx / 3, u = 1 - t;
         return u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3;
     }

@@ -55,6 +55,8 @@ public sealed class RunChart : FrameworkElement
     IReadOnlyList<ChartPoint> _points = [];
     IReadOnlyList<double> _kills = [];
     readonly HashSet<ChartSeries> _visible = [];
+    /// <summary>Per-series curve points and tangents for <see cref="At"/>, built on first use (it runs every frame).</summary>
+    readonly Dictionary<ChartSeries, (List<Point> Points, double[]? Tangents)> _curves = [];
     IReadOnlyList<ChartPoint> _ghost = [];
     double _duration, _playhead;
 
@@ -72,6 +74,7 @@ public sealed class RunChart : FrameworkElement
     public void Set(IReadOnlyList<ChartPoint> points, double duration, IReadOnlyList<double>? killVideoSecs = null)
     {
         _points = points; _duration = duration; _kills = killVideoSecs ?? [];
+        _curves.Clear();
         InvalidateVisual();
     }
 
@@ -92,7 +95,15 @@ public sealed class RunChart : FrameworkElement
     public ChartPoint? At(double videoSec)
     {
         if (_points.Count == 0 || _points[0].VideoSec > videoSec) return null;
-        double V(ChartSeries s) => ChartPaths.YAt(_points.Where(p => !double.IsNaN(p[s])).Select(p => new Point(p.VideoSec, p[s])).ToList(), videoSec);
+        double V(ChartSeries s)
+        {
+            if (!_curves.TryGetValue(s, out var c))
+            {
+                var pts = _points.Where(p => !double.IsNaN(p[s])).Select(p => new Point(p.VideoSec, p[s])).ToList();
+                _curves[s] = c = (pts, pts.Count > 2 ? ChartPaths.Tangents(pts) : null);
+            }
+            return ChartPaths.YAt(c.Points, videoSec, c.Tangents);
+        }
         return new ChartPoint(videoSec, V(ChartSeries.Accuracy), V(ChartSeries.Score), V(ChartSeries.Kills), V(ChartSeries.Shots), V(ChartSeries.Hits), V(ChartSeries.MouseSpeed));
     }
 
