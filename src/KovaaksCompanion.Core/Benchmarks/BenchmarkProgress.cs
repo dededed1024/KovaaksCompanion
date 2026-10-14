@@ -155,7 +155,7 @@ public sealed record BenchmarkProgress(double Progress, int OverallRank, IReadOn
 }
 
 /// <summary>A player's best score and number of plays of one scenario on the server.</summary>
-public sealed record ServerBest(double Score, int Plays);
+public sealed record ScenarioTotals(double Score, int Plays);
 
 /// <summary>Reads a player's server data from KovaaK's public web API (no login needed).</summary>
 public sealed class KovaaksApi(HttpClient? http = null)
@@ -205,9 +205,9 @@ public sealed class KovaaksApi(HttpClient? http = null)
     }
 
     /// <summary>The player's best score and play count of every scenario they have played (a few paged requests).</summary>
-    public async Task<Dictionary<string, ServerBest>> GetTotalPlaysAsync(string username, CancellationToken ct = default)
+    public async Task<Dictionary<string, ScenarioTotals>> GetTotalPlaysAsync(string username, CancellationToken ct = default)
     {
-        var res = new Dictionary<string, ServerBest>(StringComparer.OrdinalIgnoreCase);
+        var res = new Dictionary<string, ScenarioTotals>(StringComparer.OrdinalIgnoreCase);
         for (var page = 0; page < 20; page++)
         {
             var json = await _http.GetStringAsync(
@@ -219,7 +219,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
                 if (!e.TryGetProperty("scenarioName", out var n) || n.GetString() is not { Length: > 0 } name) continue;
                 var score = e.TryGetProperty("score", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetDouble() : 0;
                 var plays = e.TryGetProperty("counts", out var c) && c.TryGetProperty("plays", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : 0;
-                res[name] = new ServerBest(score, plays);
+                res[name] = new ScenarioTotals(score, plays);
             }
             if (data.GetArrayLength() < 100) break;
         }

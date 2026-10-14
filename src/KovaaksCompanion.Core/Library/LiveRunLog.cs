@@ -4,9 +4,9 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core.Library;
 
 /// <summary>
-/// Session id per run in sessions.dat, a signed masked file (<see cref="SignedFile"/>): run key (<see cref="UiState.RunKey"/>) to the session's id.
+/// Session id per run in the archive database (<see cref="ArchiveDb"/>, once the sessions.dat file): run key (<see cref="UiState.RunKey"/>) to the session's id.
 /// Plays (local runs and server-only scores alike) sharing an id are one <see cref="PlaySession"/>. Ids are GUIDs. A live session is one game launch;
-/// plays without an id (legacy local runs, server records) are grouped once by <see cref="PlaySession.DefaultGap"/> and then kept. A tampered file reads as empty.
+/// plays without an id (legacy local runs, server records) are grouped once by <see cref="PlaySession.DefaultGap"/> and then kept. The <c>path</c> of every method is the database file.
 /// </summary>
 public static class LiveRunLog
 {
@@ -19,7 +19,7 @@ public static class LiveRunLog
     {
         lock (Gate)
         {
-            var all = LoadFile(path);
+            var all = LoadFile(path) ?? [];
             foreach (var kv in Pending) all[kv.Key] = kv.Value;
             return all;
         }
@@ -31,26 +31,42 @@ public static class LiveRunLog
         lock (Gate)
         {
             if (Pending.Count == 0) return;
-            var all = LoadFile(path);
-            foreach (var kv in Pending) all[kv.Key] = kv.Value;
-            SaveFile(path, all);
-            Pending.Clear();
+            if (Save(path, Pending, replace: true)) Pending.Clear(); // kept when the write failed: the next flush tries again
         }
     }
 
-    static Dictionary<string, Guid> LoadFile(string path)
+    /// <summary>Null when the database cannot be read (nothing may then be assigned or written over what is there).</summary>
+    static Dictionary<string, Guid>? LoadFile(string path)
+    {
+        try { return new ArchiveDb(path).LoadSessions(); }
+        catch (IOException e) { Diagnostics.ErrorReporter.Report("session ids load " + path, e); return null; }
+    }
+
+    static bool Save(string path, IEnumerable<KeyValuePair<string, Guid>> entries, bool replace)
+    {
+        try
+        {
+            AccessGuard.Run(Path.GetDirectoryName(path)!, true, () => new ArchiveDb(path).SaveSessions(entries, replace));
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("session ids save " + path, e); return false; }
+    }
+
+    /// <summary>
+    /// Reads the earlier sessions.dat (signed and masked; before that a plain JSON file). Null when it is missing or cannot be read.
+    /// GUID strings; files from before GUIDs hold numbers, which map to a fixed GUID each so their sessions stay together.
+    /// </summary>
+    internal static Dictionary<string, Guid>? ReadLegacy(string path)
     {
         try
         {
             if (SignedFile.TryReadMasked(path) is { } b) return Parse(b);
-            // Older plain-JSON file: accepted once; the next save signs it.
             if (File.Exists(path) && SignedFile.TryRead(path) == null && IsPlainJson(path)) return Parse(File.ReadAllBytes(path));
-            return [];
+            return null;
         }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return []; }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>GUID strings; files from before GUIDs hold numbers, which map to a fixed GUID each so their sessions stay together.</summary>
     static Dictionary<string, Guid> Parse(byte[] json)
     {
         try { return JsonSerializer.Deserialize<Dictionary<string, Guid>>(json) ?? []; }
@@ -62,16 +78,6 @@ public static class LiveRunLog
     }
 
     static bool IsPlainJson(string path) => File.ReadAllBytes(path) is { Length: > 0 } b && b[0] == (byte)'{';
-
-    static void SaveFile(string path, Dictionary<string, Guid> all)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(path)!;
-            AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); SignedFile.WriteMasked(path, JsonSerializer.SerializeToUtf8Bytes(all)); });
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("live runs save " + path, e); }
-    }
 
     /// <summary>A new id for one session.</summary>
     public static Guid NewId() => Guid.NewGuid();
@@ -95,8 +101,10 @@ public static class LiveRunLog
 
     static Dictionary<string, Guid> AssignLocked(string path, IEnumerable<(string Scenario, DateTime Start, DateTime End)> plays)
     {
-        var all = Load(path);
-        var changed = false;
+        var all = LoadFile(path);
+        if (all == null) return Load(path); // unreadable: assign nothing, so nothing is written over the stored ids
+        var added = new Dictionary<string, Guid>();
+        foreach (var kv in Pending) all[kv.Key] = kv.Value;
         Guid? prevId = null;
         var prevEnd = DateTime.MinValue;
         foreach (var (scenario, start, end) in plays.OrderBy(p => p.Start))
@@ -106,15 +114,13 @@ public static class LiveRunLog
             {
                 id = prevId is { } p && start - prevEnd <= PlaySession.DefaultGap ? p : NewId();
                 all[key] = id;
-                changed = true;
+                added[key] = id;
             }
             prevId = id;
             prevEnd = end;
         }
-        if (changed)
-        {
-            SaveFile(path, all.Where(kv => !Pending.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value)); // the live session's runs wait for Flush
-        }
+        // the live session's runs wait for Flush; a stored id is never replaced
+        if (added.Count > 0) Save(path, added.Where(kv => !Pending.ContainsKey(kv.Key)), replace: false);
         return all;
     }
 

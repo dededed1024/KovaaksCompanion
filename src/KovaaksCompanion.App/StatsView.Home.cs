@@ -137,14 +137,16 @@ public partial class StatsView
         RefreshResults();
     }
 
-    /// <summary>Local runs that beat every earlier local run and server score of their scenario.</summary>
+    /// <summary>Every play, local runs and server-only scores alike.</summary>
+    List<RunRecord> AllPlays() => _lib.AllRuns.Concat(ServerRuns().Runs).ToList();
+
     /// <summary>Personal-best runs, server-only plays included.</summary>
     IReadOnlySet<RunRecord> PbSet() => ServerRuns().Pbs is { Count: > 0 } sp ? _book.PersonalBestRuns.Concat(sp).ToHashSet() : _book.PersonalBestRuns;
 
     UIElement BuildHome()
     {
         var page = new StackPanel();
-        var runs = _lib.AllRuns.OrderByDescending(r => r.End).ToList();
+        var runs = AllPlays().OrderByDescending(r => r.End).ToList();
         var pbs = PbSet();
 
         if (PinnedTiersEnabled)
@@ -326,10 +328,11 @@ public partial class StatsView
         if (runs.Count > 0)
         {
             list.Children.Add(Caption("Favorite plays", scenarios.Count == 0));
+            var all = AllPlays();
             foreach (var (scenario, end) in runs)
             {
                 var sc = scenario; var e = end;
-                var run = _lib.AllRuns.FirstOrDefault(r => r.End == end && string.Equals(r.Scenario, scenario, StringComparison.OrdinalIgnoreCase));
+                var run = all.FirstOrDefault(r => r.End == end && string.Equals(r.Scenario, scenario, StringComparison.OrdinalIgnoreCase));
                 var sub = $"{end:yyyy-MM-dd} {ClockFormat.Clock(end)}" + (run is null ? "" : $" · {run.Score:0.#}");
                 list.Children.Add(ResultRow(null, scenario, scenario, sub, "", DimB, p => { CloseSearch(); _host.ShowRun(sc, e, true); }, tier: run is null ? null : TierOf(scenario, run.Score)));
             }
@@ -763,14 +766,14 @@ public partial class StatsView
     }
 
     /// <summary>Gives every run without a session id one (local runs and server-only scores in one pass) and loads the ids for grouping.</summary>
-    void AssignSessionIds() => PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.LiveRunFile, _lib.AllRuns.Concat(ServerRuns().Runs));
+    void AssignSessionIds() => PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.ArchiveDbFile, AllPlays());
 
     /// <summary>The sessions that have a run on <paramref name="day"/>, one clickable row each (opens the session popup), under a day heading.</summary>
     void FillDay(StackPanel host, DateTime day, IReadOnlySet<RunRecord> pbs)
     {
         host.Children.Clear();
-        var plays = _lib.AllRuns.Concat(ServerRuns().Runs).ToList(); // pbs already counts the server-only ones (PbSet)
-        PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.LiveRunFile, plays);
+        var plays = AllPlays(); // pbs already counts the server-only ones (PbSet)
+        PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.ArchiveDbFile, plays);
         var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
         host.Children.Add(Text(DayLabel(day) + " · " + (sessions.Count == 1 ? L.F("{0} session", sessions.Count) : L.F("{0} sessions", sessions.Count)), 15, FgB, FontWeights.SemiBold, new Thickness(0, 0, 0, 8)));
         DateTime? liveStart = null;
@@ -1274,7 +1277,7 @@ public partial class StatsView
         var ui = _host.Ui;
         var data = RankData();
         var pbs = PbSet();
-        return _lib.AllRuns
+        return AllPlays()
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
             .OrderByDescending(i => i.Fav).ThenByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
             .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();

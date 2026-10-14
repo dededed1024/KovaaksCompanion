@@ -24,6 +24,12 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- SQLite for the archive, on the winsqlite3.dll that ships with Windows: no native file to bundle or unpack, so the single-file exe stays one file. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.11" />
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Benchmarks/playlists.json" LogicalName="playlists.json" />
     <EmbeddedResource Include="Benchmarks/rank-data.json" LogicalName="rank-data.json" />

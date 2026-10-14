@@ -185,8 +185,7 @@
                                                         <StackPanel Orientation="Horizontal">
                                                             <Ellipse Width="9" Height="9" Fill="{Binding Brush}" VerticalAlignment="Center"/>
                                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Dim}" FontSize="12.5" Margin="8,0,8,0"/>
-                                                            <TextBlock Text="{Binding Value}" FontWeight="SemiBold" FontSize="13" MinWidth="30"/>
-                                                        </StackPanel>
+                                                            <TextBlock Text="{Binding Value}" FontWeight="SemiBold" FontSize="13" MinWidth="30"/>                                                        </StackPanel>
                                                     </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

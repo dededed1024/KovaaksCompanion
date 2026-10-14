@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 using KovaaksCompanion.Core.Perf;
 using KovaaksCompanion.Core.Stats;
@@ -69,20 +70,20 @@ public static class ReplayStore
         return best;
     }
 
-    /// <summary>Whether <see cref="FindRun"/> finds a replay of the run that has a video (a cached replay keeps only its graphs).</summary>
+    /// <summary>Whether <see cref="FindRun"/> finds a replay of the run that has a video (a replay kept in the archive has only its graphs).</summary>
     public static bool HasVideo(IReadOnlyList<ReplayInfo> replays, string scenario, DateTime end) =>
         FindRun(replays, scenario, end) is var i && i >= 0 && replays[i].HasVideo;
 
     /// <summary>
-    /// Moves a replay folder to <paramref name="cacheRoot"/> without its video: trajectory, perf, CSV and replay info stay, so the run's graphs still show.
+    /// Moves a replay folder to <paramref name="archiveRoot"/> without its video: trajectory, perf, CSV and replay info stay, so the run's graphs still show.
     /// Returns the new folder, or null when the move failed (a file in use); the original is then left as it was.
     /// </summary>
-    public static string? Retire(string folder, string cacheRoot)
+    public static string? Retire(string folder, string archiveRoot)
     {
-        var target = Path.Combine(cacheRoot, Path.GetFileName(folder));
+        var target = Path.Combine(archiveRoot, Path.GetFileName(folder));
         try
         {
-            Directory.CreateDirectory(cacheRoot);
+            Directory.CreateDirectory(archiveRoot);
             if (Directory.Exists(target)) Directory.Delete(target, true);
             Directory.CreateDirectory(target);
             foreach (var f in Directory.GetFiles(folder))
@@ -99,15 +100,17 @@ public static class ReplayStore
         }
     }
 
-    /// <summary>Retires the replay of the run (see <see cref="Retire"/>); false when the run has none or it could not be moved.</summary>
-    public static bool Delete(string root, string cacheRoot, string scenario, DateTime end, out RunRecord? record)
+    /// <summary>
+    /// Retires the replay of the run (see <see cref="Retire"/>) after its statistics are stored in <paramref name="store"/>; when storing fails (<see cref="IOException"/>)
+    /// the replay stays where it is. False when the run has no replay or it could not be moved.
+    /// </summary>
+    public static bool Delete(string root, string archiveRoot, string scenario, DateTime end, StatsStore store)
     {
-        record = null;
         var all = List(root);
         var i = FindRun(all.Select(s => s.Info).ToList(), scenario, end);
         if (i < 0) return false;
-        record = ReadRecord(all[i].Folder);
-        return Retire(all[i].Folder, cacheRoot) != null;
+        store.Archive(ReadRecord(all[i].Folder));
+        return Retire(all[i].Folder, archiveRoot) != null;
     }
 
     /// <summary>The statistics of the replay's CSV copy, perf and trajectory (a stats-folder scan yields all but the speed), or null when the folder has no readable CSV.</summary>
@@ -123,16 +126,18 @@ public static class ReplayStore
                 try { perf = PerfSummary.From(PerfParser.Parse(File.ReadAllBytes(p))); }
                 catch (PerfFormatException) { }
             }
-            RunSpeed? speed = null;
             var trajPath = Path.Combine(folder, ReplayFolder.TrajectoryFile);
-            if (File.Exists(trajPath))
-            {
-                try { speed = MouseSpeedStats.Analyze(TrajectorySerializer.Deserialize(File.ReadAllBytes(trajPath))); }
-                catch (TrajectoryFormatException) { }
-            }
+            var speed = File.Exists(trajPath) ? ReadSpeed(trajPath) : null;
             return RunRecord.From(StatsCsvParser.Parse(csv, File.ReadAllText(csv)), perf) with { Speed = speed };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or ArgumentException) { return null; }
+    }
+
+    /// <summary>The mouse-speed figures of a trajectory file; null when it is unreadable or too short to analyse.</summary>
+    public static RunSpeed? ReadSpeed(string trajectoryPath)
+    {
+        try { return MouseSpeedStats.Analyze(TrajectorySerializer.Deserialize(File.ReadAllBytes(trajectoryPath))); }
+        catch (TrajectoryFormatException) { return null; }
     }
 
     /// <summary>Throws <see cref="ReplayFormatException"/> / <see cref="TrajectoryFormatException"/> with the reason on unsupported versions.</summary>

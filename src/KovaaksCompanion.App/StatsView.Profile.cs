@@ -287,7 +287,7 @@ public partial class StatsView
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         left.Children.Add(ProfileHeader());
-        var runs = _lib.AllRuns.OrderByDescending(r => r.End).ToList();
+        var runs = AllPlays().OrderByDescending(r => r.End).ToList();
         if (runs.Count > 0)
         {
             var plays = runs.GroupBy(r => r.End.Date).ToDictionary(g => g.Key, g => g.Count());

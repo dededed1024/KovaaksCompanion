@@ -20,12 +20,12 @@ public sealed class ScenarioStats
 
     /// <param name="runs">Local runs, oldest first.</param>
     /// <param name="cloud">Server scores of the scenario.</param>
-    /// <param name="serverBest">The server's all-time best, which can be older than the scores in <paramref name="cloud"/>.</param>
-    public ScenarioStats(string scenario, IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore>? cloud = null, double serverBest = 0)
+    /// <param name="knownBest">The best score known beyond the records: the server's all-time best or a deleted run's, which can be older than the scores in <paramref name="cloud"/>.</param>
+    public ScenarioStats(string scenario, IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore>? cloud = null, double knownBest = 0)
     {
         Scenario = scenario;
         Runs = runs;
-        ServerBest = serverBest;
+        KnownBest = knownBest;
         Records = Merge(runs, cloud ?? []);
         _bestSoFar = new double[Records.Count];
         var best = double.MinValue;
@@ -40,14 +40,14 @@ public sealed class ScenarioStats
     public string Scenario { get; }
     public IReadOnlyList<RunRecord> Runs { get; }
     public IReadOnlyList<ScoreRecord> Records { get; }
-    public double ServerBest { get; }
+    public double KnownBest { get; }
 
     /// <summary>Records that beat every earlier record (the first counts), local or from the server.</summary>
     public List<ScoreRecord> PersonalBests { get; } = [];
 
     public int Plays => Records.Count;
     /// <summary>The best of all records and the server's all-time best.</summary>
-    public double Best => Math.Max(Records.Count == 0 ? 0 : _bestSoFar[^1], ServerBest);
+    public double Best => Math.Max(Records.Count == 0 ? 0 : _bestSoFar[^1], KnownBest);
     /// <summary>The best score of a local run; 0 without any.</summary>
     public double LocalBest => Runs.Count == 0 ? 0 : Runs.Max(r => r.Score);
     public double Average => Records.Count == 0 ? 0 : Records.Average(r => r.Score);

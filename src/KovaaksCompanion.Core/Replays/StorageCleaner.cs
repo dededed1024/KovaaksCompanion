@@ -111,17 +111,14 @@ public static class StorageCleaner
     public static List<StoredReplay> Expired(IReadOnlyList<StoredReplay> all, int days, DateTime now, Func<ReplayInfo, bool> keep) =>
         days <= 0 ? [] : all.Where(s => s.Info.End < now.AddDays(-days) && !keep(s.Info)).ToList();
 
-    /// <summary>Deletes the videos of the replay folders and keeps the rest of each replay in the cache (<paramref name="cacheRoot"/>). Returns how many were deleted; a folder in use is skipped.</summary>
-    public static int Delete(IEnumerable<StoredReplay> victims, StatsCache cache, string cacheRoot)
+    /// <summary>
+    /// Deletes the videos of the replay folders and keeps the rest of each replay in the archive (<paramref name="archiveRoot"/>). The statistics are stored first: when that
+    /// fails (<see cref="IOException"/>) no folder is touched. Returns how many were deleted; a folder in use is skipped.
+    /// </summary>
+    public static int Delete(IEnumerable<StoredReplay> victims, StatsStore store, string archiveRoot)
     {
-        var n = 0;
-        foreach (var s in victims)
-        {
-            var record = ReplayStore.ReadRecord(s.Folder);
-            if (ReplayStore.Retire(s.Folder, cacheRoot) == null) continue;
-            cache.Archive(record);
-            n++;
-        }
-        return n;
+        var list = victims.ToList();
+        store.Archive(list.Select(s => ReplayStore.ReadRecord(s.Folder)).OfType<RunRecord>().ToList()); // one transaction, not one per replay
+        return list.Count(s => ReplayStore.Retire(s.Folder, archiveRoot) != null);
     }
 }

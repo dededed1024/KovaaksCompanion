@@ -295,21 +295,27 @@ public partial class StatsView : UserControl
     {
         var folder = _host.Settings.StatsFolder;
         var replaysFolder = _host.ReplaysFolder;
-        var cachedReplays = _host.CachedReplaysFolder;
-        var cache = Cache;
+        var cachedReplays = _host.ArchiveReplaysFolder;
+        var store = Store;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var (lib, replays, serverBest, deletedBest, scores) = await Task.Run(() => {
+        var scanCache = _host.Settings.ScanCacheFile;
+        var (lib, replays, totals, deletedBest, scores) = await Task.Run(() => {
             var infos = ReplayStore.List(replaysFolder, cachedReplays).Select(s => s.Info).ToList();
-            var scanned = RunLibrary.Scan(folder).Verified(infos);
-            try { cache.ArchiveNew(scanned.AllRuns); } catch (System.IO.IOException) { } // stats-folder runs played without the app would be lost with their CSV
-            return (scanned.WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.BestScores(), cache.LoadAllScores());
+            var scanned = RunLibrary.Scan(folder, scanCache).Verified(infos);
+            try { store.ArchiveNew(scanned.AllRuns); } catch (System.IO.IOException) { } // stats-folder runs played without the app would be lost with their CSV
+            var archive = store.ReadArchive();
+            return (scanned.WithArchived(archive.Runs()).WithDpiFixes(dpiFixes), infos, LoadTotals(store, _host.Settings.EffectiveSteamId), archive.BestScores(), archive.Scores());
         });
         _book = _book.WithLibrary(lib);
         (_replays, _deletedBest) = (replays, deletedBest);
-        foreach (var (n, c) in scores) _book.SetCloud(n, c.Scores);
+        foreach (var (n, c) in scores)
+        {
+            _book.SetCloud(n, c.Scores);
+            if (DateTime.Now - c.FetchedAt < SyncInterval) _cloudFetched.TryAdd(n, c.FetchedAt); // fetched recently, even in an earlier run
+        }
         AssignSessionIds();
-        foreach (var (n, v) in deletedBest) _book.RaiseServerBest(n, v);
-        if (_rawProgress.Count == 0 || serverBest.Count != _serverBest.Count) { _serverBest = serverBest; RebuildProgress(); }
+        foreach (var (n, v) in deletedBest) _book.RaiseKnownBest(n, v);
+        if (_rawProgress.Count == 0 || totals.Count != _totals.Count) { _totals = totals; RebuildProgress(); }
         else ReapplyLocal();
         var celebrate = _celebrateNext;
         _celebrateNext = false;

@@ -11,7 +11,7 @@ public sealed class ScoreBook
     sealed record Summary(int Records, int PersonalBests, HashSet<RunRecord> PersonalBestRuns, HashSet<DateTime> PersonalBestDays, Dictionary<DateTime, int> PlaysPerDay);
 
     readonly Dictionary<string, IReadOnlyList<CloudScore>> _cloud = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, double> _serverBest = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, double> _knownBest = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, ScenarioStats> _stats = new(StringComparer.OrdinalIgnoreCase);
     Summary? _summary;
 
@@ -24,7 +24,7 @@ public sealed class ScoreBook
     {
         var book = new ScoreBook(lib);
         foreach (var (n, l) in _cloud) book._cloud[n] = l;
-        foreach (var (n, v) in _serverBest) book._serverBest[n] = v;
+        foreach (var (n, v) in _knownBest) book._knownBest[n] = v;
         return book;
     }
 
@@ -34,7 +34,7 @@ public sealed class ScoreBook
     public ScenarioStats For(string scenario)
     {
         if (_stats.TryGetValue(scenario, out var s)) return s;
-        return _stats[scenario] = new(scenario, Lib.Runs(scenario), _cloud.GetValueOrDefault(scenario), _serverBest.GetValueOrDefault(scenario));
+        return _stats[scenario] = new(scenario, Lib.Runs(scenario), _cloud.GetValueOrDefault(scenario), _knownBest.GetValueOrDefault(scenario));
     }
 
     /// <summary>Sets a scenario's server scores. False when they are the same as before.</summary>
@@ -47,10 +47,10 @@ public sealed class ScoreBook
     }
 
     /// <summary>Raises a scenario's server all-time best (it never goes down). False when unchanged.</summary>
-    public bool RaiseServerBest(string scenario, double score)
+    public bool RaiseKnownBest(string scenario, double score)
     {
-        if (score <= _serverBest.GetValueOrDefault(scenario)) return false;
-        _serverBest[scenario] = score;
+        if (score <= _knownBest.GetValueOrDefault(scenario)) return false;
+        _knownBest[scenario] = score;
         Invalidate(scenario);
         return true;
     }

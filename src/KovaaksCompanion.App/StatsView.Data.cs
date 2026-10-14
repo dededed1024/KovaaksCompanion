@@ -12,34 +12,34 @@ public partial class StatsView
     const int MaxParallel = 4;
 
     readonly CancellationTokenSource _cts = new();
-    StatsCache? _cacheStore;
+    StatsStore? _store;
     bool _syncing;
     DateTime? _serverSyncedAt;
     DispatcherTimer? _refreshTimer;
-    Dictionary<string, ServerBest> _serverBest = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, ScenarioTotals> _totals = new(StringComparer.OrdinalIgnoreCase);
 
-    StatsCache Cache => _cacheStore ??= _host.Settings.OpenCache();
+    StatsStore Store => _store ??= _host.Settings.OpenStore();
 
     static IEnumerable<(Benchmark B, Difficulty D)> AllDifficulties() =>
         BenchmarkCatalog.All.SelectMany(b => b.Difficulties.Select(d => (B: b, D: d))).DistinctBy(x => x.D.KovaaksBenchmarkId);
 
     /// <summary>The cached server bests of the account (runs off the UI thread).</summary>
-    static Dictionary<string, ServerBest> LoadServerBests(StatsCache cache, string steam) =>
-        steam.Length == 0 ? new(StringComparer.OrdinalIgnoreCase) : cache.LoadServerBests(steam);
+    static Dictionary<string, ScenarioTotals> LoadTotals(StatsStore store, string steam) =>
+        steam.Length == 0 ? new(StringComparer.OrdinalIgnoreCase) : store.LoadTotals(steam);
 
     /// <summary>Stores a difficulty's progress and feeds the server-best lookups.</summary>
     void ApplyProgress(Difficulty d, BenchmarkProgress p)
     {
         _rawProgress[d.KovaaksBenchmarkId] = p;
         _progress[d.KovaaksBenchmarkId] = WithLocal(p);
-        foreach (var s in p.Scenarios) if (s.Score > 0) _book.RaiseServerBest(s.Scenario, Math.Max(s.Score, _deletedBest.GetValueOrDefault(s.Scenario)));
+        foreach (var s in p.Scenarios) if (s.Score > 0) _book.RaiseKnownBest(s.Scenario, Math.Max(s.Score, _deletedBest.GetValueOrDefault(s.Scenario)));
     }
 
     /// <summary>Builds every difficulty's progress from the bundled thresholds and the cached server bests.</summary>
     void RebuildProgress()
     {
         foreach (var (_, d) in AllDifficulties())
-            if (BenchmarkProgress.FromBundle(d, n => _serverBest.TryGetValue(n, out var b) ? b.Score : null) is { } p) ApplyProgress(d, p);
+            if (BenchmarkProgress.FromBundle(d, n => _totals.TryGetValue(n, out var b) ? b.Score : null) is { } p) ApplyProgress(d, p);
     }
 
     /// <summary>The server progress with the local bests folded in, so tiers reflect runs the server does not have yet.</summary>
@@ -59,8 +59,8 @@ public partial class StatsView
     static readonly TimeSpan SyncInterval = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// Downloads the player's server bests (and webapp username) on the first call of each app run, then again once
-    /// <see cref="SyncInterval"/> has passed. In between the server is not asked: new runs come from the local library.
+    /// Downloads the player's server bests (and webapp username) when none are cached, then again once
+    /// <see cref="SyncInterval"/> has passed since the last download (also across app runs). In between the server is not asked: new runs come from the local library.
     /// </summary>
     async Task SyncServerAsync()
     {
@@ -70,8 +70,8 @@ public partial class StatsView
         var ct = _cts.Token;
         try
         {
-            var cache = Cache;
-            if (_serverSyncedAt is { } at && DateTime.Now - at < SyncInterval) return;
+            var store = Store;
+            if ((_serverSyncedAt ??= store.LoadSyncedAt(steam)) is { } at && _totals.Count > 0 && DateTime.Now - at < SyncInterval) return;
             var user = _host.Settings.UsernameFor(steam);
             if (string.IsNullOrEmpty(user))
             {
@@ -83,9 +83,10 @@ public partial class StatsView
             }
             var bests = await _api.GetTotalPlaysAsync(user, ct);
             if (bests.Count == 0) return;
-            await Task.Run(() => { try { cache.SaveServerBests(steam, bests); } catch (IOException) { } });
-            _serverBest = bests;
             _serverSyncedAt = DateTime.Now;
+            var syncedAt = _serverSyncedAt.Value;
+            await Task.Run(() => { try { store.SaveTotals(steam, bests); store.SaveSyncedAt(steam, syncedAt); } catch (IOException) { } });
+            _totals = bests;
             RebuildProgress();
             ScheduleRefresh();
             if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
@@ -134,10 +135,10 @@ public partial class StatsView
         var steam = _host.Settings.EffectiveSteamId;
         if (steam.Length == 0) return false;
         var stale = scenarios.Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(n => (_serverBest.Count == 0 || _serverBest.ContainsKey(n)) && !_cloudFetched.ContainsKey(n) && _cloudInflight.Add(n)).ToList();
+            .Where(n => (_totals.Count == 0 || _totals.ContainsKey(n)) && !_cloudFetched.ContainsKey(n) && _cloudInflight.Add(n)).ToList();
         if (stale.Count == 0) return false;
         var ct = _cts.Token;
-        var cache = Cache;
+        var store = Store;
         var changed = false;
         try
         {
@@ -153,12 +154,12 @@ public partial class StatsView
                     var l = await _api.GetLastScoresAsync(user, n, ct);
                     fresh[n] = l;
                     _cloudFetched[n] = DateTime.Now;
-                    changed |= RememberCloud(n, cache.WithCached(n, l));
+                    changed |= RememberCloud(n, store.WithCached(n, l));
                 }
                 catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: keep what is cached
                 finally { gate.Release(); }
             }));
-            if (fresh.Count > 0) _ = Task.Run(() => { try { cache.SaveScoresBatch(fresh); } catch (IOException) { } });
+            if (fresh.Count > 0) _ = Task.Run(() => { try { store.SaveScoresBatch(fresh); } catch (IOException) { } });
         }
         catch (OperationCanceledException) { }
         catch (Exception) when (!ct.IsCancellationRequested) { }

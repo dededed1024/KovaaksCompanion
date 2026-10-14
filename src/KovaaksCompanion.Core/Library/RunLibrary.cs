@@ -61,22 +61,45 @@ public sealed class RunLibrary
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or PerfFormatException) { return null; }
     }
 
-    /// <summary>Parses every stats CSV in the folder. Unreadable or foreign files are skipped.</summary>
-    public static RunLibrary Scan(string statsFolder)
+    /// <summary>Bump when <see cref="ScanEntry"/> or <see cref="RunRecord"/> changes shape, so older scan caches are rebuilt.</summary>
+    const int ScanSchema = 2;
+
+    /// <summary>What a scanned CSV looked like (and its .perf, which feeds the run too); the cached run is reused while neither file changes.</summary>
+    record ScanEntry(FileStamp Csv, FileStamp Perf, RunRecord? Run);
+
+    static (FileStamp Csv, FileStamp Perf) Stamp(string statsCsv) => (FileStamp.Of(statsCsv), FileStamp.OfOptional(PerfParser.PathFor(statsCsv)));
+
+    /// <summary>
+    /// Parses every stats CSV in the folder. Unreadable or foreign files are skipped. With <paramref name="cacheFile"/>, only the CSVs
+    /// that are new or changed since the last scan are parsed; the rest come from the cache.
+    /// </summary>
+    public static RunLibrary Scan(string statsFolder, string? cacheFile = null)
     {
         if (!Directory.Exists(statsFolder)) return new RunLibrary([]);
         var files = Directory.EnumerateFiles(statsFolder, "* Stats.csv").ToArray();
+        var known = cacheFile == null ? [] : CacheFile.Read<ScanEntry>(cacheFile, ScanSchema);
         var runs = new RunRecord?[files.Length];
+        var entries = new ScanEntry?[files.Length];
+        var parsed = 0;
         Parallel.For(0, files.Length, i =>
         {
+            (FileStamp Csv, FileStamp Perf) stamp;
+            try { stamp = Stamp(files[i]); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
+            if (known.TryGetValue(Path.GetFileName(files[i]), out var hit) && hit.Csv == stamp.Csv && hit.Perf == stamp.Perf) { (runs[i], entries[i]) = (hit.Run, hit); return; }
+            Interlocked.Increment(ref parsed);
             try
             {
                 using var fs = new FileStream(files[i], FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var sr = new StreamReader(fs);
                 runs[i] = RunRecord.From(StatsCsvParser.Parse(files[i], sr.ReadToEnd()), ReadPerf(files[i]));
+                entries[i] = new(stamp.Csv, stamp.Perf, runs[i]);
             }
-            catch (Exception e) when (e is IOException or FormatException or UnauthorizedAccessException or ArgumentException) { }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // maybe still being written: not cached
+            catch (Exception e) when (e is FormatException or ArgumentException) { entries[i] = new(stamp.Csv, stamp.Perf, null); } // foreign file: remembered as no run
         });
+        if (cacheFile != null && (parsed > 0 || known.Count != entries.Count(e => e != null)))
+            CacheFile.Write(cacheFile, ScanSchema, files.Zip(entries).Where(p => p.Second != null).ToDictionary(p => Path.GetFileName(p.First), p => p.Second!, StringComparer.OrdinalIgnoreCase));
         return new RunLibrary(runs.OfType<RunRecord>());
     }
 }

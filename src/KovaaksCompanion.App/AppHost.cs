@@ -39,7 +39,7 @@ public sealed class AppHost : IDisposable
     public AppHost(Application app)
     {
         _app = app;
-        Live = new LiveSession(_settings.LiveRunFile);
+        Live = new LiveSession(_settings.ArchiveDbFile);
         var loaded = _settings;
         _settings = loaded.WithDetectedPaths(); // the default data root depends on where KovaaK's is
         _settingsDirty = _settings != loaded;
@@ -48,7 +48,13 @@ public sealed class AppHost : IDisposable
         FolderAccess.Register(); _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile);
         L.Set(_settings.Language);
         Theme.Apply(_settings.Theme);
-        PlaySession.LiveIds = LiveRunLog.Load(_settings.LiveRunFile);
+        // opening the archive database checks it and imports the earlier files, which can take a while: not before the window
+        var archiveDb = _settings.ArchiveDbFile;
+        _ = Task.Run(() =>
+        {
+            var ids = LiveRunLog.Load(archiveDb);
+            if (PlaySession.LiveIds.Count == 0) PlaySession.LiveIds = ids;
+        });
         ErrorReporter.Configure(Http, App.CurrentVersion.ToString(3), () => _settings.SendErrorReports);
     }
     readonly string _uiFile;
@@ -58,7 +64,7 @@ public sealed class AppHost : IDisposable
     /// <summary>True while the game window is being recorded.</summary>
     public bool GameActive => _video?.IsRecording == true;
     public string ReplaysFolder => _settings.ReplaysFolder;
-    public string CachedReplaysFolder => _settings.CachedReplaysFolder;
+    public string ArchiveReplaysFolder => _settings.ArchiveReplaysFolder;
     /// <summary>Checks if a run's replay is currently being saved.</summary>
     public bool IsPending(string scenario, DateTime end) => PendingProgress(scenario, end) >= 0;
 
@@ -85,11 +91,15 @@ public sealed class AppHost : IDisposable
     public event Action? GameStateChanged;
 
     /// <summary>The embedded libobs runtime, unpacked and complete. Null when it cannot be extracted.</summary>
+    static string? _libobsRoot;
+
     public static string? ResolveLibobs()
     {
+        // Ensure hashes the whole embedded zip: do it once per process, not on every replay that opens
+        if (_libobsRoot != null) return _libobsRoot;
         var root = ObsBundle.Ensure(() => typeof(AppHost).Assembly.GetManifestResourceStream("libobs.zip"));
         AppLog.Write("obs", $"resolved: {root ?? "(none)"}");
-        return root;
+        return _libobsRoot = root;
     }
 
     /// <summary>Starts libobs (idempotent) so its device lists work; false when it is unavailable.</summary>
@@ -108,7 +118,7 @@ public sealed class AppHost : IDisposable
     {
         lock (_bestGate)
         {
-            _best ??= KovaaksCompanion.Core.Library.RunLibrary.Scan(_settings.StatsFolder).AllRuns
+            _best ??= KovaaksCompanion.Core.Library.RunLibrary.Scan(_settings.StatsFolder, _settings.ScanCacheFile).AllRuns
                 .Where(r => r.Start < run.Start)
                 .GroupBy(r => r.Scenario, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Max(r => r.Score), StringComparer.OrdinalIgnoreCase);
@@ -123,7 +133,7 @@ public sealed class AppHost : IDisposable
     readonly object _cleanGate = new();
 
     /// <summary>
-    /// Deletes the replay folders <paramref name="pick"/> chooses (never favorite runs, nor personal bests when kept) and keeps their statistics in the cache.
+    /// Deletes the replay folders <paramref name="pick"/> chooses (never favorite runs, nor personal bests when kept) and keeps their statistics in the archive.
     /// Right after a save it runs before the views reload, so they never list a run that is about to go. Returns true when something was deleted.
     /// </summary>
     bool RetireReplays(Func<List<StoredReplay>, Func<ReplayInfo, bool>, List<StoredReplay>> pick)
@@ -134,11 +144,11 @@ public sealed class AppHost : IDisposable
             {
                 var s = _settings;
                 var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet());
-                var cache = s.OpenCache();
+                var store = s.OpenStore();
                 var all = StorageCleaner.Scan(s.ReplaysFolder);
-                var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, cache.LoadAllScores().ToDictionary(kv => kv.Key, kv => kv.Value.Scores)).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
+                var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, store.LoadAllScores().ToDictionary(kv => kv.Key, kv => kv.Value.Scores)).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
                 bool Keep(ReplayInfo i) => favs.Contains(UiState.RunKey(i.Scenario, i.End)) || pbs.Contains(UiState.RunKey(i.Scenario, i.End));
-                var n = StorageCleaner.Delete(pick(all, Keep), cache, s.CachedReplaysFolder);
+                var n = StorageCleaner.Delete(pick(all, Keep), store, s.ArchiveReplaysFolder);
                 if (n > 0) AppLog.Write("storage", $"deleted {n} replay folder(s)");
                 return n > 0;
             }
@@ -160,7 +170,7 @@ public sealed class AppHost : IDisposable
                 var favs = s.DeleteBeatenRuns ? _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet()) : [];
                 var victims = Live.Saved(saved, folder, s.DeleteBeatenRuns, i => favs.Contains(UiState.RunKey(i.Scenario, i.End)), s.KeepPersonalBests);
                 if (victims.Count == 0) return;
-                var n = StorageCleaner.Delete(victims, s.OpenCache(), s.CachedReplaysFolder);
+                var n = StorageCleaner.Delete(victims, s.OpenStore(), s.ArchiveReplaysFolder);
                 if (n > 0) AppLog.Write("storage", $"deleted {n} beaten replay folder(s)");
             }
         }
@@ -181,39 +191,39 @@ public sealed class AppHost : IDisposable
     }
 
     /// <summary>
-    /// Keeps the statistics of replay folders in the cache (all of them, or only <paramref name="only"/>), so they still count once the folder is deleted.
-    /// Runs the cache already holds statistics of are skipped.
+    /// Keeps the statistics of replay folders in the archive (all of them, or only <paramref name="only"/>), so they still count once the folder is deleted.
+    /// Runs the archive already holds statistics of are skipped.
     /// </summary>
     void CacheReplays(string? only = null)
     {
         try
         {
-            var cache = _settings.OpenCache();
-            var have = only == null ? cache.ArchivedRuns().Select(r => (r.Scenario.ToLowerInvariant(), r.End)).ToHashSet() : new HashSet<(string, DateTime)>();
+            var store = _settings.OpenStore();
+            var have = only == null ? store.ArchivedKeys() : new HashSet<(string, DateTime)>();
             var replays = only != null ? new List<(string Folder, ReplayInfo Info)> { (only, ReplayStore.ReadInfo(only)) }
                 : ReplayStore.List(_settings.ReplaysFolder).Where(x => !have.Contains((x.Info.Scenario.ToLowerInvariant(), x.Info.End))).Select(x => (x.Folder, x.Info)).ToList();
             // a score that differs from the signed one means the stats CSV was edited; never keep it
             var records = replays.Select(x => ReplayStore.ReadRecord(x.Folder)).Zip(replays, (r, x) => (r, x.Info))
                 .Where(t => t.r != null && Math.Abs(t.r.Score - t.Info.Score) < 1e-6).Select(t => t.r!).ToList();
-            cache.Archive(records);
+            store.Archive(records);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("cache", "caching replays failed: " + e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "keeping replays failed: " + e.Message); }
     }
 
-    /// <summary>Deletes the run's video and keeps the rest of its replay (trajectory, perf, CSV, info) and its statistics in the cache.</summary>
-    public async void DeleteRun(string scenario, DateTime end, double score)
+    /// <summary>Deletes the run's video and keeps the rest of its replay (trajectory, perf, CSV, info) and its statistics in the archive.</summary>
+    public async Task<bool> DeleteRun(string scenario, DateTime end)
     {
         var s = _settings;
         try
         {
             await Task.Run(() =>
             {
-                ReplayStore.Delete(s.ReplaysFolder, s.CachedReplaysFolder, scenario, end, out var record);
-                s.OpenCache().Archive(record);
+                ReplayStore.Delete(s.ReplaysFolder, s.ArchiveReplaysFolder, scenario, end, s.OpenStore());
             });
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
         RunFinished?.Invoke();
+        return true;
     }
 
     public void Start(bool showMain)
@@ -224,7 +234,7 @@ public sealed class AppHost : IDisposable
         {
             _settings = detected;
             AppLog.FilePath = _settings.LogFile;
-            try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
+            SaveSettings();
         }
         PreflightAccess();
         BufferCleaner.Clean(_settings.BufferFolder); // leftovers of a crash; nothing records yet
@@ -261,6 +271,7 @@ public sealed class AppHost : IDisposable
         BuildTray();
         Autostart.Refresh(_settings.StartWithWindows);
         _ = Task.Run(() => { CacheReplays(); if (EnforceStorageLimits()) RunFinished?.Invoke(); });
+        _ = Task.Run(() => { try { _settings.OpenStore().BackupArchive(); } catch (IOException e) { AppLog.Write("archive", "backup failed: " + e.Message); } });
         if (showMain) ShowMain("Stats");
         _ = CheckForUpdate();
     }
@@ -336,6 +347,7 @@ public sealed class AppHost : IDisposable
         _video.GameLaunched += Live.Launch;
         _video.GameExited += () => _ = Live.Exit();
         _video.StateChanged += () => GameStateChanged?.Invoke();
+        _video.GameSized += (w, h) => { if (w != _settings.GameWidth || h != _settings.GameHeight) ApplySettings(_settings with { GameWidth = w, GameHeight = h }); };
         try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }
     }
 
@@ -425,6 +437,11 @@ public sealed class AppHost : IDisposable
         UiChanged?.Invoke();
     }
 
+    void SaveSettings()
+    {
+        try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
+    }
+
     /// <summary>Checks every folder the app uses and fixes all blocked ones with one UAC prompt.</summary>
     void PreflightAccess()
     {
@@ -442,7 +459,7 @@ public sealed class AppHost : IDisposable
         var old = _settings;
         _settings = s;
         AppLog.FilePath = s.LogFile;
-        try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
+        SaveSettings();
         PreflightAccess();
         if (s.Language != old.Language || s.Theme != old.Theme)
         {

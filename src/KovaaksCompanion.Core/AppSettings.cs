@@ -48,6 +48,9 @@ public sealed record AppSettings
     public Video.HandCamSave HandCamSave { get; init; } = Video.HandCamSave.Composite;
     /// <summary>Up to <see cref="Video.HandCamSlot.Max"/> hand-cams recorded alongside the game.</summary>
     public Video.HandCamSlots HandCams { get; init; } = [];
+    /// <summary>Size of the game window at the last recording (settings preview shape); 0 = never recorded.</summary>
+    public int GameWidth { get; init; }
+    public int GameHeight { get; init; }
 
     public static string DefaultDataFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KovaaksCompanion");
@@ -78,15 +81,26 @@ public sealed record AppSettings
     }
     [JsonIgnore] public string ReplaysFolder => Path.Combine(DataRoot, "sessions");
     [JsonIgnore] public string UiFile => Path.Combine(DefaultDataFolder, "ui.json");
-    /// <summary>Session ids per run, signed like runs.dat and kept next to it.</summary>
-    [JsonIgnore] public string LiveRunFile => Path.Combine(RunsCacheFolder, "sessions.dat");
-    /// <summary>Cache data lives in LocalAppData, not in the user-chosen data root.</summary>
+    /// <summary>The archive database: run statistics and server scores that are kept for good, and the session id of every run.</summary>
+    [JsonIgnore] public string ArchiveDbFile => Path.Combine(ArchiveFolder, Benchmarks.StatsStore.ArchiveDbFile);
+    /// <summary>The earlier session id file, imported into <see cref="ArchiveDbFile"/> once.</summary>
+    string LegacySessionsFile => Path.Combine(ArchiveFolder, "sessions.dat");
+    /// <summary>
+    /// Cache: data the server gives again (server bests). Deleting it loses nothing. Lives in LocalAppData, not in the user-chosen data root.
+    /// </summary>
     [JsonIgnore] public string CacheFolder => Path.Combine(DefaultDataFolder, "cache");
+    [JsonIgnore] public string ScanCacheFile => Path.Combine(CacheFolder, "scan" + CacheFile.Extension);
+    /// <summary>
+    /// Archive: what only this PC knows (run statistics, session ids, the kept data of deleted replays). Deleting it loses runs for good. Lives in LocalAppData next to <see cref="CacheFolder"/>.
+    /// </summary>
+    [JsonIgnore] public string ArchiveFolder => Path.Combine(DefaultDataFolder, "archive");
     /// <summary>Deleted runs keep their replay data here (everything but the video), so their graphs still show.</summary>
-    [JsonIgnore] public string CachedReplaysFolder => Path.Combine(CacheFolder, "sessions");
-    /// <summary>The run history cache (runs.dat) lives with the other caches in LocalAppData; the data root only holds output.</summary>
-    [JsonIgnore] public string RunsCacheFolder => Path.Combine(DefaultDataFolder, "history");
-    public Benchmarks.StatsCache OpenCache() => new(CacheFolder, RunsCacheFolder);
+    [JsonIgnore] public string ArchiveReplaysFolder => Path.Combine(ArchiveFolder, "sessions");
+    // CacheFolder and ArchiveFolder do not depend on the settings, so one store and one speed cache serve every caller (and every copy of the settings).
+    static readonly Lazy<Benchmarks.StatsStore> SharedStore = new(() => new(Path.Combine(DefaultDataFolder, "cache"), Path.Combine(DefaultDataFolder, "archive")));
+    static readonly Lazy<Trajectory.SpeedCache> SharedSpeedCache = new(() => new(Path.Combine(DefaultDataFolder, "cache", "speed" + CacheFile.Extension)));
+    public Benchmarks.StatsStore OpenStore() => SharedStore.Value;
+    public Trajectory.SpeedCache OpenSpeedCache() => SharedSpeedCache.Value;
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
     /// <summary>Diagnostic log; lives in the data root next to the replays.</summary>
     [JsonIgnore] public string LogFile => Path.Combine(DataRoot, "logs", "app.log");
@@ -100,28 +114,39 @@ public sealed record AppSettings
     }
 
     /// <summary>
-    /// Moves files earlier versions kept elsewhere to where they live now: ui.json, history\runs.dat and the session cache (once live-runs.json, now history\sessions.dat)
-    /// out of the data root, and the session cache out of the LocalAppData root. Never overwrites; never throws.
+    /// Moves files earlier versions kept elsewhere to where they live now: ui.json out of the data root; cache\serverbest.dat and serverbest.cache to totals.cache; runs.dat and the session ids (sessions.dat, once live-runs.json)
+    /// from the data root's history folder and from LocalAppData\history to LocalAppData\archive; the kept replay data from cache\sessions and history\sessions to archive\sessions.
+    /// Never overwrites; never throws.
     /// </summary>
     public void MigrateLocalState()
     {
         try
         {
-            var history = Path.Combine(DataRoot, "history");
-            var moves = new List<(string From, string To)> { (Path.Combine(DefaultDataFolder, "live-runs.json"), LiveRunFile), (Path.Combine(history, "live-runs.json"), LiveRunFile) };
+            var oldDirs = new[] { Path.Combine(DataRoot, "history"), Path.Combine(DefaultDataFolder, "history") };
+            var moves = new List<(string From, string To)> { (Path.Combine(DefaultDataFolder, "live-runs.json"), LegacySessionsFile), (Path.Combine(CacheFolder, "serverbest.dat"), Path.Combine(CacheFolder, Benchmarks.StatsStore.TotalsFile)), (Path.Combine(CacheFolder, "serverbest" + CacheFile.Extension), Path.Combine(CacheFolder, Benchmarks.StatsStore.TotalsFile)) };
+            foreach (var old in oldDirs)
+                moves.AddRange([(Path.Combine(old, "live-runs.json"), LegacySessionsFile), (Path.Combine(old, "sessions.dat"), LegacySessionsFile), (Path.Combine(old, Benchmarks.StatsStore.RunsFile), Path.Combine(ArchiveFolder, Benchmarks.StatsStore.RunsFile))]);
             if (!string.Equals(DataRoot, DefaultDataFolder, StringComparison.OrdinalIgnoreCase))
-                moves.AddRange([
-                    (Path.Combine(DataRoot, "ui.json"), UiFile),
-                    (Path.Combine(DataRoot, "live-runs.json"), LiveRunFile),
-                    (Path.Combine(history, Benchmarks.StatsCache.RunsFile), Path.Combine(RunsCacheFolder, Benchmarks.StatsCache.RunsFile)),
-                ]);
+                moves.AddRange([(Path.Combine(DataRoot, "ui.json"), UiFile), (Path.Combine(DataRoot, "live-runs.json"), LegacySessionsFile)]);
             foreach (var (from, to) in moves)
             {
                 if (!File.Exists(from) || File.Exists(to)) continue;
                 Directory.CreateDirectory(Path.GetDirectoryName(to)!);
                 File.Move(from, to);
             }
-            if (!string.Equals(history, RunsCacheFolder, StringComparison.OrdinalIgnoreCase) && Directory.Exists(history) && !Directory.EnumerateFileSystemEntries(history).Any()) Directory.Delete(history);
+            foreach (var oldReplays in new[] { Path.Combine(CacheFolder, "sessions"), Path.Combine(DefaultDataFolder, "history", "sessions") })
+            {
+                if (!Directory.Exists(oldReplays)) continue;
+                foreach (var dir in Directory.GetDirectories(oldReplays))
+                {
+                    var to = Path.Combine(ArchiveReplaysFolder, Path.GetFileName(dir));
+                    if (Directory.Exists(to)) continue;
+                    Directory.CreateDirectory(ArchiveReplaysFolder);
+                    Directory.Move(dir, to);
+                }
+            }
+            foreach (var dir in new[] { Path.Combine(CacheFolder, "sessions"), Path.Combine(DefaultDataFolder, "history", "sessions"), oldDirs[0], oldDirs[1] })
+                if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.AppLog.Write("migrate", "local state move failed: " + e.Message); }
     }
