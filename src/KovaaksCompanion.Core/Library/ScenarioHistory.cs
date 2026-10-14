@@ -2,26 +2,26 @@ using KovaaksCompanion.Core.Benchmarks;
 
 namespace KovaaksCompanion.Core.Library;
 
-/// <summary>One score of a scenario: a local run, or a server score the local library lacks (<see cref="Run"/> is null).</summary>
+/// <summary>One score of a scenario: a local run, or a cloud score the local library lacks (<see cref="Run"/> is null).</summary>
 public sealed record ScoreRecord(DateTime Time, double Score, RunRecord? Run);
 
 /// <summary>
-/// Score history of one scenario: the local runs plus the server scores the library lacks (a server score within <see cref="SameRunWindow"/>
+/// Score history of one scenario: the local runs plus the cloud scores the library lacks (a cloud score within <see cref="SameRunWindow"/>
 /// of a local run is that same run), oldest first. Everything score-based works on <see cref="Records"/>; accuracy, duration and
 /// drift exist only for the local <see cref="Runs"/>. Built and cached by <see cref="ScoreBook"/>.
 /// </summary>
-public sealed class ScenarioStats
+public sealed class ScenarioHistory
 {
-    /// <summary>A server score this close to a local run's end is that run.</summary>
+    /// <summary>A cloud score this close to a local run's end is that run.</summary>
     public static readonly TimeSpan SameRunWindow = TimeSpan.FromSeconds(10);
 
     readonly double[] _bestSoFar;
     readonly HashSet<RunRecord> _pbRuns = new(ReferenceEqualityComparer.Instance);
 
     /// <param name="runs">Local runs, oldest first.</param>
-    /// <param name="cloud">Server scores of the scenario.</param>
-    /// <param name="knownBest">The best score known beyond the records: the server's all-time best or a deleted run's, which can be older than the scores in <paramref name="cloud"/>.</param>
-    public ScenarioStats(string scenario, IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore>? cloud = null, double knownBest = 0)
+    /// <param name="cloud">Cloud scores of the scenario.</param>
+    /// <param name="knownBest">The best score known beyond the records: the server's all-time best or the archive's best, which can be older than the scores in <paramref name="cloud"/>.</param>
+    public ScenarioHistory(string scenario, IReadOnlyList<RunRecord> runs, IReadOnlyList<CloudScore>? cloud = null, double knownBest = 0)
     {
         Scenario = scenario;
         Runs = runs;
@@ -61,7 +61,7 @@ public sealed class ScenarioStats
     {
         get
         {
-            var drifts = Runs.Select(r => r.Perf?.Drift).OfType<double>().ToList();
+            var drifts = Runs.Select(r => r.Drift?.Change).OfType<double>().ToList();
             return drifts.Count == 0 ? null : drifts.Average();
         }
     }
@@ -92,7 +92,7 @@ public sealed class ScenarioStats
     public IReadOnlyList<int> PersonalBestRunIndexes() =>
         Enumerable.Range(0, Runs.Count).Where(i => _pbRuns.Contains(Runs[i])).ToList();
 
-    /// <summary>True when the local run beat every earlier record, server scores included.</summary>
+    /// <summary>True when the local run beat every earlier record, cloud scores included.</summary>
     public bool IsPersonalBest(RunRecord run) => _pbRuns.Contains(run);
 
     /// <summary>Best score among records at or before the cutoff; null when none is that old.</summary>
@@ -120,13 +120,19 @@ public sealed class ScenarioStats
         var added = false;
         foreach (var c in cloud)
         {
-            var i = Array.BinarySearch(ends, c.Time);
-            if (i < 0) i = ~i; // first end at or after the score
-            var same = (i < ends.Length && ends[i] - c.Time < SameRunWindow) || (i > 0 && c.Time - ends[i - 1] < SameRunWindow);
-            if (same) continue;
+            if (IsSameRun(ends, c.Time)) continue;
             all.Add(new(c.Time, c.Score, null));
             added = true;
         }
         return added ? all.OrderBy(r => r.Time).ToList() : all;
+    }
+
+    /// <summary>True when a score at <paramref name="time"/> is one of the runs ending at <paramref name="sortedEnds"/> (within <see cref="SameRunWindow"/>).</summary>
+    internal static bool IsSameRun(DateTime[] sortedEnds, DateTime time)
+    {
+        var i = Array.BinarySearch(sortedEnds, time);
+        if (i >= 0) return true;
+        i = ~i; // first end after the score
+        return (i < sortedEnds.Length && sortedEnds[i] - time < SameRunWindow) || (i > 0 && time - sortedEnds[i - 1] < SameRunWindow);
     }
 }

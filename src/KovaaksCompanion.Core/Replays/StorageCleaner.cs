@@ -3,24 +3,25 @@ using KovaaksCompanion.Core.Library;
 
 namespace KovaaksCompanion.Core.Replays;
 
-public sealed record StoredReplay(string Folder, ReplayInfo Info, long Bytes);
+/// <summary>A replay with a video file, and the size of that file.</summary>
+public sealed record StoredReplay(ReplayInfo Info, long Bytes);
 
-/// <summary>Picks replay folders to delete: earlier runs beaten later in the same play session, and the oldest ones while the replays folder is over its size limit.</summary>
+/// <summary>Picks replay videos to delete: earlier runs beaten later in the same play session, and the oldest ones while the videos folder is over its size limit.</summary>
 public static class StorageCleaner
 {
     const long Gb = 1024L * 1024 * 1024;
 
     public static long LimitBytes(int gb) => gb <= 0 ? 0 : gb * Gb;
 
-    public static long FolderBytes(string folder)
+    /// <summary>Replays that have a video file, with its size, newest first.</summary>
+    public static List<StoredReplay> Scan(ReplayArchive archive) =>
+        archive.List().Where(i => i.HasVideo).Select(i => new StoredReplay(i, SizeOf(archive.VideoPath(i)))).ToList();
+
+    static long SizeOf(string? path)
     {
-        try { return new DirectoryInfo(folder).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); }
+        try { return path is null ? 0 : new FileInfo(path).Length; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
     }
-
-    /// <summary>Complete replay folders with their sizes, newest first.</summary>
-    public static List<StoredReplay> Scan(string root) =>
-        ReplayStore.List(root).Select(s => new StoredReplay(s.Folder, s.Info, FolderBytes(s.Folder))).ToList();
 
     /// <summary>The replays of the newest play session (the one a replay was just saved into).</summary>
     public static List<StoredReplay> NewestSession(IEnumerable<StoredReplay> all, TimeSpan? maxGap = null)
@@ -89,7 +90,7 @@ public static class StorageCleaner
 
     /// <summary>
     /// Replays to delete so the rest fits <paramref name="limitBytes"/> (0 = no limit). The newest replay and the ones <paramref name="keep"/> accepts are never chosen,
-    /// so the result can still leave the folder over the limit.
+    /// so the result can still leave the videos over the limit.
     /// </summary>
     public static List<StoredReplay> OverLimit(IReadOnlyList<StoredReplay> all, long limitBytes, Func<ReplayInfo, bool> keep)
     {
@@ -111,14 +112,6 @@ public static class StorageCleaner
     public static List<StoredReplay> Expired(IReadOnlyList<StoredReplay> all, int days, DateTime now, Func<ReplayInfo, bool> keep) =>
         days <= 0 ? [] : all.Where(s => s.Info.End < now.AddDays(-days) && !keep(s.Info)).ToList();
 
-    /// <summary>
-    /// Deletes the videos of the replay folders and keeps the rest of each replay in the archive (<paramref name="archiveRoot"/>). The statistics are stored first: when that
-    /// fails (<see cref="IOException"/>) no folder is touched. Returns how many were deleted; a folder in use is skipped.
-    /// </summary>
-    public static int Delete(IEnumerable<StoredReplay> victims, StatsStore store, string archiveRoot)
-    {
-        var list = victims.ToList();
-        store.Archive(list.Select(s => ReplayStore.ReadRecord(s.Folder)).OfType<RunRecord>().ToList()); // one transaction, not one per replay
-        return list.Count(s => ReplayStore.Retire(s.Folder, archiveRoot) != null);
-    }
+    /// <summary>Deletes the video files of the replays and keeps everything else of them. Returns how many were deleted; a video in use is skipped.</summary>
+    public static int Delete(IEnumerable<StoredReplay> victims, ReplayArchive archive) => victims.Count(s => archive.DeleteVideo(s.Info));
 }

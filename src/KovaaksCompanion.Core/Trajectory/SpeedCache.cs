@@ -3,13 +3,13 @@ using KovaaksCompanion.Core.Replays;
 namespace KovaaksCompanion.Core.Trajectory;
 
 /// <summary>
-/// Cache of each replay's mouse-speed figures (reading and analysing a trajectory is the costly part), keyed by replay folder name and checked against
-/// the trajectory file's size and write time. Thread-safe; call <see cref="Save"/> once after a batch of lookups.
+/// Cache of each replay's mouse-speed figures (reading and analysing a trajectory is the costly part), keyed by replay id and checked against
+/// the size and write time of the replay's data file. Thread-safe; call <see cref="Save"/> once after a batch of lookups.
 /// </summary>
 public sealed class SpeedCache(string file)
 {
     /// <summary>Bump when <see cref="Entry"/> or <see cref="RunSpeed"/> changes shape, so older speed caches are rebuilt.</summary>
-    const int Schema = 2;
+    const int Schema = 3;
 
     record Entry(FileStamp Stamp, RunSpeed? Speed);
 
@@ -18,21 +18,19 @@ public sealed class SpeedCache(string file)
     bool _dirty;
 
     /// <summary>The replay's speed figures; null when it has no trajectory, an unreadable one, or one too short to analyse.</summary>
-    public RunSpeed? Get(string folder)
+    public RunSpeed? Get(ReplayArchive archive, Guid id)
     {
-        var path = Path.Combine(folder, ReplayFolder.TrajectoryFile);
-        var key = Path.GetFileName(folder);
+        var key = id.ToString("N");
         try
         {
-            if (!File.Exists(path)) return null;
-            var stamp = FileStamp.Of(path);
+            var stamp = archive.DataStamp(id);
             lock (_gate)
                 if (_items.TryGetValue(key, out var hit) && hit.Stamp == stamp) return hit.Speed;
-            var speed = ReplayStore.ReadSpeed(path);
+            var speed = archive.ReadParts(id).Trajectory is { } t ? ReplayStore.ReadSpeed(t) : null;
             lock (_gate) { _items[key] = new(stamp, speed); _dirty = true; }
             return speed;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ReplayFormatException) { return null; }
     }
 
     public void Save()

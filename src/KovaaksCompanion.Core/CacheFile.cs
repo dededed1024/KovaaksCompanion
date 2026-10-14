@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core;
 
 /// <summary>
-/// A cache file (*.cache): a signed, masked (<see cref="SignedFile"/>) JSON dictionary stamped with the schema number of its entries (each cache owns one and bumps it when the entry shape changes). Everything in it can be computed again,
+/// A cache file (*.cache): a JSON dictionary stamped with the schema number of its entries (each cache owns one and bumps it when the entry shape changes). Everything in it can be computed again,
 /// so a missing, corrupt or other-schema file reads as empty and the caller fills it anew.
 /// </summary>
 /// <summary>Size and write time of a file, to tell whether it changed.</summary>
@@ -41,7 +41,7 @@ public static class CacheFile
             if (stamp == default) return new(StringComparer.OrdinalIgnoreCase);
             if (Memo.TryGetValue(path, out var m) && m.Stamp == stamp && m.Schema == schema && m.Items is Dictionary<string, V> kept)
                 return new(kept, StringComparer.OrdinalIgnoreCase);
-            if (SignedFile.TryReadMasked(path) is { } b && JsonSerializer.Deserialize<Wrapper<V>>(b) is { } w && w.Schema == schema && w.Items != null)
+            if (JsonSerializer.Deserialize<Wrapper<V>>(File.ReadAllBytes(path)) is { } w && w.Schema == schema && w.Items != null)
             {
                 var items = new Dictionary<string, V>(w.Items, StringComparer.OrdinalIgnoreCase);
                 Memo[path] = (stamp, schema, items);
@@ -59,7 +59,7 @@ public static class CacheFile
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                SignedFile.WriteMasked(path, JsonSerializer.SerializeToUtf8Bytes(new Wrapper<V>(schema, items)));
+                AtomicFile.Write(path,JsonSerializer.SerializeToUtf8Bytes(new Wrapper<V>(schema, items)));
                 Memo[path] = (FileStamp.Of(path), schema, new Dictionary<string, V>(items, StringComparer.OrdinalIgnoreCase));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.AppLog.Write("cache", "write failed: " + e.Message); }

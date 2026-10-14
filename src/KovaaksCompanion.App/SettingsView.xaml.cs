@@ -62,15 +62,15 @@ public partial class SettingsView : UserControl
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
         SizeCamFrame(s);
-        CamOn.IsChecked = s.HandCamEnabled;
-        ShowCamPanels(s.HandCamEnabled);
-        foreach (RadioButton r in CamSaveBar.Children) r.IsChecked = (string)r.Tag == s.HandCamSave.ToString();
+        CamOn.IsChecked = s.WebcamEnabled;
+        ShowCamPanels(s.WebcamEnabled);
+        foreach (RadioButton r in CamSaveBar.Children) r.IsChecked = (string)r.Tag == s.WebcamSave.ToString();
         CamCanvas.Children.Clear(); _cards.Clear(); _selected = null;
-        foreach (var slot in s.HandCams) AddCamCard(slot);
+        foreach (var slot in s.Webcams) AddCamCard(slot);
         UpdateCamUi();
         UpdateLock();
         _loading = false;
-        if (s.HandCamEnabled) _ = RefreshCamDevices();
+        if (s.WebcamEnabled) _ = RefreshCamDevices();
         Validate(null, null);
         if (Kovaaks.Text.Length == 0 && PathDetector.FindKovaaks() is { } found) { Kovaaks.Text = found; Save(); }
     }
@@ -195,10 +195,10 @@ public partial class SettingsView : UserControl
             DeleteBeatenRuns = DeleteBeaten.IsChecked == true,
             KeepPersonalBests = KeepPb.IsChecked == true,
             VideoPbOnly = PbOnly.IsChecked == true,
-            HandCamEnabled = CamOn.IsChecked == true,
-            HandCamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
-                && Enum.TryParse<HandCamSave>(cs, out var hs) ? hs : cur.HandCamSave,
-            HandCams = CamSlots(cur.HandCams),
+            WebcamEnabled = CamOn.IsChecked == true,
+            WebcamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
+                && Enum.TryParse<WebcamSave>(cs, out var hs) ? hs : cur.WebcamSave,
+            Webcams = CamSlots(cur.Webcams),
         };
         if (next == cur) return;
         _host.ApplySettings(next);
@@ -249,7 +249,7 @@ public partial class SettingsView : UserControl
             var item = new MenuItem { Style = (Style)FindResource("ThemedMenuItem"), Header = d.ToString() };
             item.Click += (_, _) =>
             {
-                var card = AddCamCard(new HandCamSlot(d.Name, d.Number, Y: Math.Min(100, 35 * _cards.Count)), select: true);
+                var card = AddCamCard(new WebcamSlot(d.Name, d.Number, Y: Math.Min(100, 35 * _cards.Count)), select: true);
                 UpdateCamUi();
                 Save();
                 _ = ProbeCam(card);
@@ -264,11 +264,11 @@ public partial class SettingsView : UserControl
 
     sealed class CamCard
     {
-        public HandCamDevice? Device;
+        public WebcamDevice? Device;
         public int Size;
         public double X, Y;
         public int Rotation;
-        public HandCamCut Cut = new();
+        public WebcamCut Cut = new();
         public double Aspect;
         public bool Probing;
         public required Border Marker;
@@ -279,15 +279,15 @@ public partial class SettingsView : UserControl
     readonly List<CamCard> _cards = [];
     CamCard? _selected;
     Border? _bar;
-    List<HandCamDevice> _devices = [];
+    List<WebcamDevice> _devices = [];
     static readonly string[] CamColors = ["AccentFill", "Green", "Orange"];
     const double BarW = 56, BarH = 28;
 
 
-    HandCamSlots CamSlots(HandCamSlots cur)
+    WebcamSlots CamSlots(WebcamSlots cur)
     {
-        var next = _cards.Select(c => new HandCamSlot(c.Device?.Name ?? "", c.Device?.Number ?? 0, c.Size, (int)Math.Round(c.X), (int)Math.Round(c.Y), c.Rotation, c.Cut.IsNone ? null : c.Cut, c.Aspect));
-        var list = new HandCamSlots(); list.AddRange(next);
+        var next = _cards.Select(c => new WebcamSlot(c.Device?.Name ?? "", c.Device?.Number ?? 0, c.Size, (int)Math.Round(c.X), (int)Math.Round(c.Y), c.Rotation, c.Cut.IsNone ? null : c.Cut, c.Aspect));
+        var list = new WebcamSlots(); list.AddRange(next);
         return list.Equals(cur) ? cur : list;
     }
 
@@ -319,7 +319,7 @@ public partial class SettingsView : UserControl
         return _bar;
     }
 
-    CamCard AddCamCard(HandCamSlot slot, bool select = false)
+    CamCard AddCamCard(WebcamSlot slot, bool select = false)
     {
         var number = new TextBlock { Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
         var inner = new Grid();
@@ -348,8 +348,8 @@ public partial class SettingsView : UserControl
         var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85, Cursor = Cursors.SizeAll, Child = inner };
         var card = new CamCard
         {
-            Device = slot.Device.Length > 0 ? new HandCamDevice(slot.Device, slot.Number) : null,
-            Size = Math.Clamp(slot.Size, 10, 40), X = slot.X, Y = slot.Y, Rotation = slot.Rotation, Cut = slot.Cut ?? new HandCamCut(), Aspect = slot.Aspect, Marker = marker, Number = number, Grips = grips,
+            Device = slot.Device.Length > 0 ? new WebcamDevice(slot.Device, slot.Number) : null,
+            Size = Math.Clamp(slot.Size, 10, 40), X = slot.X, Y = slot.Y, Rotation = slot.Rotation, Cut = slot.Cut ?? new WebcamCut(), Aspect = slot.Aspect, Marker = marker, Number = number, Grips = grips,
         };
         marker.ToolTip = card.Device?.ToString();
         _cards.Add(card);
@@ -435,9 +435,9 @@ public partial class SettingsView : UserControl
         }
     }
 
-    static double SourceAspect(CamCard c) => c.Aspect > 0 ? c.Aspect : HandCamGeometry.DefaultAspect;
-    static double CutOf(HandCamCut c, int side) => side switch { 0 => c.Left, 1 => c.Top, 2 => c.Right, _ => c.Bottom };
-    static HandCamCut WithCut(HandCamCut c, int side, double v) => side switch { 0 => c with { Left = v }, 1 => c with { Top = v }, 2 => c with { Right = v }, _ => c with { Bottom = v } };
+    static double SourceAspect(CamCard c) => c.Aspect > 0 ? c.Aspect : WebcamGeometry.DefaultAspect;
+    static double CutOf(WebcamCut c, int side) => side switch { 0 => c.Left, 1 => c.Top, 2 => c.Right, _ => c.Bottom };
+    static WebcamCut WithCut(WebcamCut c, int side, double v) => side switch { 0 => c with { Left = v }, 1 => c with { Top = v }, 2 => c with { Right = v }, _ => c with { Bottom = v } };
     Point ClampToFrame(Point p) => new(Math.Clamp(p.X, 0, CamW), Math.Clamp(p.Y, 0, CamH));
 
     const double CamW = 480, SnapDistance = 6;
@@ -446,7 +446,7 @@ public partial class SettingsView : UserControl
     /// <summary>Preview box of a cam (the cam keeps 16:9), centered on its position and pulled inside the frame.</summary>
     (double L, double T, double W, double H) CamBox(CamCard c)
     {
-        var (w, h) = HandCamGeometry.BoxSize(CamW, CamH, new HandCamLayout(c.Size, 0, 0, c.Rotation, c.Cut), c.Aspect);
+        var (w, h) = WebcamGeometry.BoxSize(CamW, CamH, new WebcamLayout(c.Size, 0, 0, c.Rotation, c.Cut), c.Aspect);
         return (Math.Clamp(CamW * c.X / 100 - w / 2, 0, CamW - w), Math.Clamp(CamH * c.Y / 100 - h / 2, 0, CamH - h), w, h);
     }
 
@@ -469,7 +469,7 @@ public partial class SettingsView : UserControl
         c.Probing = true;
         try
         {
-            var aspect = await HandCamProbe.AspectAsync(id, TimeSpan.FromSeconds(4));
+            var aspect = await WebcamProbe.AspectAsync(id, TimeSpan.FromSeconds(4));
             if (aspect > 0 && _cards.Contains(c)) { c.Aspect = aspect; UpdateCamUi(); Save(); }
         }
         finally { c.Probing = false; }
@@ -538,12 +538,12 @@ public partial class SettingsView : UserControl
             Canvas.SetTop(bar, t >= BarH + 2 ? t - BarH - 2 : Math.Min(t + h + 2, CamH - BarH));
         }
         else bar.Visibility = Visibility.Collapsed;
-        CamAdd.IsEnabled = _cards.Count < HandCamSlot.Max;
+        CamAdd.IsEnabled = _cards.Count < WebcamSlot.Max;
     }
 
     async Task RefreshCamDevices()
     {
-        _devices = await Task.Run(() => AppHost.EnsureObs() ? HandCamDeviceList.List() : []);
+        _devices = await Task.Run(() => AppHost.EnsureObs() ? WebcamDeviceList.List() : []);
         foreach (var c in _cards.ToList()) _ = ProbeCam(c);
     }
 
@@ -614,8 +614,8 @@ public partial class SettingsView : UserControl
         var tok = _tok;
         _reporting = true;
         ReportBtn.IsEnabled = false;
-        if (DateTime.UtcNow - _lastReport < TimeSpan.FromSeconds(60))
-            ReportBtn.Content = L.T("Please try again in a minute");
+        if (DateTime.UtcNow - _lastReport < TimeSpan.FromSeconds(10))
+            ReportBtn.Content = L.T("Please try again in a moment");
         else
         {
             ReportBtn.Content = L.T("Sending…");
@@ -653,7 +653,7 @@ public partial class SettingsView : UserControl
         var s = _host.Settings;
         var dpi = VisualTreeHelper.GetDpi(this);
         var res = $"{SystemParameters.PrimaryScreenWidth * dpi.DpiScaleX:0}x{SystemParameters.PrimaryScreenHeight * dpi.DpiScaleY:0}";
-        return EnvironmentInfo.Describe(new(res, s.VideoQuality.ToString(), s.VideoFps, s.HandCamEnabled, s.HandCams.Count));
+        return EnvironmentInfo.Describe(new(res, s.VideoQuality.ToString(), s.VideoFps, s.WebcamEnabled, s.Webcams.Count));
     }
 
     void ResetReport()

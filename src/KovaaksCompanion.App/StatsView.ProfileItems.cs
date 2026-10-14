@@ -36,7 +36,7 @@ public partial class StatsView
         {
             var (b, d) = FindDifficulty(key[2..]);
             if (d == null) return null;
-            Color? tint = _progress.TryGetValue(d.KovaaksBenchmarkId, out var pr) && pr.OverallRankName.Length > 0 ? ColorOf(RankBrush(d, pr.OverallRankName)) : null;
+            Color? tint = _progress.TryGetValue(d.KovaaksBenchmarkId, out var pr) && pr.OverallTierName.Length > 0 ? ColorOf(TierBrush(d, pr.OverallTierName)) : null;
             return (FavoriteCard(b, d), tint);
         }
         if (UiState.ParseSubcategoryKey(key) is { Sub.Length: 0 } k)
@@ -45,17 +45,17 @@ public partial class StatsView
             var (b, d) = FindDifficulty(k.Playlist);
             if (d == null || !_progress.TryGetValue(d.KovaaksBenchmarkId, out var p)) return null;
             var subs = p.Subcategories.Where(v => CatOf(v) == k.Parent).ToList();
-            var scenarios = subs.SelectMany(v => v.Scenarios).Where(sc => sc.RankMaxes.Count > 0).ToList();
+            var scenarios = subs.SelectMany(v => v.Scenarios).Where(sc => sc.TierThresholds.Count > 0).ToList();
             if (scenarios.Count == 0) return null;
-            var tiers = Math.Min(scenarios.Max(sc => sc.RankMaxes.Count), Math.Max(p.RankNames.Count - 1, 0));
-            var value = scenarios.Average(sc => Tier.ValueOf(Math.Max(_book.For(sc.Scenario).Best, sc.Score), sc.RankMaxes));
+            var tiers = Math.Min(scenarios.Max(sc => sc.TierThresholds.Count), Math.Max(p.TierNames.Count - 1, 0));
+            var value = scenarios.Average(sc => TierLadder.ValueOf(Math.Max(_book.For(sc.Scenario).Best, sc.Score), sc.TierThresholds));
             var rank = Math.Min((int)Math.Floor(value + 1e-9), tiers);
             var complete = tiers > 0 && rank >= tiers;
-            var ranked = rank > 0 && p.RankName(rank).Length > 0;
-            var tier = ranked ? RankBrush(d, p.RankName(rank)) : (Brush)FindResource("Dim");
+            var ranked = rank > 0 && p.TierName(rank).Length > 0;
+            var tier = ranked ? TierBrush(d, p.TierName(rank)) : (Brush)FindResource("Dim");
             var dot = ParseBrush(b.Color);
-            var history = Tier.History(scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.RankMaxes)));
-            var watermark = ranked ? TierText.Label(p.RankName(rank)) : L.T("UNRANKED");
+            var history = TierLadder.History(scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
+            var watermark = ranked ? TierText.Label(p.TierName(rank)) : L.T("UNRANKED");
             var category = k.Parent;
             return (MiniCard(b.BenchmarkName, category, dot, tier, ranked, history, watermark, complete, complete ? 1 : value - rank, p with { Subcategories = subs }, () => OpenPlaylist(b, d, category)), ranked ? ColorOf(tier) : null);
         }
@@ -66,20 +66,20 @@ public partial class StatsView
             ScenarioProgress? sc = null;
             foreach (var pp in _progress.Values)
             {
-                sc = pp.Scenarios.FirstOrDefault(v => v.RankMaxes.Count > 0 && SameKey(v.Scenario, name));
+                sc = pp.Scenarios.FirstOrDefault(v => v.TierThresholds.Count > 0 && SameKey(v.Scenario, name));
                 if (sc != null) { p = pp; break; }
             }
             var stats = _book.For(name);
             var best = Math.Max(stats.Best, sc?.Score ?? 0);
-            var pos = sc == null ? default : Tier.TierOf(best, sc.RankMaxes);
-            var rank = sc == null ? 0 : Math.Min(pos.Rank, Math.Max(p!.RankNames.Count - 1, 0));
+            var pos = sc == null ? default : TierLadder.TierOf(best, sc.TierThresholds);
+            var rank = sc == null ? 0 : Math.Min(pos.Tier, Math.Max(p!.TierNames.Count - 1, 0));
             var d = p == null ? null : AllDifficulties().FirstOrDefault(x => _progress.TryGetValue(x.D.KovaaksBenchmarkId, out var q) && ReferenceEquals(q, p)).D;
-            var ranked = d != null && rank > 0 && p!.RankName(rank).Length > 0;
-            var tier = ranked ? RankBrush(d!, p!.RankName(rank)) : (Brush)FindResource("Dim");
-            var history = sc == null ? [] : Tier.History([(stats, (IReadOnlyList<double>)sc.RankMaxes)]);
-            var watermark = ranked ? TierText.Label(p!.RankName(rank)) : L.T("UNRANKED");
-            var complete = ranked && rank >= p!.RankNames.Count - 1;
-            var scoped = p != null && sc != null ? p with { Subcategories = [new SubcategoryProgress("", "", 0, 0, [], [sc])] } : null;
+            var ranked = d != null && rank > 0 && p!.TierName(rank).Length > 0;
+            var tier = ranked ? TierBrush(d!, p!.TierName(rank)) : (Brush)FindResource("Dim");
+            var history = sc == null ? [] : TierLadder.History([(stats, (IReadOnlyList<double>)sc.TierThresholds)]);
+            var watermark = ranked ? TierText.Label(p!.TierName(rank)) : L.T("UNRANKED");
+            var complete = ranked && rank >= p!.TierNames.Count - 1;
+            var scoped = p != null && sc != null ? p with { Subcategories = [new SubcategoryProgress("", "", [sc])] } : null;
             var sub = best > 0 ? L.F("best {0}", best.ToString("0.#")) : L.T("Not played");
             return (MiniCard(name, sub, ranked ? tier : ParseBrush(null), tier, ranked, history, watermark, complete, sc == null ? null : complete ? 1 : pos.Fraction, scoped, () => _host.ShowScenario(name, null)), ranked ? ColorOf(tier) : null);
         }

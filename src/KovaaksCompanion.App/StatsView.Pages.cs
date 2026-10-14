@@ -16,12 +16,12 @@ namespace KovaaksCompanion.App;
 public partial class StatsView
 {
     sealed record PlaylistCtx(BrowserItem Item, Difficulty D, BenchmarkProgress P, PlaylistReport Report, List<BenchCategory> Cats, List<string> Names, List<Brush> Brushes,
-        List<(DateTime Day, double Value)> History, int[] Counts, List<(string Scenario, int Rank, double Fraction)> Blocks, List<RadarEntry> Entries, DateTime Cutoff, Brush Theme)
+        List<(DateTime Day, double Value)> History, int[] Counts, List<(string Scenario, int Tier, double Fraction)> Blocks, List<RadarEntry> Entries, DateTime Cutoff, Brush Theme)
     {
         public Dictionary<DateTime, int> Plays { get; } = Report.PlaysPerDay().GroupBy(x => x.Day.Date).ToDictionary(g => g.Key, g => g.Sum(x => x.Plays));
     }
 
-    sealed record CatInfo(BenchCategory Cat, CategoryStat St, string RankName, Brush? RankBrush, Brush NextBrush, string NextName);
+    sealed record CatInfo(BenchCategory Cat, CategoryStat St, string TierName, Brush? TierBrush, Brush NextBrush, string NextName);
 
     /// <summary>Skill balance card parts: the radar and the ranked list, laid out side by side or stacked depending on the width.</summary>
     sealed class BalanceUi
@@ -221,9 +221,9 @@ public partial class StatsView
         return c.Cats.Where(HasRows).Select(cat =>
         {
             var st = BenchmarkTable.Summarize(cat, tiers);
-            Brush? rb = st.Rank >= 1 && st.Rank <= c.Brushes.Count ? c.Brushes[st.Rank - 1] : null;
-            var nb = st.Rank < tiers && st.Rank < c.Brushes.Count ? c.Brushes[st.Rank] : rb ?? DimB;
-            return new CatInfo(cat, st, rb == null ? L.T("UNRANKED") : c.Names[st.Rank - 1], rb, nb, st.Rank < tiers ? c.Names[st.Rank] : "");
+            Brush? rb = st.Tier >= 1 && st.Tier <= c.Brushes.Count ? c.Brushes[st.Tier - 1] : null;
+            var nb = st.Tier < tiers && st.Tier < c.Brushes.Count ? c.Brushes[st.Tier] : rb ?? DimB;
+            return new CatInfo(cat, st, rb == null ? L.T("UNRANKED") : c.Names[st.Tier - 1], rb, nb, st.Tier < tiers ? c.Names[st.Tier] : "");
         }).ToList();
     }
 
@@ -271,7 +271,7 @@ public partial class StatsView
         b.LostMouseCapture += (_, _) => To(1);
     }
 
-    /// <summary>Rank name big, the points on the same baseline, and a meta line.</summary>
+    /// <summary>Tier name big, the points on the same baseline, and a meta line.</summary>
     FrameworkElement Hero(string rank, Brush? rankBrush, string tail, string meta)
     {
         var sp = new StackPanel { Margin = new Thickness(4, 0, 0, CardGap) };
@@ -299,10 +299,10 @@ public partial class StatsView
         var page = new StackPanel();
         var p = c.P;
         var r = c.Report;
-        var ranked = p.OverallRank > 0;
-        var tierText = ranked ? TierText.Label(p.OverallRankName) : L.T("UNRANKED");
-        _hero = Hero(tierText, ranked ? RankBrush(c.D, p.OverallRankName) : null, $"· {p.OverallFraction * 100:0.00}%",
-            L.F("{0} of {1} scenarios played · {2} plays · {3}", r.PlayedCount, r.ScenarioCount, r.TotalPlays, Dur(r.TimePlayed)));
+        var ranked = p.OverallTier > 0;
+        var tierText = ranked ? TierText.Label(p.OverallTierName) : L.T("UNRANKED");
+        _hero = Hero(tierText, ranked ? TierBrush(c.D, p.OverallTierName) : null, $"· {p.OverallFraction * 100:0.00}%",
+            L.F("{0} of {1} scenarios played · {2} runs · {3}", r.PlayedCount, r.ScenarioCount, r.TotalPlays, Dur(r.TimePlayed)));
         page.Children.Add(_hero);
 
         var tiers = c.Names.Count;
@@ -337,8 +337,8 @@ public partial class StatsView
     UIElement BuildBlocks(PlaylistCtx c)
     {
         var total = c.Counts.Sum();
-        var r = Math.Clamp(c.P.OverallRank, 0, c.Names.Count);
-        var blocks = new RankBlocksChart { Margin = new Thickness(16, 4, 16, 12) };
+        var r = Math.Clamp(c.P.OverallTier, 0, c.Names.Count);
+        var blocks = new TierBlocksChart { Margin = new Thickness(16, 4, 16, 12) };
         blocks.SizeChanged += (_, ev) => { var h = Math.Clamp(ev.NewSize.Width * 0.3, 220, 400); if (double.IsNaN(blocks.Height) || Math.Abs(blocks.Height - h) > 1) blocks.Height = h; };
         blocks.Set(c.Blocks, c.Names, c.Brushes);
         return TitledCard("Scenarios by rank", r == 0 ? L.F("{0} of {1} ranked", total - c.Counts[0], total) : L.F("{0} of {1} at {2}+", c.Counts.Skip(r).Sum(), total, c.Names[r - 1]), blocks);
@@ -346,7 +346,7 @@ public partial class StatsView
 
     FrameworkElement ProgressChart(PlaylistCtx c)
     {
-        if (c.History.Count == 0) return Text(L.T("No plays"), 13, DimB);
+        if (c.History.Count == 0) return Text(L.T("No runs"), 13, DimB);
         var chart = new ScoreChart();
         chart.Set(c.History, "0.00", ChartKind.Line, false, c.Names.Select((n, i) => new ChartBand(i + 1, n, c.Brushes[i])).ToList());
         return chart;
@@ -440,7 +440,7 @@ public partial class StatsView
         return TitledCard("Skill balance", null, head, ui.Body);
     }
 
-    const double RankRowH = 46, RankColMin = 210, ColGap = 20;
+    const double TierRowH = 46, TierColMin = 210, ColGap = 20;
 
     /// <summary>Radar and ranking, both top-aligned. Beside the radar the ranking flows into as many columns as its height needs
     /// (up to what fits); when not even one column fits it goes below the radar in as many columns as the width allows.</summary>
@@ -455,11 +455,11 @@ public partial class StatsView
         ui.Body.RowDefinitions.Clear();
         var size = Math.Clamp(w * 0.45, 320, 480);
         var rest = w - size - 24;
-        var fit = (int)Math.Floor((rest + ColGap) / (RankColMin + ColGap));
+        var fit = (int)Math.Floor((rest + ColGap) / (TierColMin + ColGap));
         int cols;
         if (fit >= 1)
         {
-            cols = Math.Clamp((int)Math.Ceiling(n * RankRowH / size), 1, fit);
+            cols = Math.Clamp((int)Math.Ceiling(n * TierRowH / size), 1, fit);
             ui.Body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(size) });
             ui.Body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             Grid.SetRow(radar, 0); Grid.SetColumn(radar, 0); Grid.SetRow(ui.List, 0); Grid.SetColumn(ui.List, 1);
@@ -468,7 +468,7 @@ public partial class StatsView
         }
         else
         {
-            cols = Math.Clamp((int)Math.Floor((w + ColGap) / (RankColMin + ColGap)), 1, Math.Max(1, n));
+            cols = Math.Clamp((int)Math.Floor((w + ColGap) / (TierColMin + ColGap)), 1, Math.Max(1, n));
             ui.Body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             ui.Body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Grid.SetRow(radar, 0); Grid.SetColumn(radar, 0); Grid.SetRow(ui.List, 1); Grid.SetColumn(ui.List, 0);

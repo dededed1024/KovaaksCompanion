@@ -9,8 +9,9 @@ public sealed record CachedScores(List<CloudScore> Scores, DateTime FetchedAt);
 public sealed class ArchiveSnapshot
 {
     readonly Dictionary<string, CachedRuns> _all;
+    readonly Dictionary<string, double> _bests;
 
-    internal ArchiveSnapshot(Dictionary<string, CachedRuns> all) => _all = all;
+    internal ArchiveSnapshot(Dictionary<string, CachedRuns> all, Dictionary<string, double> bests) => (_all, _bests) = (all, bests);
 
     public Dictionary<string, CachedScores> Scores() =>
         _all.ToDictionary(kv => kv.Key, kv => new CachedScores(kv.Value.Runs.Select(r => new CloudScore(r.Time, r.Score)).ToList(), kv.Value.FetchedAt), StringComparer.OrdinalIgnoreCase);
@@ -18,10 +19,12 @@ public sealed class ArchiveSnapshot
     /// <summary>Runs with kept statistics.</summary>
     public List<RunRecord> Runs() => _all.SelectMany(p => p.Value.Runs.Select(r => r.Record).OfType<RunRecord>()).ToList();
 
-    public Dictionary<string, double> BestScores()
+    /// <summary>The highest archived score per scenario: the plays kept (cloud scores and runs with statistics alike) and the best the server reported.</summary>
+    public Dictionary<string, double> ArchivedBests()
     {
-        var best = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (n, c) in _all) if (c.Runs.Count > 0) best[n] = c.Runs.Max(r => r.Score);
+        var best = new Dictionary<string, double>(_bests, StringComparer.OrdinalIgnoreCase);
+        foreach (var (n, c) in _all)
+            if (c.Runs.Count > 0) best[n] = Math.Max(best.GetValueOrDefault(n), c.Runs.Max(r => r.Score));
         return best;
     }
 }
@@ -29,50 +32,26 @@ record CachedRun(DateTime Time, double Score, RunRecord? Record);
 record CachedRuns(List<CachedRun> Runs, DateTime FetchedAt);
 
 /// <summary>
-/// Signed, masked binary store (<see cref="SignedFile"/>) so the app can show data at startup and offline: server bests in <c>cacheFolder</c> (refetchable), run archive in <c>archiveFolder</c> (kept for good). Writes are atomic; unreadable files are treated as missing.
+/// The archive database (<see cref="ArchiveDb"/>) as the app uses it: what only this PC knows and no server gives back (run statistics, cloud scores older than the few the server still lists, the server's best scores, session ids). Writes are atomic; an unreadable file is set aside.
 /// </summary>
-public sealed partial class StatsStore(string cacheFolder, string archiveFolder)
+public sealed partial class StatsStore(string archiveFolder)
 {
-    readonly ArchiveDb _db = new(Path.Combine(archiveFolder, ArchiveDb.FileName));
+    readonly ArchiveDb _db = ArchiveDb.At(Path.Combine(archiveFolder, ArchiveDb.FileName));
 
     /// <summary>The archive database's file name inside the archive folder.</summary>
     public const string ArchiveDbFile = ArchiveDb.FileName;
 
-    /// <summary>One lock for every instance: <see cref="AppSettings.OpenStore"/> makes a new store per call, and they all read-modify-write the same files.</summary>
-    static readonly object _gate = new();
+    /// <summary>True once the server's best scores were downloaded (see <see cref="SaveCloudBests"/>).</summary>
+    public bool CloudBestsSynced() => _db.BestsSynced();
 
-    string FilePath(string name) => Path.Combine(cacheFolder, name);
-
-    /// <summary>The player's server totals per scenario (one sync); empty until the first sync has run.</summary>
-    public Dictionary<string, ScenarioTotals> LoadTotals(string steamId)
-    {
-        var prefix = steamId + ":";
-        return Read<ScenarioTotals>(TotalsFile).Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
-            .ToDictionary(kv => kv.Key[prefix.Length..], kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Stores the synced totals, keeping the higher score and plays of each scenario when it is already cached.</summary>
-    public void SaveTotals(string steamId, IReadOnlyDictionary<string, ScenarioTotals> bests) =>
-        Update<ScenarioTotals>(TotalsFile, d =>
-        {
-            foreach (var (name, b) in bests)
-            {
-                var key = steamId + ":" + name;
-                d[key] = d.TryGetValue(key, out var old) ? new(Math.Max(old.Score, b.Score), Math.Max(old.Plays, b.Plays)) : b;
-            }
-        });
+    /// <summary>Keeps the server's best scores, the higher one when a scenario already has one, and marks the download as done.</summary>
+    public void SaveCloudBests(IReadOnlyDictionary<string, double> bests) => _db.SaveBests(bests);
 
     /// <summary>The earlier run archive file; imported into the database once (see <see cref="ArchiveDb"/>).</summary>
     public const string RunsFile = "runs.dat";
-    public const string TotalsFile = "totals" + CacheFile.Extension, SyncFile = "sync" + CacheFile.Extension;
-
-    /// <summary>When the player's server totals were last downloaded, so a restart within the sync interval does not download them again.</summary>
-    public DateTime? LoadSyncedAt(string steamId) => Read<DateTime>(SyncFile) is var d && d.TryGetValue(steamId, out var at) ? at : null;
-
-    public void SaveSyncedAt(string steamId, DateTime at) => Update<DateTime>(SyncFile, d => d[steamId] = at);
 
     /// <summary>The whole archive read once; ask it for the parts a reload needs instead of reading the database for each.</summary>
-    public ArchiveSnapshot ReadArchive() => new(_db.ReadAll());
+    public ArchiveSnapshot ReadArchive() => new(_db.ReadAll(), _db.ReadBests());
 
     /// <summary>Every cached run score per scenario in one read, whatever its origin (server, played here, deleted), with the time the server was last asked.</summary>
     public Dictionary<string, CachedScores> LoadAllScores() => ReadArchive().Scores();
@@ -119,38 +98,13 @@ public sealed partial class StatsStore(string cacheFolder, string archiveFolder)
 
     /// <summary>
     /// Union by time and score; an entry with statistics wins over one without, and a score without statistics within
-    /// <see cref="ScenarioStats.SameRunWindow"/> of an entry with statistics is that run.
+    /// <see cref="ScenarioHistory.SameRunWindow"/> of an entry with statistics is that run.
     /// </summary>
     internal static List<CachedRun> Merge(IEnumerable<CachedRun> a, IEnumerable<CachedRun> b)
     {
         var all = a.Concat(b).GroupBy(r => (r.Time, r.Score)).Select(g => g.FirstOrDefault(r => r.Record != null) ?? g.First()).OrderBy(r => r.Time).ToList();
         var recorded = all.Where(r => r.Record != null).Select(r => r.Time).ToArray();
         if (recorded.Length == 0) return all;
-        return all.Where(r =>
-        {
-            if (r.Record != null) return true;
-            var i = Array.BinarySearch(recorded, r.Time);
-            if (i >= 0) return false;
-            i = ~i;
-            return !((i < recorded.Length && recorded[i] - r.Time < ScenarioStats.SameRunWindow) || (i > 0 && r.Time - recorded[i - 1] < ScenarioStats.SameRunWindow));
-        }).ToList();
-    }
-
-    Dictionary<string, V> Read<V>(string name)
-    {
-        lock (_gate)
-            try { return SignedFile.TryReadMasked(FilePath(name)) is { } b ? JsonSerializer.Deserialize<Dictionary<string, V>>(b) ?? [] : []; }
-            catch (Exception e) when (e is JsonException or NotSupportedException or InvalidOperationException) { return []; } // corrupt: treated as missing, the server refills it
-    }
-
-    void Update<V>(string name, Action<Dictionary<string, V>> change)
-    {
-        lock (_gate)
-        {
-            var d = Read<V>(name);
-            change(d);
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath(name))!);
-            SignedFile.WriteMasked(FilePath(name), JsonSerializer.SerializeToUtf8Bytes(d));
-        }
+        return all.Where(r => r.Record != null || !ScenarioHistory.IsSameRun(recorded, r.Time)).ToList();
     }
 }

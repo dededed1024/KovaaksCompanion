@@ -1,6 +1,6 @@
 namespace KovaaksCompanion.Core.Library;
 
-/// <summary>Consecutive plays with short gaps between them. <see cref="Runs"/> is chronological; a play only the server knows is a run with no accuracy or kills (<see cref="RunRecord.FromServer"/>).</summary>
+/// <summary>Consecutive plays with short gaps between them. <see cref="Runs"/> is chronological; a play only the server knows is a run with no accuracy or kills (<see cref="RunRecord.FromCloud"/>).</summary>
 public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBests)
 {
     /// <summary>1-based ordinal by start among all sessions of the <c>all</c> set given to <see cref="Group"/> (the oldest is 1).</summary>
@@ -22,10 +22,10 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     /// <summary>Gap that splits sessions of runs that were not finished in a live session (legacy runs).</summary>
     public static readonly TimeSpan DefaultGap = TimeSpan.FromMinutes(20);
 
-    /// <summary>Live session id per run key (<see cref="LiveRunLog"/>). Runs with the same id are one session, whatever the gap.</summary>
-    public static IReadOnlyDictionary<string, Guid> LiveIds { get; set; } = new Dictionary<string, Guid>();
+    /// <summary>Live session id per run key (<see cref="RunSessionIds"/>). Runs with the same id are one session, whatever the gap.</summary>
+    public static IReadOnlyDictionary<string, Guid> RunSessionIds { get; set; } = new Dictionary<string, Guid>();
 
-    static Guid? LiveId(string scenario, DateTime end) => LiveIds.TryGetValue(UiState.RunKey(scenario, end), out var id) ? id : null;
+    static Guid? RunSessionId(string scenario, DateTime end) => RunSessionIds.TryGetValue(UiState.RunKey(scenario, end), out var id) ? id : null;
 
     /// <summary>
     /// The candidate whose scenario set covers the most runs of this session (a scenario in several sets counts for each);
@@ -46,12 +46,15 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     }
 
     /// <summary>True while the session can still take a run: its last run ended within <paramref name="maxGap"/> of <paramref name="now"/>.</summary>
-    public bool IsLive(DateTime now, TimeSpan? maxGap = null) => now - End <= (maxGap ?? DefaultGap);
+    public bool IsLive(DateTime now, TimeSpan? maxGap = null) => WithinGap(End, now, maxGap);
+
+    /// <summary>True when a play starting at <paramref name="nextStart"/> is close enough to the one that ended at <paramref name="prevEnd"/> to be in its session (the one gap rule).</summary>
+    public static bool WithinGap(DateTime prevEnd, DateTime nextStart, TimeSpan? gap = null) => nextStart - prevEnd <= (gap ?? DefaultGap);
 
     /// <summary>
     /// Groups runs into sessions (see <see cref="NewSession"/>), newest session first. A run is a personal best when it beat every earlier run
     /// of its scenario in <paramref name="all"/> (defaults to <paramref name="runs"/>); pass <paramref name="personalBests"/>
-    /// (<see cref="ScoreBook.PersonalBestRuns"/>) to count against server scores too.
+    /// (<see cref="ScoreBook.PersonalBestRuns"/>) to count against cloud scores too.
     /// </summary>
     public static List<PlaySession> Group(IEnumerable<RunRecord> runs, TimeSpan? maxGap = null, IEnumerable<RunRecord>? all = null, IReadOnlySet<RunRecord>? personalBests = null)
     {
@@ -72,7 +75,7 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
         var pbs = new HashSet<RunRecord>(ReferenceEqualityComparer.Instance);
         foreach (var g in all.GroupBy(r => r.Scenario))
         {
-            var stats = new ScenarioStats(g.Key, g.OrderBy(r => r.Start).ToList());
+            var stats = new ScenarioHistory(g.Key, g.OrderBy(r => r.Start).ToList());
             foreach (var i in stats.PersonalBestRunIndexes()) pbs.Add(stats.Runs[i]);
         }
         return pbs;
@@ -81,8 +84,8 @@ public sealed record PlaySession(IReadOnlyList<RunRecord> Runs, int PersonalBest
     /// <summary>Runs finished in a live session stay with it and never join another; runs outside any live session (legacy) split by the time gap.</summary>
     public static bool NewSession(string prevScenario, DateTime prevEnd, string nextScenario, DateTime nextStart, DateTime nextEnd, TimeSpan gap)
     {
-        Guid? prev = LiveId(prevScenario, prevEnd), next = LiveId(nextScenario, nextEnd);
-        return prev != null || next != null ? prev != next : nextStart - prevEnd > gap;
+        Guid? prev = RunSessionId(prevScenario, prevEnd), next = RunSessionId(nextScenario, nextEnd);
+        return prev != null || next != null ? prev != next : !WithinGap(prevEnd, nextStart, gap);
     }
 
     static List<List<RunRecord>> Split(List<RunRecord> ordered, TimeSpan gap)

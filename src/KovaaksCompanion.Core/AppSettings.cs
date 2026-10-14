@@ -10,13 +10,10 @@ public sealed record AppSettings
     public string KovaaksPath { get; init; } = "";
     /// <summary>Parent location of the data root: replays and buffer live in its "KovaaksCompanion" subfolder. Empty = the root of the disk holding the KovaaK's folder.</summary>
     public string DataFolder { get; init; } = "";
-    /// <summary>SteamID64 used for server scores. Empty = detect from Steam's loginusers.vdf.</summary>
+    /// <summary>SteamID64 used for cloud scores. Empty = detect from Steam's loginusers.vdf.</summary>
     public string SteamId { get; init; } = "";
-    /// <summary>Webapp username of <see cref="WebUsernameSteamId"/>, resolved once from the server (finding it takes several requests).</summary>
-    public string WebUsername { get; init; } = "";
-    public string WebUsernameSteamId { get; init; } = "";
-    /// <summary>The resolved webapp username when it belongs to <paramref name="steamId"/>, else null.</summary>
-    public string? UsernameFor(string steamId) => WebUsername.Length > 0 && WebUsernameSteamId == steamId ? WebUsername : null;
+    /// <summary>The player's KovaaK's webapp username: the Steam display name of <paramref name="steamId"/> from Steam's loginusers.vdf. Null when unknown.</summary>
+    public string? UsernameFor(string steamId) => Benchmarks.SteamAccount.Profile(KovaaksPath, steamId).Name;
     public bool StartWithWindows { get; init; } = true;
     /// <summary>UI language code ("en", "ko"); empty = follow Windows.</summary>
     public string Language { get; init; } = "";
@@ -43,11 +40,11 @@ public sealed record AppSettings
     /// <summary>Never delete the replay of a personal best, whatever the cleanup rules say.</summary>
     public bool KeepPersonalBests { get; init; } = true;
 
-    public bool HandCamEnabled { get; init; }
-    [JsonConverter(typeof(Video.HandCamSaveConverter))]
-    public Video.HandCamSave HandCamSave { get; init; } = Video.HandCamSave.Composite;
-    /// <summary>Up to <see cref="Video.HandCamSlot.Max"/> hand-cams recorded alongside the game.</summary>
-    public Video.HandCamSlots HandCams { get; init; } = [];
+    public bool WebcamEnabled { get; init; }
+    [JsonConverter(typeof(Video.WebcamSaveConverter))]
+    public Video.WebcamSave WebcamSave { get; init; } = Video.WebcamSave.Composite;
+    /// <summary>Up to <see cref="Video.WebcamSlot.Max"/> webcams recorded alongside the game.</summary>
+    public Video.WebcamSlots Webcams { get; init; } = [];
     /// <summary>Size of the game window at the last recording (settings preview shape); 0 = never recorded.</summary>
     public int GameWidth { get; init; }
     public int GameHeight { get; init; }
@@ -81,7 +78,7 @@ public sealed record AppSettings
     }
     [JsonIgnore] public string ReplaysFolder => Path.Combine(DataRoot, "sessions");
     [JsonIgnore] public string UiFile => Path.Combine(DefaultDataFolder, "ui.json");
-    /// <summary>The archive database: run statistics and server scores that are kept for good, and the session id of every run.</summary>
+    /// <summary>The archive database: run statistics and cloud scores that are kept for good, and the session id of every run.</summary>
     [JsonIgnore] public string ArchiveDbFile => Path.Combine(ArchiveFolder, Benchmarks.StatsStore.ArchiveDbFile);
     /// <summary>The earlier session id file, imported into <see cref="ArchiveDbFile"/> once.</summary>
     string LegacySessionsFile => Path.Combine(ArchiveFolder, "sessions.dat");
@@ -94,12 +91,14 @@ public sealed record AppSettings
     /// Archive: what only this PC knows (run statistics, session ids, the kept data of deleted replays). Deleting it loses runs for good. Lives in LocalAppData next to <see cref="CacheFolder"/>.
     /// </summary>
     [JsonIgnore] public string ArchiveFolder => Path.Combine(DefaultDataFolder, "archive");
-    /// <summary>Deleted runs keep their replay data here (everything but the video), so their graphs still show.</summary>
+    /// <summary>Where earlier versions kept the replay data of deleted videos, one folder each; <see cref="Replays.ReplayArchive.MigrateLegacy"/> imports them.</summary>
     [JsonIgnore] public string ArchiveReplaysFolder => Path.Combine(ArchiveFolder, "sessions");
     // CacheFolder and ArchiveFolder do not depend on the settings, so one store and one speed cache serve every caller (and every copy of the settings).
-    static readonly Lazy<Benchmarks.StatsStore> SharedStore = new(() => new(Path.Combine(DefaultDataFolder, "cache"), Path.Combine(DefaultDataFolder, "archive")));
+    static readonly Lazy<Benchmarks.StatsStore> SharedStore = new(() => new(Path.Combine(DefaultDataFolder, "archive")));
     static readonly Lazy<Trajectory.SpeedCache> SharedSpeedCache = new(() => new(Path.Combine(DefaultDataFolder, "cache", "speed" + CacheFile.Extension)));
     public Benchmarks.StatsStore OpenStore() => SharedStore.Value;
+    /// <summary>The replays: their data in the archive folder, their videos in <see cref="ReplaysFolder"/>. It holds nothing but the folders (the database handle is shared), so a new one per call is cheap and follows a changed <see cref="ReplaysFolder"/>.</summary>
+    public Replays.ReplayArchive OpenReplays() => new(ArchiveFolder, ReplaysFolder);
     public Trajectory.SpeedCache OpenSpeedCache() => SharedSpeedCache.Value;
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
     /// <summary>Diagnostic log; lives in the data root next to the replays.</summary>
@@ -114,7 +113,7 @@ public sealed record AppSettings
     }
 
     /// <summary>
-    /// Moves files earlier versions kept elsewhere to where they live now: ui.json out of the data root; cache\serverbest.dat and serverbest.cache to totals.cache; runs.dat and the session ids (sessions.dat, once live-runs.json)
+    /// Moves files earlier versions kept elsewhere to where they live now: ui.json out of the data root; runs.dat and the session ids (sessions.dat, once live-runs.json)
     /// from the data root's history folder and from LocalAppData\history to LocalAppData\archive; the kept replay data from cache\sessions and history\sessions to archive\sessions.
     /// Never overwrites; never throws.
     /// </summary>
@@ -123,7 +122,7 @@ public sealed record AppSettings
         try
         {
             var oldDirs = new[] { Path.Combine(DataRoot, "history"), Path.Combine(DefaultDataFolder, "history") };
-            var moves = new List<(string From, string To)> { (Path.Combine(DefaultDataFolder, "live-runs.json"), LegacySessionsFile), (Path.Combine(CacheFolder, "serverbest.dat"), Path.Combine(CacheFolder, Benchmarks.StatsStore.TotalsFile)), (Path.Combine(CacheFolder, "serverbest" + CacheFile.Extension), Path.Combine(CacheFolder, Benchmarks.StatsStore.TotalsFile)) };
+            var moves = new List<(string From, string To)> { (Path.Combine(DefaultDataFolder, "live-runs.json"), LegacySessionsFile) };
             foreach (var old in oldDirs)
                 moves.AddRange([(Path.Combine(old, "live-runs.json"), LegacySessionsFile), (Path.Combine(old, "sessions.dat"), LegacySessionsFile), (Path.Combine(old, Benchmarks.StatsStore.RunsFile), Path.Combine(ArchiveFolder, Benchmarks.StatsStore.RunsFile))]);
             if (!string.Equals(DataRoot, DefaultDataFolder, StringComparison.OrdinalIgnoreCase))
@@ -145,6 +144,8 @@ public sealed record AppSettings
                     Directory.Move(dir, to);
                 }
             }
+            foreach (var name in new[] { "serverbest.dat", "serverbest" + CacheFile.Extension, "totals" + CacheFile.Extension, "sync" + CacheFile.Extension }) // server bests moved into the archive database; these were only a refetchable cache
+                if (Path.Combine(CacheFolder, name) is var stale && File.Exists(stale)) File.Delete(stale);
             foreach (var dir in new[] { Path.Combine(CacheFolder, "sessions"), Path.Combine(DefaultDataFolder, "history", "sessions"), oldDirs[0], oldDirs[1] })
                 if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
         }
@@ -160,13 +161,22 @@ public sealed record AppSettings
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
+    /// <summary>Settings files of older versions keep the webcam settings under their former "HandCam" names; they are read under the new names and saved that way.</summary>
+    static string RenameLegacyKeys(string json)
+    {
+        if (System.Text.Json.Nodes.JsonNode.Parse(json) is not System.Text.Json.Nodes.JsonObject o) return json;
+        foreach (var (old, now) in new[] { ("HandCamEnabled", nameof(WebcamEnabled)), ("HandCamSave", nameof(WebcamSave)), ("HandCams", nameof(Webcams)) })
+            if (o[old] is { } v && !o.ContainsKey(now)) { o.Remove(old); o[now] = v; }
+        return o.ToJsonString();
+    }
+
     /// <summary>Defaults when the file is missing or unreadable.</summary>
     public static AppSettings Load(string? path = null)
     {
         path ??= DefaultFile;
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), Options) ?? new();
+            return JsonSerializer.Deserialize<AppSettings>(RenameLegacyKeys(File.ReadAllText(path)), Options) ?? new();
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {

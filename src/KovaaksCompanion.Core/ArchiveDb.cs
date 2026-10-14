@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 using Microsoft.Data.Sqlite;
@@ -6,16 +7,20 @@ using Microsoft.Data.Sqlite;
 namespace KovaaksCompanion.Core;
 
 /// <summary>
-/// The archive: what only this PC knows and no server gives back (run statistics, server scores older than the few the server still lists, session ids).
+/// The archive: what only this PC knows and no server gives back (run statistics, cloud scores older than the few the server still lists, session ids).
 /// One SQLite file (WAL, synchronous FULL), so a write is a transaction on the rows it changes: a crash or a lock never leaves a half-written file, and a
-/// failed read never turns into an overwrite. Each run row keeps its data in a signed, masked payload (<see cref="SignedFile"/>); a row whose payload no longer
-/// matches its key is ignored, never deleted. Failures other than a corrupt file surface as <see cref="IOException"/>, which callers already handle.
+/// failed read never turns into an overwrite. Each run row keeps its data as a JSON payload (rows written by earlier versions are signed and masked, see <see cref="SignedFile"/>, and are still read). Failures other than a corrupt file surface as <see cref="IOException"/>, which callers already handle.
 /// A corrupt file is set aside as <c>.corrupt-*</c> and replaced by the last <c>.bak</c> (see <see cref="Backup"/>); nothing is ever deleted.
 /// </summary>
 internal sealed class ArchiveDb(string file)
 {
     public const string FileName = "archive.db";
     const int Corrupt = 11, NotADatabase = 26;
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ArchiveDb> Handles = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The handle of the archive file: every caller of one file shares it, so no part of the app owns the file alone.</summary>
+    public static ArchiveDb At(string file) => Handles.GetOrAdd(file, f => new ArchiveDb(f));
 
     static readonly object Gate = new();
     static readonly HashSet<string> Ready = new(StringComparer.OrdinalIgnoreCase);
@@ -113,9 +118,79 @@ internal sealed class ArchiveDb(string file)
             CREATE TABLE IF NOT EXISTS runs(scenario TEXT NOT NULL COLLATE NOCASE, time INTEGER NOT NULL, score REAL NOT NULL, has_record INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(scenario, time, score));
             CREATE TABLE IF NOT EXISTS fetched(scenario TEXT NOT NULL COLLATE NOCASE PRIMARY KEY, at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS sessions(key TEXT NOT NULL PRIMARY KEY, id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS bests(scenario TEXT NOT NULL COLLATE NOCASE PRIMARY KEY, score REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS meta(key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS replays(id TEXT NOT NULL PRIMARY KEY, scenario TEXT NOT NULL COLLATE NOCASE, started INTEGER NOT NULL, ended INTEGER NOT NULL, info TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS replays_run ON replays(scenario, ended);
+            CREATE INDEX IF NOT EXISTS replays_ended ON replays(ended);
             """);
         ImportLegacy(c);
+        RenameStoredDriftKey(c);
+    }
+
+    // ---- run record key rename ---------------------------------------------------------------------------------------------
+
+    const string DriftRenamedKey = "renamed-run-drift";
+
+    /// <summary>Older payloads keep a run's accuracy drift under "Perf"; it is "Drift" now. Renames the key in every run record of the JSON (any depth), leaving the rest as it is.</summary>
+    internal static byte[] RenameDriftKey(byte[] json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not { } root) return json;
+            var changed = false;
+            void Walk(JsonNode? node)
+            {
+                if (node is JsonObject o)
+                {
+                    if (o.ContainsKey("Scenario") && o.ContainsKey("Score") && o.ContainsKey("End") && o["Perf"] is { } perf && !o.ContainsKey("Drift"))
+                    {
+                        o.Remove("Perf");
+                        o["Drift"] = perf;
+                        changed = true;
+                    }
+                    foreach (var child in o.Select(p => p.Value).ToList()) Walk(child);
+                }
+                else if (node is JsonArray a)
+                    foreach (var child in a) Walk(child);
+            }
+            Walk(root);
+            return changed ? System.Text.Encoding.UTF8.GetBytes(root.ToJsonString()) : json;
+        }
+        catch (JsonException) { return json; }
+    }
+
+    /// <summary>A row's JSON: the payload itself, or its content when an earlier version stored it signed and masked.</summary>
+    static byte[] PayloadJson(byte[] stored) => SignedFile.UnpackMasked(stored) ?? stored;
+
+    /// <summary>Rewrites the stored run records once (in one transaction) so their drift is read under the new key.</summary>
+    static void RenameStoredDriftKey(SqliteConnection c)
+    {
+        using (var m = c.CreateCommand())
+        {
+            m.CommandText = "SELECT 1 FROM meta WHERE key=$k";
+            m.Parameters.AddWithValue("$k", DriftRenamedKey);
+            if (m.ExecuteScalar() != null) return;
+        }
+        InTransaction(c, () =>
+        {
+            var rows = new List<(string Scenario, long Time, double Score, byte[] Payload)>();
+            using (var m = c.CreateCommand())
+            {
+                m.CommandText = "SELECT scenario, time, score, payload FROM runs WHERE has_record=1";
+                using var r = m.ExecuteReader();
+                while (r.Read()) rows.Add((r.GetString(0), r.GetInt64(1), r.GetDouble(2), (byte[])r[3]));
+            }
+            using var update = new Stmt(c, "UPDATE runs SET payload=$p WHERE scenario=$s AND time=$t AND score=$sc", "$p", "$s", "$t", "$sc");
+            foreach (var (scenario, time, score, payload) in rows)
+            {
+                var json = PayloadJson(payload);
+                var renamed = RenameDriftKey(json);
+                if (ReferenceEquals(renamed, json)) continue;
+                update.Run(renamed, scenario, time, score);
+            }
+            Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", DriftRenamedKey));
+        });
     }
 
     /// <summary>Moves a corrupt database (and its WAL files) aside under a new name, then restores the last backup when there is one.</summary>
@@ -136,13 +211,13 @@ internal sealed class ArchiveDb(string file)
         ImportOnce(c, "runs", Path.Combine(_dir, StatsStore.RunsFile), path =>
         {
             if (SignedFile.TryReadMasked(path) is not { } b) return false;
-            var all = JsonSerializer.Deserialize<Dictionary<string, CachedRuns>>(b) ?? [];
+            var all = JsonSerializer.Deserialize<Dictionary<string, CachedRuns>>(RenameDriftKey(b)) ?? [];
             WriteBatch(c, all.Keys, (n, old) => new(StatsStore.Merge(old?.Runs ?? [], all[n].Runs), all[n].FetchedAt > (old?.FetchedAt ?? DateTime.MinValue) ? all[n].FetchedAt : old?.FetchedAt ?? DateTime.MinValue));
             return true;
         });
         ImportOnce(c, "sessions", Path.Combine(_dir, "sessions.dat"), path =>
         {
-            if (LiveRunLog.ReadLegacy(path) is not { } map) return false;
+            if (RunSessionIds.ReadLegacy(path) is not { } map) return false;
             UpsertSessions(c, map);
             return true;
         });
@@ -168,15 +243,20 @@ internal sealed class ArchiveDb(string file)
         Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", key));
         if (source == legacy)
         {
-            var to = legacy + ".migrated";
-            if (File.Exists(to)) to = $"{legacy}.{DateTime.Now:yyyyMMdd-HHmmss}.migrated";
-            File.Move(legacy, to);
+            File.Move(legacy, MigratedName(legacy));
         }
+    }
+
+    /// <summary>Where an imported file or folder is moved to: its name plus <c>.migrated</c>, with a time stamp when that name is taken.</summary>
+    internal static string MigratedName(string path)
+    {
+        var to = path + ".migrated";
+        return File.Exists(to) || Directory.Exists(to) ? $"{path}.{DateTime.Now:yyyyMMdd-HHmmss}.migrated" : to;
     }
 
     // ---- runs ------------------------------------------------------------------------------------------------------------
 
-    /// <summary>Every scenario's runs and the time its server scores were last asked for.</summary>
+    /// <summary>Every scenario's runs and the time its cloud scores were last asked for.</summary>
     public Dictionary<string, CachedRuns> ReadAll() => Run(() =>
     {
         using var c = Open();
@@ -213,8 +293,7 @@ internal sealed class ArchiveDb(string file)
             while (r.Read())
             {
                 var (name, time, score) = (r.GetString(0), r.GetInt64(1), r.GetDouble(2));
-                if (SignedFile.UnpackMasked((byte[])r[3]) is not { } b || Decode(b) is not { } p
-                    || !p.Scenario.Equals(name, StringComparison.OrdinalIgnoreCase) || p.Time.Ticks != time || p.Score != score) continue; // edited row: ignored, kept
+                if (Decode(PayloadJson((byte[])r[3])) is not { } p) continue; // unreadable row: ignored, kept
                 if (!rows.TryGetValue(name, out var list)) rows[name] = list = [];
                 list.Add(new CachedRun(p.Time, score, p.Record)); // the payload keeps the time zone kind the column drops
             }
@@ -257,7 +336,7 @@ internal sealed class ArchiveDb(string file)
             {
                 var old = Load(c, n).GetValueOrDefault(n);
                 var next = change(n, old);
-                // Only the rows that differ are written. Rows that failed their check are not in <old>, so they are never deleted here.
+                // Only the rows that differ are written. Unreadable rows are not in <old>, so they are never deleted here.
                 var had = (old?.Runs ?? []).ToDictionary(r => (r.Time.Ticks, r.Score), r => r.Record != null);
                 var keep = new HashSet<(long, double)>();
                 foreach (var r in next.Runs)
@@ -265,7 +344,7 @@ internal sealed class ArchiveDb(string file)
                     var key = (r.Time.Ticks, r.Score);
                     keep.Add(key);
                     if (had.TryGetValue(key, out var hadRecord) && hadRecord == (r.Record != null)) continue;
-                    var payload = SignedFile.PackMasked(JsonSerializer.SerializeToUtf8Bytes(new RowPayload(n, r.Time, r.Score, r.Record)));
+                    var payload = JsonSerializer.SerializeToUtf8Bytes(new RowPayload(n, r.Time, r.Score, r.Record));
                     insert.Run(n, r.Time.Ticks, r.Score, r.Record != null ? 1 : 0, payload);
                 }
                 foreach (var (t, sc) in had.Keys.Where(k => !keep.Contains(k)))
@@ -304,6 +383,89 @@ internal sealed class ArchiveDb(string file)
             foreach (var (k, id) in entries) upsert.Run(k, id.ToString());
         }
         });
+
+    // ---- cloud bests -------------------------------------------------------------------------------------------------------
+
+    const string BestsSyncedKey = "cloud-bests-synced";
+
+    /// <summary>The best score the server reported per scenario; the runs table only holds the few plays the server still lists.</summary>
+    public Dictionary<string, double> ReadBests() => Run(() =>
+    {
+        using var c = Open();
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT scenario, score FROM bests";
+        using var r = m.ExecuteReader();
+        var map = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        while (r.Read()) map[r.GetString(0)] = r.GetDouble(1);
+        return map;
+    });
+
+    /// <summary>Keeps the higher score per scenario and marks the first download as done.</summary>
+    public void SaveBests(IReadOnlyDictionary<string, double> bests) => Run(() =>
+    {
+        using var c = Open();
+        InTransaction(c, () =>
+        {
+            using var upsert = new Stmt(c, "INSERT INTO bests VALUES($s, $c) ON CONFLICT(scenario) DO UPDATE SET score=MAX(score, excluded.score)", "$s", "$c");
+            foreach (var (n, v) in bests) upsert.Run(n, v);
+            Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", BestsSyncedKey));
+        });
+        return 0;
+    });
+
+    /// <summary>True once the server's bests were downloaded.</summary>
+    public bool BestsSynced() => Run(() =>
+    {
+        using var c = Open();
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT 1 FROM meta WHERE key=$k";
+        m.Parameters.AddWithValue("$k", BestsSyncedKey);
+        return m.ExecuteScalar() != null;
+    });
+
+    // ---- replays ---------------------------------------------------------------------------------------------------------
+
+    /// <summary>The info JSON of every replay (see <see cref="Replays.ReplayInfo"/>), newest first.</summary>
+    public List<string> ReplayInfos() => Run(() =>
+    {
+        using var c = Open();
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT info FROM replays ORDER BY started DESC";
+        using var r = m.ExecuteReader();
+        var list = new List<string>();
+        while (r.Read()) list.Add(r.GetString(0));
+        return list;
+    });
+
+    /// <summary>The info JSON of the replay that ended last at or before <paramref name="time"/>, or null.</summary>
+    public string? LastReplayEndedBy(DateTime time) => Run(() =>
+    {
+        using var c = Open();
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT info FROM replays WHERE ended<=$t ORDER BY ended DESC LIMIT 1";
+        m.Parameters.AddWithValue("$t", time.Ticks);
+        return m.ExecuteScalar() as string;
+    });
+
+    /// <summary>The info JSON of the replay of the scenario's run that started at <paramref name="start"/> and ended at <paramref name="end"/>, or null.</summary>
+    public string? FindReplay(string scenario, DateTime start, DateTime end) => Run(() =>
+    {
+        using var c = Open();
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT info FROM replays WHERE scenario=$s AND started=$a AND ended=$e";
+        m.Parameters.AddWithValue("$s", scenario);
+        m.Parameters.AddWithValue("$a", start.Ticks);
+        m.Parameters.AddWithValue("$e", end.Ticks);
+        return m.ExecuteScalar() as string;
+    });
+
+    /// <summary>Adds the replay, or replaces the row of the same id.</summary>
+    public void PutReplay(Guid id, string scenario, DateTime start, DateTime end, string infoJson) => Run(() =>
+    {
+        using var c = Open();
+        Exec(c, "INSERT OR REPLACE INTO replays VALUES($i, $s, $a, $e, $j)", ("$i", id.ToString("N")), ("$s", scenario), ("$a", start.Ticks), ("$e", end.Ticks), ("$j", infoJson));
+        return 0;
+    });
 
     static void InTransaction(SqliteConnection c, Action body)
     {

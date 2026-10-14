@@ -138,10 +138,10 @@ public partial class StatsView
     }
 
     /// <summary>Every play, local runs and server-only scores alike.</summary>
-    List<RunRecord> AllPlays() => _lib.AllRuns.Concat(ServerRuns().Runs).ToList();
+    List<RunRecord> AllPlays() => _lib.AllRuns.Concat(CloudRuns().Runs).ToList();
 
     /// <summary>Personal-best runs, server-only plays included.</summary>
-    IReadOnlySet<RunRecord> PbSet() => ServerRuns().Pbs is { Count: > 0 } sp ? _book.PersonalBestRuns.Concat(sp).ToHashSet() : _book.PersonalBestRuns;
+    IReadOnlySet<RunRecord> PbSet() => CloudRuns().Pbs is { Count: > 0 } sp ? _book.PersonalBestRuns.Concat(sp).ToHashSet() : _book.PersonalBestRuns;
 
     UIElement BuildHome()
     {
@@ -182,7 +182,7 @@ public partial class StatsView
                     FillDay(dayList, clicked.Date, pbs);
                     dayScroll.ScrollToTop();
                 };
-                // Local runs and server scores together, so a day with a PB dot never reads "0 plays".
+                // Local runs and cloud scores together, so a day with a PB dot never reads "0 plays".
                 cal.Set(_book.PlaysPerDay, ChartPaths.TextTone((Brush)FindResource("Accent")));
                 cal.PbDays = _book.PersonalBestDays;
                 cal.LiveDay = LiveNow() ? DateTime.Today : null;
@@ -216,13 +216,13 @@ public partial class StatsView
             .Sum(id =>
             {
                 var p = _progress[id];
-                return Enumerable.Range(1, Math.Max(0, p.RankNames.Count - 1)).Count(p.IsTierComplete);
+                return Enumerable.Range(1, Math.Max(0, p.TierNames.Count - 1)).Count(p.IsTierComplete);
             });
         var cells = new List<(string Label, string Value)>
         {
             (L.T("Days"), $"{days.Count}"),
             (L.T("Time"), time.TotalHours > 1 ? $"{(int)time.TotalHours}h" : Dur(time)),
-            (L.T("Plays"), $"{_book.RecordCount}"),
+            (L.T("Runs"), $"{_book.RecordCount}"),
         };
         cells.Add((L.T("PB"), $"{_book.PersonalBestCount}"));
         cells.Add((L.T("Complete"), $"{done}"));
@@ -322,12 +322,12 @@ public partial class StatsView
             {
                 var s = _book.For(n);
                 var name = n;
-                list.Children.Add(ResultRow(null, n, n, s.Plays == 0 && s.Best == 0 ? L.T("Not played") : L.F("{0} plays · best {1}", s.Plays, s.Best.ToString("0.#")), "", DimB, p => { CloseSearch(); _host.ShowScenario(name, p); }, tier: TierOf(n, s.Best)));
+                list.Children.Add(ResultRow(null, n, n, s.Plays == 0 && s.Best == 0 ? L.T("Not played") : L.F("{0} runs · best {1}", s.Plays, s.Best.ToString("0.#")), "", DimB, p => { CloseSearch(); _host.ShowScenario(name, p); }, tier: TierOf(n, s.Best)));
             }
         }
         if (runs.Count > 0)
         {
-            list.Children.Add(Caption("Favorite plays", scenarios.Count == 0));
+            list.Children.Add(Caption("Favorite runs", scenarios.Count == 0));
             var all = AllPlays();
             foreach (var (scenario, end) in runs)
             {
@@ -361,9 +361,9 @@ public partial class StatsView
                 Brush tierBrush = DimB;
                 foreach (var d in b.Difficulties)
                 {
-                    if (_progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0)
+                    if (_progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0)
                     {
-                        tierBrush = RankBrush(d, p.OverallRankName);
+                        tierBrush = TierBrush(d, p.OverallTierName);
                         break;
                     }
                 }
@@ -378,7 +378,7 @@ public partial class StatsView
             {
                 var s = _book.For(n);
                 var name = n;
-                body.Add(ResultRow(null, n, n, L.F("{0} plays · best {1}", s.Plays, s.Best.ToString("0.#")), "", DimB, p => { CloseSearch(); _host.ShowScenario(name, p); }, tier: TierOf(n, s.Best)));
+                body.Add(ResultRow(null, n, n, L.F("{0} runs · best {1}", s.Plays, s.Best.ToString("0.#")), "", DimB, p => { CloseSearch(); _host.ShowScenario(name, p); }, tier: TierOf(n, s.Best)));
             }
         }
         if (body.Count == 0) body.Add(Text(L.T("No matches"), 13, DimB, null, new Thickness(16, 4, 16, 12)));
@@ -453,7 +453,7 @@ public partial class StatsView
         var list = new List<(Benchmark, Difficulty, BenchmarkProgress)>();
         foreach (var id in _host.Ui.TierPlaylists)
             foreach (var (b, d) in all)
-                if ($"{d.KovaaksBenchmarkId}" == id && _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallRank > 0 && p.RankNames.Count >= 2)
+                if ($"{d.KovaaksBenchmarkId}" == id && _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTier > 0 && p.TierNames.Count >= 2)
                     list.Add((b, d, p));
         return list;
     }
@@ -541,7 +541,7 @@ public partial class StatsView
     /// <summary>Card for a pinned tier: category-card-style with tier-colored background.</summary>
     Border TierBadge(Benchmark b, Difficulty d, BenchmarkProgress p)
     {
-        var brush = RankBrush(d, p.OverallRankName);
+        var brush = TierBrush(d, p.OverallTierName);
         static Color Col(Brush x) => x is SolidColorBrush s ? s.Color : Colors.Gray;
         var tierColor = Col(brush);
         var darkColor = Darken(tierColor);
@@ -574,9 +574,9 @@ public partial class StatsView
         boostedBrush.Freeze();
 
         // Next tier colour for reflection light
-        var nextRankName = p.RankName(p.OverallRank + 1);
-        var nextRankBrush = RankBrush(d, nextRankName);
-        var nextTierColor = Col(nextRankBrush);
+        var nextTierName = p.TierName(p.OverallTier + 1);
+        var nextTierBrush = TierBrush(d, nextTierName);
+        var nextTierColor = Col(nextTierBrush);
         var (nh, ns, nv) = ToHsv(nextTierColor);
         double nsPrime = Math.Min(1, ns * 1.25 + 0.10);
         double nvPrime = Math.Min(1, nv * 1.20 + 0.15);
@@ -628,11 +628,11 @@ public partial class StatsView
         stack.Children.Add(benchName);
 
         // Line 2: Tier name with 3D extrusion effect
-        var tierLabel = TierText.Label(p.OverallRankName);
+        var tierLabel = TierText.Label(p.OverallTierName);
         var tierGrid = new Grid { Margin = new Thickness(0, 4, 0, 6), HorizontalAlignment = HorizontalAlignment.Center };
 
         // Calculate reflection opacity
-        double reflectionOpacity = 0.35 + 0.65 * (p.OverallRank >= p.RankNames.Count - 1 ? 1 : p.OverallFraction);
+        double reflectionOpacity = 0.35 + 0.65 * (p.OverallTier >= p.TierNames.Count - 1 ? 1 : p.OverallFraction);
 
         // 3D extrusion: depth = 6 layers, back to front
         const int depth = 6;
@@ -699,7 +699,7 @@ public partial class StatsView
         Action updateLightPool = () =>
         {
             if (double.IsNaN(contentGrid.ActualWidth) || contentGrid.ActualWidth <= 0) return;
-            double fraction = p.OverallRank >= p.RankNames.Count - 1 ? 1 : p.OverallFraction;
+            double fraction = p.OverallTier >= p.TierNames.Count - 1 ? 1 : p.OverallFraction;
             lightPool.Height = 28 + 72 * fraction;
             lightPool.Opacity = 0.45 + 0.55 * fraction;
         };
@@ -747,8 +747,8 @@ public partial class StatsView
 
     DateTime? _selDay;
 
-    /// <summary>Server scores with no local run (other PC, plays from before the app) as runs, and which of them are personal bests.</summary>
-    (List<RunRecord> Runs, HashSet<RunRecord> Pbs) ServerRuns()
+    /// <summary>Cloud scores with no local run (other PC, plays from before the app) as runs, and which of them are personal bests.</summary>
+    (List<RunRecord> Runs, HashSet<RunRecord> Pbs) CloudRuns()
     {
         List<RunRecord> runs = [];
         HashSet<RunRecord> pbs = [];
@@ -757,7 +757,7 @@ public partial class StatsView
             var stats = _book.For(n);
             foreach (var r in stats.Records.Where(r => r.Run == null))
             {
-                var run = RunRecord.FromServer(n, r.Time, r.Score);
+                var run = RunRecord.FromCloud(n, r.Time, r.Score);
                 runs.Add(run);
                 if (stats.PersonalBests.Contains(r)) pbs.Add(run);
             }
@@ -766,14 +766,14 @@ public partial class StatsView
     }
 
     /// <summary>Gives every run without a session id one (local runs and server-only scores in one pass) and loads the ids for grouping.</summary>
-    void AssignSessionIds() => PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.ArchiveDbFile, AllPlays());
+    void AssignSessionIds() => PlaySession.RunSessionIds = RunSessionIds.AssignAll(_host.Settings.ArchiveDbFile, AllPlays());
 
     /// <summary>The sessions that have a run on <paramref name="day"/>, one clickable row each (opens the session popup), under a day heading.</summary>
     void FillDay(StackPanel host, DateTime day, IReadOnlySet<RunRecord> pbs)
     {
         host.Children.Clear();
         var plays = AllPlays(); // pbs already counts the server-only ones (PbSet)
-        PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.ArchiveDbFile, plays);
+        PlaySession.RunSessionIds = RunSessionIds.AssignAll(_host.Settings.ArchiveDbFile, plays);
         var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
         host.Children.Add(Text(DayLabel(day) + " · " + (sessions.Count == 1 ? L.F("{0} session", sessions.Count) : L.F("{0} sessions", sessions.Count)), 15, FgB, FontWeights.SemiBold, new Thickness(0, 0, 0, 8)));
         DateTime? liveStart = null;
@@ -804,7 +804,7 @@ public partial class StatsView
             rowTitle.Inlines.Add(new System.Windows.Documents.Run(ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
             rowTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             info.Children.Add(rowTitle);
-            var counts = Text((s.RunCount == 1 ? L.F("{0} play", s.RunCount) : L.F("{0} plays", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + (s.AverageAccuracy is { } acc ? $" · {acc:P0}" : ""), 12, DimB, null, new Thickness(0, 2, 0, 0));
+            var counts = Text((s.RunCount == 1 ? L.F("{0} run", s.RunCount) : L.F("{0} runs", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + (s.AverageAccuracy is { } acc ? $" · {acc:P0}" : ""), 12, DimB, null, new Thickness(0, 2, 0, 0));
             counts.TextWrapping = TextWrapping.Wrap;
             info.Children.Add(counts);
             g.Children.Add(info);
@@ -892,7 +892,7 @@ public partial class StatsView
         head.Children.Add(titleCol);
 
         var stats = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = DimB, TextAlignment = TextAlignment.Right };
-        stats.Inlines.Add(new System.Windows.Documents.Run(L.F("{0} · {1} · {2} scenarios · {3} plays · ", Dur(s.Span), Dur(s.Duration), s.ScenarioCount, s.RunCount)));
+        stats.Inlines.Add(new System.Windows.Documents.Run(L.F("{0} · {1} · {2} scenarios · {3} runs · ", Dur(s.Span), Dur(s.Duration), s.ScenarioCount, s.RunCount)));
         stats.Inlines.Add(new System.Windows.Documents.Run(L.F("{0} PBs", pbCount)) { Foreground = pbCount > 0 ? (Brush)FindResource("Green") : DimB });
         Grid.SetColumn(stats, 1);
         head.Children.Add(stats);
@@ -1085,7 +1085,7 @@ public partial class StatsView
     int _browseCols;
 
     static IEnumerable<string> PlaylistScenarios(int id) =>
-        KovaaksCompanion.Core.Benchmarks.RankData.Get(id)?.Categories.SelectMany(c => c.Scenarios).Select(s => s.Name) ?? [];
+        KovaaksCompanion.Core.Benchmarks.TierData.Get(id)?.Categories.SelectMany(c => c.Scenarios).Select(s => s.Name) ?? [];
 
     /// <summary>When any scenario of the playlist was last played, or null.</summary>
     DateTime? LastPlayed(int id)
@@ -1102,11 +1102,11 @@ public partial class StatsView
             .Select(x =>
             {
                 _progress.TryGetValue(x.D.KovaaksBenchmarkId, out var p);
-                var ranked = p != null && p.OverallRankName.Length > 0;
+                var ranked = p != null && p.OverallTierName.Length > 0;
                 return (x.B, x.D, Fav: _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}"), Last: LastPlayed(x.D.KovaaksBenchmarkId),
-                    Rank: ranked ? p!.OverallRank : -1, Frac: ranked ? p!.OverallFraction : 0.0);
+                    Tier: ranked ? p!.OverallTier : -1, Frac: ranked ? p!.OverallFraction : 0.0);
             })
-            .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Rank).ThenByDescending(i => i.Frac)
+            .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Tier).ThenByDescending(i => i.Frac)
             .Select(i => (i.B, i.D, i.Fav)).ToList();
 
     /// <summary>Columns of a tab's list at this width: 3 playlist cards, fewer when narrow; scenarios and replays are one column of rows.</summary>
@@ -1127,7 +1127,7 @@ public partial class StatsView
     UIElement BuildBrowse()
     {
         var tabs = new UniformGrid { Rows = 1 };
-        foreach (var (kind, label, glyph) in new[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Plays", "Record", "") })
+        foreach (var (kind, label, glyph) in new[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Runs", "Record", "") })
         {
             var tab = kind;
             var content = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1164,7 +1164,7 @@ public partial class StatsView
             (_browseTabs.Parent as Panel)?.Children.Remove(_browseTabs);
             body.Children.Add(_browseTabs);
         }
-        if (items.Count == 0) body.Children.Add(Text(L.T(tab == "Scenarios" ? "No scenarios" : "No plays"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
+        if (items.Count == 0) body.Children.Add(Text(L.T(tab == "Scenarios" ? "No scenarios" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
         var grid = new UniformGrid { Columns = cols };
         _browseItems = items; _browseGrid = grid; _browseShown = 0;
         AppendBrowse(BrowseBatch);
@@ -1198,13 +1198,13 @@ public partial class StatsView
         AppendBrowse(BrowseBatch);
     }
 
-    /// <summary>Rank thresholds and server best score per scenario, from every loaded benchmark.</summary>
-    Dictionary<string, (IReadOnlyList<double> Maxes, double Score)> RankData()
+    /// <summary>Tier thresholds and server best score per scenario, from every loaded benchmark.</summary>
+    Dictionary<string, (IReadOnlyList<double> Maxes, double Score)> TierData()
     {
         var data = new Dictionary<string, (IReadOnlyList<double>, double)>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in _progress.Values)
             foreach (var sc in p.Scenarios)
-                if (sc.RankMaxes.Count > 0 && !data.ContainsKey(sc.Scenario)) data[sc.Scenario] = (sc.RankMaxes, sc.Score);
+                if (sc.TierThresholds.Count > 0 && !data.ContainsKey(sc.Scenario)) data[sc.Scenario] = (sc.TierThresholds, sc.Score);
         return data;
     }
 
@@ -1226,8 +1226,8 @@ public partial class StatsView
     List<Func<UIElement>> ScenarioRows()
     {
         var ui = _host.Ui;
-        var data = RankData();
-        return _book.AllScenarios
+        var data = TierData();
+        return _book.AllScenarios.Concat(KovaaksCompanion.Core.Benchmarks.TierData.ScenarioNames).Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(n =>
             {
                 var s = _book.For(n);
@@ -1239,7 +1239,7 @@ public partial class StatsView
     }
 
     /// <summary>One scenario as a list row, laid out like <see cref="RunRow"/>: favorite mark, name, playlist, tier, best score, plays.</summary>
-    Border ScenarioRow(string name, ScenarioStats stats, bool fav)
+    Border ScenarioRow(string name, ScenarioHistory stats, bool fav)
     {
         var tier = TierOf(name, stats.Best);
         var g = new Grid();
@@ -1275,7 +1275,7 @@ public partial class StatsView
     List<Func<UIElement>> RecordRows()
     {
         var ui = _host.Ui;
-        var data = RankData();
+        var data = TierData();
         var pbs = PbSet();
         return AllPlays()
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
@@ -1296,16 +1296,16 @@ public partial class StatsView
         info.Children.Add(titleStack);
         info.Children.Add(Text(d.DifficultyName, 12, DimB, null, new Thickness(0, 2, 0, 0)));
 
-        var ranked = _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0;
+        var ranked = _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0;
         if (ranked)
         {
-            var pct = p!.OverallRank >= p.RankNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
-            info.Children.Add(Text($"{TierText.Label(p.OverallRankName)} · {pct}", 12, ChartPaths.TextTone(RankBrush(d, p.OverallRankName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+            var pct = p!.OverallTier >= p.TierNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
+            info.Children.Add(Text($"{TierText.Label(p.OverallTierName)} · {pct}", 12, ChartPaths.TextTone(TierBrush(d, p.OverallTierName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
         }
         else info.Children.Add(Text(L.T("UNRANKED"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
 
         var card = new Border { CornerRadius = new CornerRadius(14), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(TileGap / 2), Cursor = Cursors.Hand };
-        if (ranked && RankBrush(d, p!.OverallRankName) is SolidColorBrush rankBrush)
+        if (ranked && TierBrush(d, p!.OverallTierName) is SolidColorBrush rankBrush)
         {
             var c = rankBrush.Color;
             var grad = new LinearGradientBrush
@@ -1338,15 +1338,15 @@ public partial class StatsView
     UIElement FavoriteCard(Benchmark b, Difficulty d)
     {
         _progress.TryGetValue(d.KovaaksBenchmarkId, out var p);
-        var ranked = p != null && p.OverallRankName.Length > 0;
-        var tier = ranked ? RankBrush(d, p!.OverallRankName) : (Brush)FindResource("Dim");
-        var history = p == null ? [] : Tier.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.RankMaxes)));
-        var watermark = ranked ? TierText.Label(p!.OverallRankName) : L.T("UNRANKED");
-        var complete = p != null && p.IsTierComplete(p.OverallRank);
+        var ranked = p != null && p.OverallTierName.Length > 0;
+        var tier = ranked ? TierBrush(d, p!.OverallTierName) : (Brush)FindResource("Dim");
+        var history = p == null ? [] : TierLadder.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
+        var watermark = ranked ? TierText.Label(p!.OverallTierName) : L.T("UNRANKED");
+        var complete = p != null && p.IsTierComplete(p.OverallTier);
         return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
     }
 
-    /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="fraction"/> is the progress to the next tier (shown while not <paramref name="complete"/>); <paramref name="cloudOf"/> supplies the scenarios whose server scores fill in a line with no local runs.</summary>
+    /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="fraction"/> is the progress to the next tier (shown while not <paramref name="complete"/>); <paramref name="cloudOf"/> supplies the scenarios whose cloud scores fill in a line with no local runs.</summary>
     UIElement MiniCard(string name, string sub, Brush dot, Brush tier, bool ranked, List<(DateTime Day, double Value)> history, string watermark, bool complete, double? fraction, BenchmarkProgress? cloudOf, Action click)
     {
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -1366,7 +1366,7 @@ public partial class StatsView
         var chart = new ScoreChart { IsHitTestVisible = false, MiniLineDown = 12 };
         // Not complete: the progress to the next tier as a whole number, truncated (never rounded up to 100).
         chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete, !complete && fraction is { } f ? $"{Math.Floor(Math.Clamp(f, 0, 1) * 100):0}" : null);
-        if (cloudOf != null) _ = EnsureCloudAsync(cloudOf.Scenarios.Where(sc => sc.RankMaxes.Count > 0).Select(sc => sc.Scenario)); // a change redraws Home through the book
+        if (cloudOf != null) _ = EnsureCloudAsync(cloudOf.Scenarios.Where(sc => sc.TierThresholds.Count > 0).Select(sc => sc.Scenario)); // a change redraws Home through the book
         chart.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.Transparent, 0.15), new GradientStop(Colors.White, 0.5) }, new Point(0, 0), new Point(1, 0));
 
         var overlay = new Border { CornerRadius = new CornerRadius(3), IsHitTestVisible = false, Background = new SolidColorBrush(Colors.Transparent) };

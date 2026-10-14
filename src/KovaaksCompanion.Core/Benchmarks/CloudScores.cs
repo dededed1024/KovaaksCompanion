@@ -6,29 +6,9 @@ namespace KovaaksCompanion.Core.Benchmarks;
 /// <summary>One run from the server's last-scores list. Score is a real value (same unit as the local CSV).</summary>
 public sealed record CloudScore(DateTime Time, double Score);
 
-/// <summary>Own leaderboard entry: resolved account name and the best score's date.</summary>
-public sealed record LeaderboardEntry(string SteamId, string Username, double Score, DateTime? Time);
-
-/// <summary>Parsers for KovaaK's leaderboard and last-scores JSON (no network).</summary>
+/// <summary>Parser for KovaaK's last-scores JSON (no network).</summary>
 public static class CloudScores
 {
-    /// <summary>First entry of a leaderboard page whose steamId matches; null when absent or someone else's.</summary>
-    public static LeaderboardEntry? ParseEntry(string json, string steamId)
-    {
-        using var doc = JsonDocument.Parse(json);
-        if (doc.RootElement.ValueKind != JsonValueKind.Object ||
-            !doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return null;
-        foreach (var e in data.EnumerateArray())
-        {
-            var id = Str(e, "steamId");
-            var name = Str(e, "webappUsername");
-            if (id != steamId || string.IsNullOrEmpty(name)) continue;
-            var attrs = e.TryGetProperty("attributes", out var a) ? a : default;
-            return new(id, name, Num(e, "score") ?? 0, attrs.ValueKind == JsonValueKind.Object ? Epoch(attrs) : null);
-        }
-        return null;
-    }
-
     /// <summary>Parses the last-scores array, oldest first; entries without a usable date or score are skipped.</summary>
     public static List<CloudScore> ParseLastScores(string json)
     {

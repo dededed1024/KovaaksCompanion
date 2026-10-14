@@ -2,9 +2,10 @@ namespace KovaaksCompanion.Core.Replays;
 
 public static class ReplayFolder
 {
-    public const string TrajectoryFile = "trajectory.bin", InfoFile = "session.dat", LegacyInfoFile = "session.json", VideoFile = "video.mp4", PerfPattern = "*Performance.perf";
+    /// <summary>The video's file name inside the replay folders of earlier versions.</summary>
+    public const string VideoFile = "video.mp4";
 
-    /// <summary>"yyyyMMdd-HHmmss_Score_[PB_]Scenario" with characters illegal in file names replaced by '_'. Older folders are "yyyyMMdd-HHmmss Scenario"; nothing parses the name, so both coexist.</summary>
+    /// <summary>"yyyyMMdd-HHmmss_Score_[PB_]Scenario" with characters illegal in file names replaced by '_'. The name of a new video file (plus the extension); nothing parses it.</summary>
     public static string Name(DateTime start, string scenario, double score, bool personalBest)
     {
         var bad = Path.GetInvalidFileNameChars();

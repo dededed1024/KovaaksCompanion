@@ -6,9 +6,9 @@ namespace KovaaksCompanion.Core.Library;
 /// <summary>
 /// Session id per run in the archive database (<see cref="ArchiveDb"/>, once the sessions.dat file): run key (<see cref="UiState.RunKey"/>) to the session's id.
 /// Plays (local runs and server-only scores alike) sharing an id are one <see cref="PlaySession"/>. Ids are GUIDs. A live session is one game launch;
-/// plays without an id (legacy local runs, server records) are grouped once by <see cref="PlaySession.DefaultGap"/> and then kept. The <c>path</c> of every method is the database file.
+/// plays without an id (legacy local runs, cloud records) are grouped once by <see cref="PlaySession.DefaultGap"/> and then kept. The <c>path</c> of every method is the database file.
 /// </summary>
-public static class LiveRunLog
+public static class RunSessionIds
 {
     static readonly object Gate = new();
 
@@ -38,7 +38,7 @@ public static class LiveRunLog
     /// <summary>Null when the database cannot be read (nothing may then be assigned or written over what is there).</summary>
     static Dictionary<string, Guid>? LoadFile(string path)
     {
-        try { return new ArchiveDb(path).LoadSessions(); }
+        try { return ArchiveDb.At(path).LoadSessions(); }
         catch (IOException e) { Diagnostics.ErrorReporter.Report("session ids load " + path, e); return null; }
     }
 
@@ -46,7 +46,7 @@ public static class LiveRunLog
     {
         try
         {
-            AccessGuard.Run(Path.GetDirectoryName(path)!, true, () => new ArchiveDb(path).SaveSessions(entries, replace));
+            AccessGuard.Run(Path.GetDirectoryName(path)!, true, () => ArchiveDb.At(path).SaveSessions(entries, replace));
             return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("session ids save " + path, e); return false; }
@@ -112,7 +112,7 @@ public static class LiveRunLog
             var key = UiState.RunKey(scenario, end);
             if (!all.TryGetValue(key, out var id))
             {
-                id = prevId is { } p && start - prevEnd <= PlaySession.DefaultGap ? p : NewId();
+                id = prevId is { } p && PlaySession.WithinGap(prevEnd, start) ? p : NewId();
                 all[key] = id;
                 added[key] = id;
             }

@@ -1,7 +1,7 @@
 namespace KovaaksCompanion.Core.Library;
 
 /// <summary>A playlist seen through the player's history, local and server: per-scenario stats and progress over time.</summary>
-public sealed record PlaylistReport(string Name, IReadOnlyList<ScenarioStats> Scenarios)
+public sealed record PlaylistReport(string Name, IReadOnlyList<ScenarioHistory> Scenarios)
 {
     public int ScenarioCount => Scenarios.Count;
     public int PlayedCount => Scenarios.Count(s => s.Plays > 0);
@@ -21,7 +21,7 @@ public sealed record PlaylistReport(string Name, IReadOnlyList<ScenarioStats> Sc
             .SelectMany(s => s.Records.Select(r => (Scenario: s, Record: r)))
             .OrderBy(e => e.Record.Time)
             .ToList();
-        var bestNow = new Dictionary<ScenarioStats, double>();
+        var bestNow = new Dictionary<ScenarioHistory, double>();
         var points = new List<(DateTime, double)>(events.Count);
         foreach (var e in events)
         {

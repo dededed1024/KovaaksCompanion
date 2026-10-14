@@ -4,7 +4,7 @@ using KovaaksCompanion.Core.Replays;
 namespace KovaaksCompanion.Core.Library;
 
 /// <summary>
-/// The play session of the running game: one game launch. Gives its runs the session id (kept in memory by <see cref="LiveRunLog"/> until the game exits or the app closes),
+/// The play session of the running game: one game launch. Gives its runs the session id (kept in memory by <see cref="RunSessionIds"/> until the game exits or the app closes),
 /// remembers the replays and personal bests saved in it, and says which of them a later run beat. Nothing here scans the disk.
 /// </summary>
 public sealed class LiveSession(string runsFile)
@@ -25,7 +25,7 @@ public sealed class LiveSession(string runsFile)
     {
         Since = since;
         lock (_gate) _replays.Clear();
-        _id = Tuple.Create(LiveRunLog.NewId());
+        _id = Tuple.Create(RunSessionIds.NewId());
     }
 
     /// <summary>Closes the session; its runs are written to the main file in the background.</summary>
@@ -36,12 +36,12 @@ public sealed class LiveSession(string runsFile)
     }
 
     /// <summary>Writes the session's run ids to the main file now (the app is closing).</summary>
-    public void Flush() => LiveRunLog.Flush(runsFile);
+    public void Flush() => RunSessionIds.Flush(runsFile);
 
     /// <summary>Tags a finished run with the open session (no-op while the game is not running).</summary>
     public void Tag(string scenario, DateTime end)
     {
-        if (Id is { } id) PlaySession.LiveIds = LiveRunLog.Add(PlaySession.LiveIds, scenario, end, id);
+        if (Id is { } id) PlaySession.RunSessionIds = RunSessionIds.Add(PlaySession.RunSessionIds, scenario, end, id);
     }
 
     /// <summary>Records that the run set a personal best, so it can be kept.</summary>
@@ -51,13 +51,13 @@ public sealed class LiveSession(string runsFile)
     /// A replay was saved. Returns the replays of its session that a later run of the same scenario beat (empty unless <paramref name="deleteBeaten"/>),
     /// never a <paramref name="favorite"/> nor, when <paramref name="keepPersonalBests"/>, a personal best; they are forgotten here, the caller deletes them.
     /// </summary>
-    public List<StoredReplay> Saved(ReplayInfo info, string folder, bool deleteBeaten, Func<ReplayInfo, bool> favorite, bool keepPersonalBests)
+    public List<StoredReplay> Saved(ReplayInfo info, bool deleteBeaten, Func<ReplayInfo, bool> favorite, bool keepPersonalBests)
     {
-        if (!PlaySession.LiveIds.TryGetValue(UiState.RunKey(info.Scenario, info.End), out var id)) return [];
+        if (!PlaySession.RunSessionIds.TryGetValue(UiState.RunKey(info.Scenario, info.End), out var id)) return [];
         lock (_gate)
         {
             if (id != _replaysId) { _replays.Clear(); _replaysId = id; }
-            _replays.Add(new StoredReplay(folder, info, 0));
+            _replays.Add(new StoredReplay(info, 0));
             if (!deleteBeaten) return [];
             var victims = StorageCleaner.Superseded(_replays.ToList(), i => favorite(i) || (keepPersonalBests && _pbs.ContainsKey(UiState.RunKey(i.Scenario, i.End))));
             _replays.RemoveAll(victims.Contains);
@@ -69,7 +69,7 @@ public sealed class LiveSession(string runsFile)
     public PlaySession? Find(IEnumerable<PlaySession> sessions)
     {
         if (Id is not { } id) return null;
-        var ids = PlaySession.LiveIds;
+        var ids = PlaySession.RunSessionIds;
         return sessions.FirstOrDefault(s => s.Runs.Any(r => ids.TryGetValue(UiState.RunKey(r.Scenario, r.End), out var x) && x == id));
     }
 }

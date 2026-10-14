@@ -3,7 +3,7 @@ using KovaaksCompanion.Core.Benchmarks;
 namespace KovaaksCompanion.Core.Library;
 
 /// <summary>
-/// The one place that joins local runs with server data: <see cref="For"/> gives the merged, cached <see cref="ScenarioStats"/> of a
+/// The one place that joins local runs with server data: <see cref="For"/> gives the merged, cached <see cref="ScenarioHistory"/> of a
 /// scenario, and the totals (record count, personal bests) are cached until a scenario's server data changes.
 /// </summary>
 public sealed class ScoreBook
@@ -12,7 +12,7 @@ public sealed class ScoreBook
 
     readonly Dictionary<string, IReadOnlyList<CloudScore>> _cloud = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, double> _knownBest = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, ScenarioStats> _stats = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, ScenarioHistory> _stats = new(StringComparer.OrdinalIgnoreCase);
     Summary? _summary;
 
     public ScoreBook(RunLibrary lib) => Lib = lib;
@@ -28,16 +28,16 @@ public sealed class ScoreBook
         return book;
     }
 
-    /// <summary>Every scenario with a local run or a server score.</summary>
+    /// <summary>Every scenario with a local run or a cloud score.</summary>
     public IEnumerable<string> AllScenarios => Lib.Scenarios.Concat(_cloud.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
 
-    public ScenarioStats For(string scenario)
+    public ScenarioHistory For(string scenario)
     {
         if (_stats.TryGetValue(scenario, out var s)) return s;
         return _stats[scenario] = new(scenario, Lib.Runs(scenario), _cloud.GetValueOrDefault(scenario), _knownBest.GetValueOrDefault(scenario));
     }
 
-    /// <summary>Sets a scenario's server scores. False when they are the same as before.</summary>
+    /// <summary>Sets a scenario's cloud scores. False when they are the same as before.</summary>
     public bool SetCloud(string scenario, IReadOnlyList<CloudScore> scores)
     {
         if (_cloud.TryGetValue(scenario, out var old) && old.SequenceEqual(scores)) return false;
@@ -86,6 +86,6 @@ public sealed class ScoreBook
     /// <summary>The local runs among the personal bests.</summary>
     public IReadOnlySet<RunRecord> PersonalBestRuns => Totals().PersonalBestRuns;
     public IReadOnlySet<DateTime> PersonalBestDays => Totals().PersonalBestDays;
-    /// <summary>Records per calendar day, local runs and server scores together.</summary>
+    /// <summary>Records per calendar day, local runs and cloud scores together.</summary>
     public IReadOnlyDictionary<DateTime, int> PlaysPerDay => Totals().PlaysPerDay;
 }

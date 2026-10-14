@@ -15,6 +15,10 @@ public sealed record ReplayInfo
     public const double DefaultSyncMs = 0;
 
     public int FormatVersion { get; init; } = CurrentVersion;
+    /// <summary>Identifies the replay: its data file is <c>&lt;Id&gt;.rep</c> in the archive folder. <see cref="Guid.Empty"/> only on a replay read from an earlier folder, before it is migrated.</summary>
+    public Guid Id { get; init; }
+    /// <summary>File name (no folder) of the video in the videos folder; null when the replay has none.</summary>
+    public string? VideoFile { get; init; }
     public string Scenario { get; init; } = "";
     public DateTime Start { get; init; }
     public DateTime End { get; init; }
@@ -25,14 +29,9 @@ public sealed record ReplayInfo
     /// <summary>User nudge in ms (VIEW-005), added to the base offset at playback.</summary>
     public double SyncNudgeMs { get; init; }
     public double SampleRateHz { get; init; } = 120;
-    public InputSettings Settings { get; init; } = new();
     public bool Partial { get; init; }
-    public bool HasVideo { get; init; }
+    [JsonIgnore] public bool HasVideo => VideoFile is not null;
     public double Score { get; init; }
-    public int Kills { get; init; }
-    public int HitCount { get; init; }
-    public int MissCount { get; init; }
-    [JsonIgnore] public double Accuracy => HitCount + MissCount == 0 ? 0 : (double)HitCount / (HitCount + MissCount);
     /// <summary>False when the sens scale was unknown: trajectory.bin has no camera path.</summary>
     public bool DegreesAvailable { get; init; } = true;
 

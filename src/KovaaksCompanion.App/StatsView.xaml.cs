@@ -20,7 +20,7 @@ sealed record RadarEntry(string Category, string Sub, string Scenario, double Va
 /// <summary>
 /// The Stats page: Home (search, current tier, activity, play sessions, playlists) is the whole page; a playlist opens
 /// as a popup over it. Benchmarks (the embedded playlists and categories), per-scenario score
-/// history from the stats folder, and the player's server scores. A different non-zero server score wins over the local best.
+/// history from the stats folder, and the player's cloud scores. A different non-zero cloud score wins over the local best.
 /// </summary>
 public partial class StatsView : UserControl
 {
@@ -28,10 +28,10 @@ public partial class StatsView : UserControl
     readonly KovaaksApi _api = new();
     readonly Dictionary<int, BenchmarkProgress> _progress = [];
     readonly Dictionary<int, BenchmarkProgress> _rawProgress = [];
-    /// <summary>Best score of the deleted runs per scenario; counted like a server score.</summary>
-    Dictionary<string, double> _deletedBest = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Best score in the archive per scenario, kept even after KovaaK's drops the run; counted like a cloud score.</summary>
+    Dictionary<string, double> _archivedBest = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Deleted runs (lower-case scenario, end): they still count in statistics but are left out of session and replay lists.</summary>
-    /// <summary>Local runs joined with server scores; every score-based statistic comes from here.</summary>
+    /// <summary>Local runs joined with cloud scores; every score-based statistic comes from here.</summary>
     ScoreBook _book = new(new RunLibrary([]));
     RunLibrary _lib => _book.Lib;
     List<ReplayInfo> _replays = [];
@@ -285,7 +285,7 @@ public partial class StatsView : UserControl
         ShowHome();
     }
 
-    void OnReplaySaved(ReplayInfo info, string folder) => Dispatcher.InvokeAsync(() =>
+    void OnReplaySaved(ReplayInfo info) => Dispatcher.InvokeAsync(() =>
     {
         _celebrateNext = true;
         Reload();
@@ -294,28 +294,26 @@ public partial class StatsView : UserControl
     async void Reload()
     {
         var folder = _host.Settings.StatsFolder;
-        var replaysFolder = _host.ReplaysFolder;
-        var cachedReplays = _host.ArchiveReplaysFolder;
+        var replayArchive = _host.Replays;
         var store = Store;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
         var scanCache = _host.Settings.ScanCacheFile;
-        var (lib, replays, totals, deletedBest, scores) = await Task.Run(() => {
-            var infos = ReplayStore.List(replaysFolder, cachedReplays).Select(s => s.Info).ToList();
-            var scanned = RunLibrary.Scan(folder, scanCache).Verified(infos);
-            try { store.ArchiveNew(scanned.AllRuns); } catch (System.IO.IOException) { } // stats-folder runs played without the app would be lost with their CSV
-            var archive = store.ReadArchive();
-            return (scanned.WithArchived(archive.Runs()).WithDpiFixes(dpiFixes), infos, LoadTotals(store, _host.Settings.EffectiveSteamId), archive.BestScores(), archive.Scores());
+        var (lib, replays, archivedBest, scores) = await Task.Run(() => {
+            var infos = replayArchive.List();
+            var (library, archive) = RunLibrary.Load(folder, scanCache, infos, store, dpiFixes, archiveNew: true);
+            return (library, infos, archive.ArchivedBests(), archive.Scores());
         });
         _book = _book.WithLibrary(lib);
-        (_replays, _deletedBest) = (replays, deletedBest);
+        var bestsChanged = archivedBest.Count != _archivedBest.Count;
+        (_replays, _archivedBest) = (replays, archivedBest);
         foreach (var (n, c) in scores)
         {
             _book.SetCloud(n, c.Scores);
             if (DateTime.Now - c.FetchedAt < SyncInterval) _cloudFetched.TryAdd(n, c.FetchedAt); // fetched recently, even in an earlier run
         }
         AssignSessionIds();
-        foreach (var (n, v) in deletedBest) _book.RaiseKnownBest(n, v);
-        if (_rawProgress.Count == 0 || totals.Count != _totals.Count) { _totals = totals; RebuildProgress(); }
+        foreach (var (n, v) in archivedBest) _book.RaiseKnownBest(n, v);
+        if (_rawProgress.Count == 0 || bestsChanged) RebuildProgress();
         else ReapplyLocal();
         var celebrate = _celebrateNext;
         _celebrateNext = false;
@@ -323,7 +321,7 @@ public partial class StatsView : UserControl
         ShowHome();
         if (_confettiPending) _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, FireConfetti);
         if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
-        _ = SyncServerAsync();
+        _ = SyncCloudAsync();
     }
 
     // Session popup
@@ -473,7 +471,7 @@ public partial class StatsView : UserControl
     {
         var d0 = b.Difficulties[0];
         var text = b.Difficulties.Count > 1 ? L.F("{0} difficulties · {1} scenarios", b.Difficulties.Count, d0.ScenarioCount) : L.F("{0} scenarios", d0.ScenarioCount);
-        if (_progress.TryGetValue(Chosen(b).KovaaksBenchmarkId, out var p) && p.OverallRankName.Length > 0) text += $" · {TierText.Label(p.OverallRankName)}";
+        if (_progress.TryGetValue(Chosen(b).KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0) text += $" · {TierText.Label(p.OverallTierName)}";
         return text;
     }
 
@@ -563,14 +561,14 @@ public partial class StatsView : UserControl
         SetSummary("");
 
         var cutoff = DateTime.Now.AddDays(-30);
-        var maxRank = p.Scenarios.Select(sc => sc.RankMaxes.Count).DefaultIfEmpty(0).Max();
-        if (p.RankNames.Count > 1) maxRank = Math.Min(maxRank, p.RankNames.Count - 1);
-        var tierNames = Enumerable.Range(1, maxRank).Select(p.RankName).ToList();
-        var tierBrushes = tierNames.Select(n => RankBrush(d, n)).ToList();
-        var history = Tier.History(p.Scenarios.Select(sc => (byName[sc.Scenario], (IReadOnlyList<double>)sc.RankMaxes)));
+        var maxTier = p.Scenarios.Select(sc => sc.TierThresholds.Count).DefaultIfEmpty(0).Max();
+        if (p.TierNames.Count > 1) maxTier = Math.Min(maxTier, p.TierNames.Count - 1);
+        var tierNames = Enumerable.Range(1, maxTier).Select(p.TierName).ToList();
+        var tierBrushes = tierNames.Select(n => TierBrush(d, n)).ToList();
+        var history = TierLadder.History(p.Scenarios.Select(sc => (byName[sc.Scenario], (IReadOnlyList<double>)sc.TierThresholds)));
         var entries = new List<RadarEntry>();
-        var blocks = new List<(string Scenario, int Rank, double Fraction)>();
-        var counts = new int[maxRank + 1];
+        var blocks = new List<(string Scenario, int Tier, double Fraction)>();
+        var counts = new int[maxTier + 1];
         var cats = new List<BenchCategory>();
         foreach (var g in p.Subcategories.GroupBy(CatOf))
         {
@@ -582,14 +580,14 @@ public partial class StatsView : UserControl
                 {
                     var local = byName[sc.Scenario];
                     var best = KovaaksApi.Reconcile(local.Best > 0 ? local.Best : null, sc.Score);
-                    var fromServer = best != null && (local.LocalBest == 0 || Math.Abs(best.Value - local.LocalBest) > 0.005);
+                    var fromCloud = best != null && (local.LocalBest == 0 || Math.Abs(best.Value - local.LocalBest) > 0.005);
                     var old = local.BaselineAt(cutoff);
-                    entries.Add(new RadarEntry(CatOf(sub), sub.Name, sc.Scenario, Tier.ValueOf(best ?? 0, sc.RankMaxes), Tier.ValueOf(old ?? 0, sc.RankMaxes)));
-                    var pos = Tier.TierOf(best ?? 0, sc.RankMaxes);
-                    var rank = sc.RankMaxes.Count == 0 ? 0 : Math.Min(pos.Rank, maxRank);
+                    entries.Add(new RadarEntry(CatOf(sub), sub.Name, sc.Scenario, TierLadder.ValueOf(best ?? 0, sc.TierThresholds), TierLadder.ValueOf(old ?? 0, sc.TierThresholds)));
+                    var pos = TierLadder.TierOf(best ?? 0, sc.TierThresholds);
+                    var rank = sc.TierThresholds.Count == 0 ? 0 : Math.Min(pos.Tier, maxTier);
                     counts[rank]++;
                     blocks.Add((sc.Scenario, rank, pos.Fraction));
-                    return new BenchRow(sc.Scenario, best, fromServer, local.Plays, local.LastPlayed, sc.RankMaxes);
+                    return new BenchRow(sc.Scenario, best, fromCloud, local.Plays, local.LastPlayed, sc.TierThresholds);
                 }).ToList();
                 return new BenchSub(sub.Name.Trim(), ParseBrush(subDef?.Color), rows);
             }).ToList();
@@ -639,7 +637,7 @@ public partial class StatsView : UserControl
     static string Structure(Difficulty d) =>
         string.Join("  |  ", d.Categories.Select(c => $"{c.CategoryName} ({c.Subcategories.Sum(s => s.ScenarioCount)})"));
 
-    Brush RankBrush(Difficulty d, string name) => ParseBrush(d.RankColors.TryGetValue(name, out var hex) ? hex : null);
+    Brush TierBrush(Difficulty d, string name) => ParseBrush(d.TierColors.TryGetValue(name, out var hex) ? hex : null);
 
     /// <summary>A frozen brush from a colour string, or the dim brush when it is missing or malformed.</summary>
     Brush ParseBrush(string? hex)
@@ -659,7 +657,7 @@ public partial class StatsView : UserControl
     /// </summary>
     (BenchmarkProgress P, int Id)? TierSource(string scenario)
     {
-        (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.RankMaxes.Count > 0) ? (pr, id) : null;
+        (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.TierThresholds.Count > 0) ? (pr, id) : null;
         if (int.TryParse(_playlist, out var cur) && Find(cur) is { } sel) return sel;
 
         var live = LiveNow() && _host.Live.Find(PlaySession.Group(_lib.AllRuns)) is { } s
@@ -686,8 +684,8 @@ public partial class StatsView : UserControl
         if (TierSource(scenario) is not { } h) return null;
         var d = BenchmarkCatalog.All.SelectMany(b => b.Difficulties).FirstOrDefault(x => x.KovaaksBenchmarkId == h.Id);
         if (d == null) return null;
-        var sc = h.P.Scenarios.First(x => x.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && x.RankMaxes.Count > 0);
-        return sc.RankMaxes.Select((v, i) => new ChartBand(v, TierText.Label(h.P.RankName(i + 1)), RankBrush(d, h.P.RankName(i + 1)))).ToList();
+        var sc = h.P.Scenarios.First(x => x.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && x.TierThresholds.Count > 0);
+        return sc.TierThresholds.Select((v, i) => new ChartBand(v, TierText.Label(h.P.TierName(i + 1)), TierBrush(d, h.P.TierName(i + 1)))).ToList();
     }
 
     /// <summary>The colour blended <paramref name="t"/> of the way towards white.</summary>
@@ -713,7 +711,7 @@ public partial class StatsView : UserControl
     /// <summary>The sheet's data: the score book, replays and tier bands.</summary>
     public ScenarioData SheetData() => new(_book, _replays, TierBands, LoadCloudScoresAsync);
 
-    /// <summary>Brings one scenario's server scores up to date in the score book (the sheet re-reads it afterwards).</summary>
+    /// <summary>Brings one scenario's cloud scores up to date in the score book (the sheet re-reads it afterwards).</summary>
     Task<bool> LoadCloudScoresAsync(string scenario) => EnsureCloudAsync([scenario]);
 
     internal static string Dur(TimeSpan t) => t.TotalHours >= 1 ? L.F("{0}h {1}m", (int)t.TotalHours, t.Minutes) : L.F("{0}m {1}s", t.Minutes, t.Seconds);

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+﻿﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using KovaaksCompanion.Core.Diagnostics;
@@ -24,7 +24,7 @@ public sealed record ScenarioData(ScoreBook Book, IReadOnlyList<ReplayInfo> Repl
     public RunLibrary Lib => Book.Lib;
 }
 
-public sealed record ReplayItem(string Folder, ReplayInfo Info);
+public sealed record ReplayItem(ReplayInfo Info);
 
 /// <summary>One metric chip: colored dot, name and the value at the playhead. Hidden ones render dimmed.</summary>
 public sealed class MetricRow(ChartSeries series, bool visible) : INotifyPropertyChanged
@@ -70,7 +70,7 @@ public partial class ReplayView : UserControl
     readonly DispatcherTimer _seekTimer;
     readonly ScoreChart _bigChart = new() { Cursor = Cursors.Hand, Zoomable = true };
     ScenarioData? _d;
-    ScenarioStats _stats = new("", []);
+    ScenarioHistory _stats = new("", []);
     HashSet<int> _pbs = [];
     string _scenario = "";
     DateTime? _selEnd;
@@ -103,7 +103,7 @@ public partial class ReplayView : UserControl
         _host = host;
         Metrics.ItemsSource = _metrics;
         foreach (var n in host.Ui.VisibleSeries) if (Enum.TryParse<ChartSeries>(n, out var vs)) _visible.Add(vs);
-        foreach (var (folder, info) in ReplayStore.List(host.ReplaysFolder, host.ArchiveReplaysFolder)) _items.Add(new ReplayItem(folder, info));
+        RefreshItems();
         SetTransport(false);
         TrailBtn.IsChecked = host.Ui.ShowTrail;
         Overlay.Visibility = host.Ui.ShowTrail ? Visibility.Visible : Visibility.Collapsed;
@@ -226,11 +226,12 @@ public partial class ReplayView : UserControl
     void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     /// <summary>Opens (or replaces the content of) the popup on the scenario overview. <paramref name="origin"/> is in this control's coordinates.</summary>
-    public void Show(ScenarioData data, string scenario, Point? origin) => Open(data, scenario, null, origin);
+    public void Show(ScenarioData data, string scenario, Point? origin) { RefreshItems(); Open(data, scenario, null, origin); }
 
     /// <summary>Opens the popup with the run that ended at <paramref name="end"/> selected; false when it has no recording, unless <paramref name="withoutRecording"/> selects it anyway.</summary>
     public bool ShowRun(ScenarioData data, string scenario, DateTime end, bool withoutRecording = false)
     {
+        RefreshItems();
         if (!withoutRecording && ReplayStore.FindRun(Infos(), scenario, end) < 0 && !_host.IsPending(scenario, end)) return false;
         Open(data, scenario, end, null);
         return true;
@@ -239,6 +240,7 @@ public partial class ReplayView : UserControl
     /// <summary>Opens the most recent recorded run; false when nothing was recorded yet.</summary>
     public bool ShowLatest(ScenarioData data)
     {
+        RefreshItems();
         if (_items.Count == 0) return false;
         var i = _items[0].Info;
         return ShowRun(data, i.Scenario, i.End);
@@ -329,17 +331,24 @@ public partial class ReplayView : UserControl
 
     List<ReplayInfo> Infos() => _items.Select(x => x.Info).ToList();
 
-    void OnReplaySaved(ReplayInfo info, string folder) => Dispatcher.BeginInvoke(async () =>
+    /// <summary>Reads the replays from the archive again (a video was deleted, replays were imported or saved).</summary>
+    void RefreshItems()
+    {
+        _items.Clear();
+        _items.AddRange(_host.Replays.List().Select(i => new ReplayItem(i)));
+    }
+
+    void OnReplaySaved(ReplayInfo info) => Dispatcher.BeginInvoke(async () =>
     {
         var i = 0;
         while (i < _items.Count && _items[i].Info.Start > info.Start) i++;
-        _items.Insert(i, new ReplayItem(folder, info));
+        _items.Insert(i, new ReplayItem(info));
         if (!_open || _d is null) return;
         var statsFolder = _host.Settings.StatsFolder;
         var tok = _tok;
         var infos = Infos();
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder, _host.Settings.ScanCacheFile).Verified(infos).WithArchived(_host.Settings.OpenStore().ArchivedRuns()).WithDpiFixes(dpiFixes));
+        var lib = await Task.Run(() => RunLibrary.Load(statsFolder, _host.Settings.ScanCacheFile, infos, _host.Settings.OpenStore(), dpiFixes, archiveNew: false).Library);
         if (!_open || tok != _tok || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         BuildAll();
@@ -348,7 +357,7 @@ public partial class ReplayView : UserControl
             _runIdx = NearestRun(end);
             ApplySelection();
             var si = ReplayStore.FindRun(Infos(), _scenario, end);
-            if (si >= 0 && (_replay is null || _replay.Folder != _items[si].Folder)) LoadReplay(_items[si]);
+            if (si >= 0 && (_replay is null || _replay.Info.Id != _items[si].Info.Id || _replay.Info.HasVideo != _items[si].Info.HasVideo)) LoadReplay(_items[si]);
         }
         else if (!_runMode) BuildOverview();
     });
@@ -368,7 +377,7 @@ public partial class ReplayView : UserControl
     ChartBand? TierOf(double score) =>
         _d?.TierBands(_scenario) is { Count: > 0 } bands ? bands.LastOrDefault(b => score >= b.Value) : null;
 
-    /// <summary>The best of the local runs, the server scores and the server's all-time best (as the stats page does).</summary>
+    /// <summary>The best of the local runs, the cloud scores and the server's all-time best (as the stats page does).</summary>
     double BestScore => _stats.Best;
 
     static string DayLabel(DateTime day) =>
@@ -565,12 +574,12 @@ public partial class ReplayView : UserControl
         LayoutCard(new Size(ActualWidth, ActualHeight));
     }
 
-    /// <summary>The video folder and delete buttons exist only while the open run has a replay folder of its own (not a cached one, nor none at all).</summary>
+    /// <summary>The video folder and delete buttons exist only while the open run has a video file.</summary>
     void UpdateRunButtons()
     {
-        var cached = _replay != null && _replay.Folder.StartsWith(_host.ArchiveReplaysFolder, StringComparison.OrdinalIgnoreCase);
-        FolderBtn.Visibility = _runMode && _replay is { } f && Directory.Exists(f.Folder) ? Visibility.Visible : Visibility.Collapsed;
-        RunDelBtn.Visibility = _runMode && _replay != null && !cached ? Visibility.Visible : Visibility.Collapsed;
+        var shown = _runMode && _replay?.VideoPath != null ? Visibility.Visible : Visibility.Collapsed;
+        FolderBtn.Visibility = shown;
+        RunDelBtn.Visibility = shown;
     }
 
     bool _delArmed;
@@ -595,20 +604,21 @@ public partial class ReplayView : UserControl
         }
         var r = _stats.Runs[_runIdx];
         var scenario = r.Scenario;
-        UnloadMedia(); // releases the video file so it can be moved
+        if (_replay is null) return;
+        var info = _replay.Info;
+        UnloadMedia(); // releases the video file so it can be deleted
         DisarmDelete();
-        if (!await _host.DeleteRun(scenario, r.End))
+        if (!await _host.DeleteRun(info))
         {
             if (_open && _d is not null) SelectRun(r.End);
             return;
         }
         if (!_open || _d is null) return;
-        _items.Clear();
-        foreach (var (folder, info) in ReplayStore.List(_host.ReplaysFolder, _host.ArchiveReplaysFolder)) _items.Add(new ReplayItem(folder, info));
+        RefreshItems();
         var infos = Infos();
         var statsFolder = _host.Settings.StatsFolder;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var lib = await Task.Run(() => RunLibrary.Scan(statsFolder, _host.Settings.ScanCacheFile).Verified(infos).WithArchived(_host.Settings.OpenStore().ArchivedRuns()).WithDpiFixes(dpiFixes));
+        var lib = await Task.Run(() => RunLibrary.Load(statsFolder, _host.Settings.ScanCacheFile, infos, _host.Settings.OpenStore(), dpiFixes, archiveNew: false).Library);
         if (!_open || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         _scenario = scenario;
@@ -637,7 +647,7 @@ public partial class ReplayView : UserControl
         OverviewHost.Children.Add(tilesRow);
 
         var chartBody = new StackPanel();
-        chartBody.Children.Add(new TextBlock { Text = L.T("Score per play"), Foreground = FgB, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(4, 0, 0, 10) });
+        chartBody.Children.Add(new TextBlock { Text = L.T("Score per run"), Foreground = FgB, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(4, 0, 0, 10) });
         _bigChart.PointClicked -= OnBigChartClicked;
         _bigChart.PointClicked += OnBigChartClicked;
         if (_bigChart.Parent is Panel old) old.Children.Remove(_bigChart);
@@ -767,8 +777,8 @@ public partial class ReplayView : UserControl
         };
     }
 
-    /// <summary>Plays, best, accuracy, time played and tier as one row of cards; the best is the score the stats page shows (local runs, server scores and the server's all-time best). The tier card shows the progress to the next tier in percent, or COMPLETE at the top tier.</summary>
-    UIElement SummaryTiles(ScenarioStats s, List<ChartBand>? bands)
+    /// <summary>Plays, best, accuracy, time played and tier as one row of cards; the best is the score the stats page shows (local runs, cloud scores and the server's all-time best). The tier card shows the progress to the next tier in percent, or COMPLETE at the top tier.</summary>
+    UIElement SummaryTiles(ScenarioHistory s, List<ChartBand>? bands)
     {
         var sum = ScenarioInsights.Summarize(s.Records);
         const string Dash = "–";
@@ -776,7 +786,7 @@ public partial class ReplayView : UserControl
             new() { Text = text, Foreground = tone ?? FgB, FontSize = 22, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         var tiles = new List<(string Label, UIElement Content)>
         {
-            (L.T("Plays"), Big(sum?.Plays.ToString() ?? Dash)),
+            (L.T("Runs"), Big(sum?.Plays.ToString() ?? Dash)),
             (L.T("Best"), Big(BestScore > 0 ? BestScore.ToString("0.#") : Dash, TierOf(BestScore) is { } t ? ChartPaths.TextTone(t.Brush) : null)),
             (L.T("Accuracy"), Big(sum?.Accuracy is { } a ? a.ToString("P1") : Dash)),
             (L.T("Time"), Big(sum is { TimePlayed.Ticks: > 0 } ? Dur(sum.TimePlayed) : Dash)),
@@ -807,7 +817,7 @@ public partial class ReplayView : UserControl
     }
 
     /// <summary>Score by the sensitivity (cm per 360) the local runs were played at: a row per sensitivity, and every run as a dot when more than one was used.</summary>
-    UIElement? SensitivityCard(ScenarioStats s)
+    UIElement? SensitivityCard(ScenarioHistory s)
     {
         var groups = ScenarioInsights.BySensitivity(s.Runs);
         if (groups.Count == 0) return null;
@@ -839,7 +849,7 @@ public partial class ReplayView : UserControl
             label.Children.Add(new TextBlock { Text = $"{g.Cm360:0.##} cm/360", Foreground = DimB, FontSize = 13 });
             head.Children.Add(label);
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            right.Children.Add(new TextBlock { Text = L.F("{0} plays", g.Runs), Foreground = DimB, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) });
+            right.Children.Add(new TextBlock { Text = L.F("{0} runs", g.Runs), Foreground = DimB, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) });
             right.Children.Add(new TextBlock { Text = g.Average.ToString("0.#"), Foreground = washed, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             right.Children.Add(new TextBlock { Text = " / " + g.Best.ToString("0.#"), Foreground = full, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
             head.Children.Add(right);
@@ -897,7 +907,7 @@ public partial class ReplayView : UserControl
 
     // ---- mouse speed -------------------------------------------------------------------------------------------
 
-    readonly Dictionary<string, RunSpeed?> _speeds = [];
+    readonly Dictionary<Guid, RunSpeed?> _speeds = [];
     Border? _speedHost;
 
     readonly record struct SpeedPlay(DateTime End, double Score, ReplayItem? Item, RunSpeed? Cached);
@@ -910,15 +920,16 @@ public partial class ReplayView : UserControl
         // Recorded plays (trajectory on disk) and deleted ones (speed kept in the archive).
         var plays = items.Select(x => new SpeedPlay(x.Info.End, x.Info.Score, x, null))
             .Concat(archived.Select(r => new SpeedPlay(r.End, r.Score, null, r.Speed))).ToList();
-        var missing = plays.Where(x => x.Item != null && !_speeds.ContainsKey(x.Item.Folder)).Select(x => x.Item!).ToList();
+        var missing = plays.Where(x => x.Item != null && !_speeds.ContainsKey(x.Item.Info.Id)).Select(x => x.Item!).ToList();
         if (missing.Count > 0)
         {
             var cache = _host.Settings.OpenSpeedCache();
-            var read = await Task.Run(() => { var r = missing.AsParallel().Select(x => (x.Folder, Speed: cache.Get(x.Folder))).ToList(); cache.Save(); return r; });
-            foreach (var (folder, speed) in read) _speeds[folder] = speed;
+            var archive = _host.Replays;
+            var read = await Task.Run(() => { var r = missing.AsParallel().Select(x => (x.Info.Id, Speed: cache.Get(archive, x.Info.Id))).ToList(); cache.Save(); return r; });
+            foreach (var (id, speed) in read) _speeds[id] = speed;
         }
         if (host != _speedHost || scenario != _scenario || _runMode) return;
-        var runs = plays.Select(x => (x.Score, Speed: x.Item != null ? _speeds.GetValueOrDefault(x.Item.Folder) : x.Cached)).Where(x => x.Speed != null).Select(x => (x.Score, x.Speed!)).ToList();
+        var runs = plays.Select(x => (x.Score, Speed: x.Item != null ? _speeds.GetValueOrDefault(x.Item.Info.Id) : x.Cached)).Where(x => x.Speed != null).Select(x => (x.Score, x.Speed!)).ToList();
         host.Child = runs.Count == 0 ? null : SpeedCard(runs);
     }
 
@@ -1065,7 +1076,7 @@ public partial class ReplayView : UserControl
         return new Border { Style = (Style)FindResource("SheetCard"), Padding = new Thickness(18, 12, 18, 2), Margin = new Thickness(0, 12, 0, 0), Child = host };
     }
 
-    /// <summary>Brings the server scores up to date (older runs, other PCs) and rebuilds the sheet from the score book when they changed.</summary>
+    /// <summary>Brings the cloud scores up to date (older runs, other PCs) and rebuilds the sheet from the score book when they changed.</summary>
     async Task RefreshCloudAsync(string scenario)
     {
         if (!await _d!.LoadCloud(scenario) || scenario != _scenario) return;
@@ -1078,7 +1089,7 @@ public partial class ReplayView : UserControl
     UIElement EmptyCard(List<ChartBand>? bands)
     {
         var sp = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
-        sp.Children.Add(new TextBlock { Text = L.T("No local plays yet"), FontSize = 16, FontWeight = FontWeights.SemiBold });
+        sp.Children.Add(new TextBlock { Text = L.T("No local runs yet"), FontSize = 16, FontWeight = FontWeights.SemiBold });
         if (bands is { Count: > 0 })
         {
             sp.Children.Add(new TextBlock { Text = L.T("TIER THRESHOLDS"), Foreground = DimB, FontSize = 11, Margin = new Thickness(0, 16, 0, 8) });
@@ -1108,7 +1119,7 @@ public partial class ReplayView : UserControl
         ApplySelection();
         if (si < 0) { if (_host.IsPending(_scenario, end)) ShowEncoding(end); else NoRecording(); return; }
         var item = _items[si];
-        if (_replay is not null && _replay.Folder == item.Folder && (_duration > 0 || Notice.Visibility == Visibility.Visible)) return;
+        if (_replay is not null && _replay.Info.Id == item.Info.Id && _replay.Info.HasVideo == item.Info.HasVideo && (_duration > 0 || Notice.Visibility == Visibility.Visible)) return;
         LoadReplay(item);
     }
 
@@ -1132,7 +1143,7 @@ public partial class ReplayView : UserControl
     {
         UnloadMedia();
         ShowEmptyChart();
-        Notice.Text = L.T("No video for this play");
+        Notice.Text = L.T("No video for this run");
         Notice.Visibility = Visibility.Visible;
     }
 
@@ -1167,7 +1178,7 @@ public partial class ReplayView : UserControl
     {
         UnloadMedia();
         SetRecorded(true);
-        try { _replay = ReplayStore.Load(item.Folder); }
+        try { _replay = _host.Replays.Load(item.Info); }
         catch (Exception ex) { _replay = null; ShowEmptyChart(); Notice.Text = ex.Message; Notice.Visibility = Visibility.Visible; return; }
 
         _runLength = (_replay.Info.End - _replay.Info.Start).TotalSeconds;
@@ -1185,7 +1196,7 @@ public partial class ReplayView : UserControl
         else
         {
             Media.Close();
-            Notice.Text = L.T("No video for this play");
+            Notice.Text = L.T("No video for this run");
             Notice.Visibility = Visibility.Visible;
             // the archive keeps perf and CSV without the video: the chart still shows, on the run-time axis (empty without stats)
             _duration = _runLength;
@@ -1396,7 +1407,6 @@ public partial class ReplayView : UserControl
     {
         if (_replay is null) return;
         if (_replay.VideoPath is { } p && File.Exists(p)) Process.Start("explorer.exe", $"/select,\"{p}\"");
-        else if (Directory.Exists(_replay.Folder)) Process.Start("explorer.exe", $"\"{_replay.Folder}\"");
     }
 
     void OnMediaOpened()
@@ -1472,7 +1482,7 @@ public partial class ReplayView : UserControl
             return;
         }
         double videoAspect = (double)Media.NaturalVideoWidth / Media.NaturalVideoHeight;
-        var st = _replay.Info.Settings;
+        var st = _replay.Stats?.Settings ?? new Core.Stats.InputSettings();
         var renderAspect = ViewProjection.ParseAspect(st.Resolution) ?? videoAspect;
         var hfov = ViewProjection.HorizontalFovDeg(st.Fov, st.FovScale, renderAspect);
         Overlay.Set(CameraPath.BuildTrail(traj.Samples, traj.Events, t, outcomes: _outcomes), CameraPath.At(traj.Samples, t), hfov, videoAspect, renderAspect, _held);
@@ -1646,24 +1656,24 @@ public partial class ReplayView : UserControl
         UpdatePrev();
     }
 
-    (string Folder, PerfData Perf)? _prev;
+    (Guid Id, PerfData Perf)? _prev;
 
-    /// <summary>The newest earlier local run of the scenario that has a .perf, parsed once per folder.</summary>
-    (string Folder, PerfData Perf, ReplayInfo Info)? FindPrev()
+    /// <summary>The newest earlier local run of the scenario that has a .perf, parsed once per replay.</summary>
+    (Guid Id, PerfData Perf, ReplayInfo Info)? FindPrev()
     {
         if (_replay is null) return null;
         foreach (var it in _items.Where(x => x.Info.Start < _replay.Info.Start && x.Info.Scenario.Equals(_replay.Info.Scenario, StringComparison.OrdinalIgnoreCase)).OrderByDescending(x => x.Info.Start))
         {
-            if (_prev is { } c && c.Folder == it.Folder) return (c.Folder, c.Perf, it.Info);
-            if (!Directory.Exists(it.Folder) || Directory.GetFiles(it.Folder, ReplayFolder.PerfPattern).FirstOrDefault() is not { } path) continue;
+            if (_prev is { } c && c.Id == it.Info.Id) return (c.Id, c.Perf, it.Info);
             try
             {
-                var perf = PerfParser.Parse(File.ReadAllBytes(path));
+                if (_host.Replays.ReadParts(it.Info.Id).Perf is not { } bytes) continue;
+                var perf = PerfParser.Parse(bytes);
                 if (perf.Buckets.Count == 0) continue;
-                _prev = (it.Folder, perf);
-                return (it.Folder, perf, it.Info);
+                _prev = (it.Info.Id, perf);
+                return (it.Info.Id, perf, it.Info);
             }
-            catch (Exception e) when (e is IOException or PerfFormatException) { }
+            catch (Exception e) when (e is IOException or PerfFormatException or ReplayFormatException) { }
         }
         return null;
     }
@@ -1675,7 +1685,7 @@ public partial class ReplayView : UserControl
         PrevChip.Visibility = prev is null ? Visibility.Collapsed : Visibility.Visible;
         PrevChip.Opacity = _host.Ui.ComparePrev ? 1 : 0.5;
         if (prev is not { } p || !_host.Ui.ComparePrev || _replay is null) { Chart.SetGhost([]); return; }
-        PrevChip.ToolTip = L.F("Previous play · {0}", L.Stamp(p.Info.Start));
+        PrevChip.ToolTip = L.F("Previous run · {0}", L.Stamp(p.Info.Start));
         Chart.SetGhost(PerfSeries.Build(p.Perf).Select(x => new ChartPoint(ChartTime(x.TSec), x.Accuracy, x.Score, x.Kills, x.Shots, x.Hits)).ToList());
     }
 
