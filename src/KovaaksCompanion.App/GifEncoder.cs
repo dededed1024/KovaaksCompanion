@@ -53,7 +53,7 @@ internal sealed class GifFrameEncoder : IDisposable
     {
         var flat = Flatten(pbgra);
         var idx = new byte[_w * _h];
-        for (var y = 0; y < _h; y++)
+        Parallel.For(0, _h, y =>
         {
             for (var x = 0; x < _w; x++)
             {
@@ -64,7 +64,7 @@ internal sealed class GifFrameEncoder : IDisposable
                 var r = Math.Clamp(flat[p * 4 + 2] + o, 0, 255);
                 idx[p] = _lut[((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2)];
             }
-        }
+        });
 
         int x0 = 0, y0 = 0, rw = _w, rh = _h;
         byte[] region;
@@ -283,18 +283,22 @@ internal sealed class GifFrameEncoder : IDisposable
         }
 
         lut = new byte[262144];
-        for (var k = 0; k < lut.Length; k++)
+        var lutOut = lut;
+        Parallel.For(0, 64, rr =>
         {
-            int r = (k >> 12 & 63) * 4 + 2, g = (k >> 6 & 63) * 4 + 2, b = (k & 63) * 4 + 2;
-            var bestD = int.MaxValue; var bestI = 0;
-            for (var n = 0; n < pal.Length; n++)
+            for (var k = rr << 12; k < (rr + 1) << 12; k++)
             {
-                int dr = r - pal[n].R, dg = g - pal[n].G, db = b - pal[n].B;
-                var d = dr * dr + dg * dg + db * db;
-                if (d < bestD) { bestD = d; bestI = n; }
+                int r = (k >> 12 & 63) * 4 + 2, g = (k >> 6 & 63) * 4 + 2, b = (k & 63) * 4 + 2;
+                var bestD = int.MaxValue; var bestI = 0;
+                for (var n = 0; n < pal.Length; n++)
+                {
+                    int dr = r - pal[n].R, dg = g - pal[n].G, db = b - pal[n].B;
+                    var d = dr * dr + dg * dg + db * db;
+                    if (d < bestD) { bestD = d; bestI = n; }
+                }
+                lutOut[k] = (byte)bestI;
             }
-            lut[k] = (byte)bestI;
-        }
+        });
         return palette;
     }
 }

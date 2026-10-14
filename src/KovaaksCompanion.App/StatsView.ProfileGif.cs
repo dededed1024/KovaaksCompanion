@@ -57,16 +57,25 @@ public partial class StatsView
             await using var fs = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
             var enc = await Task.Run(() => new GifFrameEncoder(fs, cw, ch, delayCs, (bg.R, bg.G, bg.B), samples));
             Task? pending = null;
+            var swAll = System.Diagnostics.Stopwatch.StartNew(); long grabMs = 0, waitMs = 0, encMs = 0;
             for (var i = 0; i < frames; i++)
             {
                 if (!ProfileCard.IsLoaded) break;
+                var t0 = swAll.ElapsedMilliseconds;
                 var buf = Grab(i / (double)frames);
+                var t1 = swAll.ElapsedMilliseconds; grabMs += t1 - t0;
                 if (pending != null) await pending;
-                pending = Task.Run(() => enc.AddFrame(buf));
-                label.Text = $"{(i + 1) * 100 / frames}%";
-                await Dispatcher.Yield(DispatcherPriority.Background);
+                waitMs += swAll.ElapsedMilliseconds - t1;
+                pending = Task.Run(() => { var s0 = swAll.ElapsedMilliseconds; enc.AddFrame(buf); System.Threading.Interlocked.Add(ref encMs, swAll.ElapsedMilliseconds - s0); });
+                // Background priority waits for a full render pass per frame; yield rarely and at input priority.
+                if (i % 6 == 5)
+                {
+                    label.Text = $"{(i + 1) * 100 / frames}%";
+                    await Dispatcher.Yield(DispatcherPriority.Input);
+                }
             }
             if (pending != null) await pending;
+            KovaaksCompanion.Core.Diagnostics.AppLog.Write("gif", $"{cw}x{ch} total {swAll.ElapsedMilliseconds} ms, grab {grabMs}, wait-encoder {waitMs}, encode {encMs}");
             ok = ProfileCard.IsLoaded;
             enc.Finish();
         }
