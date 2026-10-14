@@ -4,21 +4,21 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core.Benchmarks;
 
 /// <summary>One benchmark group (e.g. "Voltaic S5") with its difficulties. Each difficulty is a KovaaK's playlist.</summary>
-public sealed record Benchmark(string BenchmarkName, string Abbreviation, string Color, IReadOnlyList<Difficulty> Difficulties, string RankCalculation = "basic");
+public sealed record Benchmark(string BenchmarkName, string Abbreviation, string Color, IReadOnlyList<Difficulty> Difficulties, string TierCalculation = "basic");
 
-public sealed record Difficulty(string DifficultyName, int KovaaksBenchmarkId, string Sharecode, IReadOnlyDictionary<string, string> RankColors, IReadOnlyList<BenchmarkCategory> Categories, RankSetup? Setup = null)
+public sealed record Difficulty(string DifficultyName, int KovaaksBenchmarkId, string Sharecode, IReadOnlyDictionary<string, string> TierColors, IReadOnlyList<BenchmarkCategory> Categories, TierSetup? Setup = null)
 {
-    public string RankCalculation => Setup?.Method ?? "basic";
+    public string TierCalculation => Setup?.Method ?? "basic";
     public int ScenarioCount => Categories.Sum(c => c.Subcategories.Sum(s => s.ScenarioCount));
 }
 
 /// <summary>Tier names of one difficulty; evxl derives energy thresholds from the tier counts of the sibling difficulties.</summary>
 public sealed record SiblingTiers(string Name, IReadOnlyList<string> Tiers);
 
-public sealed record ScenarioSelection(int BaseRankScoreCount, int? FullPoolRankScoreCount, int MinPerCategory, int MinPerSubcategory);
+public sealed record ScenarioSelection(int BaseTierScoreCount, int? FullPoolTierScoreCount, int MinPerCategory, int MinPerSubcategory);
 
 /// <summary>Everything evxl's rank calculation reads from the playlist definition.</summary>
-public sealed record RankSetup(string Method, string Difficulty, IReadOnlyList<string> Tiers, IReadOnlyList<SiblingTiers> Siblings, ScenarioSelection? Selection);
+public sealed record TierSetup(string Method, string Difficulty, IReadOnlyList<string> Tiers, IReadOnlyList<SiblingTiers> Siblings, ScenarioSelection? Selection);
 
 public sealed record BenchmarkCategory(string CategoryName, string Color, IReadOnlyList<Subcategory> Subcategories);
 
@@ -45,7 +45,7 @@ public static class BenchmarkCatalog
         var file = JsonSerializer.Deserialize<RawFile>(json, JsonOptions);
         return (file?.Playlists ?? []).Select(p =>
         {
-            var method = p.RankCalculation ?? "basic";
+            var method = p.TierCalculation ?? "basic";
             var levels = p.Levels ?? [];
             var siblings = levels.Select(l => new SiblingTiers(l.Level ?? "", (l.TierColors?.Keys ?? (IEnumerable<string>)[]).ToList())).ToList();
             return new Benchmark(
@@ -56,8 +56,8 @@ public static class BenchmarkCatalog
                     (l.Groups ?? []).Select(g => new BenchmarkCategory(
                         g.Name ?? "", g.Color ?? "",
                         (g.Parts ?? []).Select(x => new Subcategory(x.Name ?? "", x.Count, x.Color ?? "")).ToList())).ToList(),
-                    new RankSetup(method, l.Level ?? "", (l.TierColors?.Keys ?? (IEnumerable<string>)[]).ToList(), siblings,
-                        l.Selection is { } sel ? new ScenarioSelection(sel.BaseRankScoreCount, sel.FullPoolRankScoreCount, sel.MinPerCategory, sel.MinPerSubcategory) : null)
+                    new TierSetup(method, l.Level ?? "", (l.TierColors?.Keys ?? (IEnumerable<string>)[]).ToList(), siblings,
+                        l.Selection is { } sel ? new ScenarioSelection(sel.BaseTierScoreCount, sel.FullPoolTierScoreCount, sel.MinPerCategory, sel.MinPerSubcategory) : null)
                 )).ToList(), method);
         }).ToList();
     }
@@ -65,9 +65,9 @@ public static class BenchmarkCatalog
     static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     sealed record RawFile(int Version, List<RawPlaylist>? Playlists);
-    sealed record RawPlaylist(string? Name, string? Abbr, string? Color, List<RawLevel>? Levels, string? RankCalculation);
+    sealed record RawPlaylist(string? Name, string? Abbr, string? Color, List<RawLevel>? Levels, string? TierCalculation);
     sealed record RawLevel(string? Level, int Id, string? Code, Dictionary<string, string>? TierColors, List<RawGroup>? Groups, RawSelection? Selection);
-    sealed record RawSelection(int BaseRankScoreCount, int? FullPoolRankScoreCount, int MinPerCategory, int MinPerSubcategory);
+    sealed record RawSelection(int BaseTierScoreCount, int? FullPoolTierScoreCount, int MinPerCategory, int MinPerSubcategory);
     sealed record RawGroup(string? Name, string? Color, List<RawPart>? Parts);
     sealed record RawPart(string? Name, int Count, string? Color);
 }

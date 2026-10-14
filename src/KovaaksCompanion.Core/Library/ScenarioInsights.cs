@@ -47,7 +47,7 @@ public static class ScenarioInsights
         var runs = records.Select(r => r.Run).OfType<RunRecord>().ToList();
         return new ScoreSummary(records.Count, scores.Max(), scores.Average(), Median(scores), Consistency(scores),
             runs.Count == 0 ? null : runs.Average(r => r.Accuracy),
-            runs.Select(r => r.Perf?.Drift).OfType<double>().ToList() is { Count: > 0 } d ? d.Average() : null, TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks)));
+            runs.Select(r => r.Drift?.Change).OfType<double>().ToList() is { Count: > 0 } d ? d.Average() : null, TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks)));
     }
 
     /// <summary>Scores bucketed into about <paramref name="bins"/> equal-width bins between the lowest and highest score (fewer when the range is tiny). Empty for fewer than 5 scores.</summary>

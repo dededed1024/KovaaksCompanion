@@ -12,7 +12,7 @@ public partial class StatsView
 {
     const int MaxCelebrated = 4;
 
-    readonly record struct TierMark(int Rank, bool Complete);
+    readonly record struct TierMark(int Tier, bool Complete);
 
     Dictionary<string, TierMark>? _tierMarks;
     bool _celebrateNext, _confettiPending;
@@ -45,7 +45,7 @@ public partial class StatsView
         FillCelebration();
     }
 
-    /// <summary>The tier and COMPLETE state of every playlist, subcategory and scenario, keyed like the profile items.</summary>
+    /// <summary>The tier and COMPLETE state of every playlist and scenario, keyed like the profile items.</summary>
     Dictionary<string, TierMark> TierSnapshot()
     {
         var res = new Dictionary<string, TierMark>(StringComparer.OrdinalIgnoreCase);
@@ -53,19 +53,12 @@ public partial class StatsView
         {
             if (!_progress.TryGetValue(d.KovaaksBenchmarkId, out var p)) continue;
             var id = $"{d.KovaaksBenchmarkId}";
-            var top = Math.Max(p.RankNames.Count - 1, 0);
-            res[UiState.PlaylistKey(id)] = new(p.OverallRank, p.IsTierComplete(p.OverallRank));
-            foreach (var s in p.Subcategories)
-            {
-                var cat = CatOf(s);
-                var sub = s.Name.Trim() == cat ? "" : s.Name.Trim();
-                var rank = Math.Min(s.Rank, top);
-                res[UiState.SubcategoryKey(id, cat, sub)] = new(rank, top > 0 && rank >= top);
-            }
+            var top = Math.Max(p.TierNames.Count - 1, 0);
+            res[UiState.PlaylistKey(id)] = new(p.OverallTier, p.IsTierComplete(p.OverallTier));
             foreach (var sc in p.Scenarios)
             {
-                if (sc.RankMaxes.Count == 0) continue;
-                var rank = Math.Min(sc.Rank, top);
+                if (sc.TierThresholds.Count == 0) continue;
+                var rank = Math.Min(sc.Tier, top);
                 res.TryAdd(UiState.ScenarioKey(sc.Scenario), new(rank, top > 0 && rank >= top));
             }
         }
@@ -78,7 +71,7 @@ public partial class StatsView
         var now = TierSnapshot();
         if (compare && _tierMarks is { } old)
         {
-            var won = now.Where(kv => old.TryGetValue(kv.Key, out var o) && (kv.Value.Rank > o.Rank || (kv.Value.Complete && !o.Complete)))
+            var won = now.Where(kv => old.TryGetValue(kv.Key, out var o) && (kv.Value.Tier > o.Tier || (kv.Value.Complete && !o.Complete)))
                 .OrderByDescending(kv => kv.Value.Complete && !old[kv.Key].Complete)
                 .ThenBy(kv => kv.Key[0] switch { 'p' => 0, 'c' => 1, _ => 2 })
                 .Take(MaxCelebrated).Select(kv => kv.Key).ToList();

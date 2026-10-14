@@ -9,21 +9,21 @@ namespace KovaaksCompanion.App;
 /// One column of stacked blocks per scenario (one block per tier reached, plus a faint partial block towards the next tier),
 /// sorted from best to worst. Rows are tiers, labelled on the left.
 /// </summary>
-public sealed class RankBlocksChart : FrameworkElement
+public sealed class TierBlocksChart : FrameworkElement
 {
     static Typeface Face => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     static Typeface BoldFace => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
     const double Top = 8, Bottom = 8, Right = 4;
-    IReadOnlyList<(string Scenario, int Rank, double Fraction)> _items = [];
+    IReadOnlyList<(string Scenario, int Tier, double Fraction)> _items = [];
     IReadOnlyList<string> _names = [];
     IReadOnlyList<Brush> _brushes = [];
     int _hover = -1;
 
-    public RankBlocksChart() => Height = 260;
+    public TierBlocksChart() => Height = 260;
 
-    public void Set(IReadOnlyList<(string Scenario, int Rank, double Fraction)> items, IReadOnlyList<string> tierNames, IReadOnlyList<Brush> tierBrushes)
+    public void Set(IReadOnlyList<(string Scenario, int Tier, double Fraction)> items, IReadOnlyList<string> tierNames, IReadOnlyList<Brush> tierBrushes)
     {
-        _items = items.OrderByDescending(i => i.Rank).ThenByDescending(i => i.Fraction).ToList();
+        _items = items.OrderByDescending(i => i.Tier).ThenByDescending(i => i.Fraction).ToList();
         _names = tierNames; _brushes = tierBrushes;
         _hover = -1;
         InvalidateVisual();

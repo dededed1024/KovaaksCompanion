@@ -2,16 +2,16 @@ using KovaaksCompanion.Core.Library;
 
 namespace KovaaksCompanion.Core.Benchmarks;
 
-/// <summary>Where a score sits on a benchmark's tier ladder. <see cref="Value"/> is the continuous progress (Rank + Fraction).</summary>
-public readonly record struct TierPosition(int Rank, double Fraction, double? NextThreshold, double? ToNext)
+/// <summary>Where a score sits on a benchmark's tier ladder. <see cref="Value"/> is the continuous progress (Tier + Fraction).</summary>
+public readonly record struct TierPosition(int Tier, double Fraction, double? NextThreshold, double? ToNext)
 {
-    public double Value => Rank + Fraction;
+    public double Value => Tier + Fraction;
 }
 
-public static class Tier
+public static class TierLadder
 {
     /// <summary>
-    /// <paramref name="maxes"/>[i] is the score needed to reach tier i+1. Rank counts the thresholds reached;
+    /// <paramref name="maxes"/>[i] is the score needed to reach tier i+1. Tier counts the thresholds reached;
     /// Fraction is the progress from the last threshold (0 below the first) to the next one, 1 at the top tier.
     /// </summary>
     public static TierPosition TierOf(double score, IReadOnlyList<double> maxes)
@@ -31,7 +31,7 @@ public static class Tier
         maxes.Count == 0 ? 0 : Math.Clamp(TierOf(score, maxes).Value, 0, maxes.Count);
 
     /// <summary>Average tier progress (<see cref="ValueOf"/>) over the given scenarios after each day with a record (local or server) of any of them; scenarios not yet played count as 0.</summary>
-    public static List<(DateTime Day, double Value)> History(IEnumerable<(ScenarioStats Stats, IReadOnlyList<double> Maxes)> scenarios)
+    public static List<(DateTime Day, double Value)> History(IEnumerable<(ScenarioHistory Stats, IReadOnlyList<double> Maxes)> scenarios)
     {
         var included = scenarios.Where(s => s.Maxes.Count > 0).ToList();
         var days = included.SelectMany(s => s.Stats.Records).Select(r => r.Time.Date).Distinct().Order().ToList();

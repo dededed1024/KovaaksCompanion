@@ -1,25 +1,25 @@
 namespace KovaaksCompanion.Core.Benchmarks;
 
 /// <summary>Overall tier of a playlist plus progress (0..1) toward the next one.</summary>
-internal readonly record struct RankResult(int Rank, double Progress);
+internal readonly record struct TierResult(int Tier, double Progress);
 
 /// <summary>
 /// Port of evxl's benchmark rank calculations (benchmark-builder bundle). The overall tier is the higher of the
 /// "complete" tier (lowest scenario tier) and the playlist's own calculation, exactly as evxl combines them.
 /// </summary>
-internal static class RankCalculationEngine
+internal static class TierCalculationEngine
 {
-    public static RankResult Compute(RankSetup setup, IReadOnlyList<string> rankNames, IReadOnlyList<SubcategoryProgress> parts)
+    public static TierResult Compute(TierSetup setup, IReadOnlyList<string> rankNames, IReadOnlyList<SubcategoryProgress> parts)
     {
         var c = new Ctx(setup, rankNames, parts);
-        var complete = CompleteRank(c);
+        var complete = CompleteTier(c);
         var custom = Custom(c);
         var top = Math.Max(rankNames.Count - 1, 0);
-        var customWins = c.Method == "selectable-top-n" || custom is { } cu && cu.Rank > complete;
+        var customWins = c.Method == "selectable-top-n" || custom is { } cu && cu.Tier > complete;
 
-        var rank = customWins ? custom!.Value.Rank : complete;
+        var rank = customWins ? custom!.Value.Tier : complete;
         // The bar follows the playlist's own calculation whatever the complete tier is; methods without one use the share of scenarios above the tier.
-        var progress = custom?.Progress ?? (c.All.Count == 0 ? 0 : (double)c.All.Count(s => s.Rank > rank) / c.All.Count);
+        var progress = custom?.Progress ?? (c.All.Count == 0 ? 0 : (double)c.All.Count(s => s.Tier > rank) / c.All.Count);
         return new(Math.Clamp(rank, 0, top), Math.Clamp(double.IsNaN(progress) ? 0 : progress, 0, 1));
     }
 
@@ -33,15 +33,15 @@ internal static class RankCalculationEngine
         public IReadOnlyList<string> Tiers { get; }
         public IReadOnlyList<SiblingTiers> Siblings { get; }
         public ScenarioSelection? Selection { get; }
-        public IReadOnlyList<string> RankNames { get; }
+        public IReadOnlyList<string> TierNames { get; }
         public List<(string Name, List<SubcategoryProgress> Subs)> Cats { get; }
         public List<SubcategoryProgress> Subs { get; }
         public List<ScenarioProgress> All { get; }
 
-        public Ctx(RankSetup setup, IReadOnlyList<string> rankNames, IReadOnlyList<SubcategoryProgress> parts)
+        public Ctx(TierSetup setup, IReadOnlyList<string> rankNames, IReadOnlyList<SubcategoryProgress> parts)
         {
             Method = setup.Method; Diff = setup.Difficulty; Key = setup.Difficulty.Trim().ToLowerInvariant();
-            Tiers = setup.Tiers; Siblings = setup.Siblings; Selection = setup.Selection; RankNames = rankNames;
+            Tiers = setup.Tiers; Siblings = setup.Siblings; Selection = setup.Selection; TierNames = rankNames;
             Subs = parts.ToList();
             Cats = parts.GroupBy(p => p.Parent).Select(g => (g.Key, g.ToList())).ToList();
             All = parts.SelectMany(p => p.Scenarios).ToList();
@@ -52,7 +52,7 @@ internal static class RankCalculationEngine
 
     static readonly Pos NoPos = new(0, 0, 0, false);
 
-    /// <summary>evxl's scenario position on its own rank_maxes (U).</summary>
+    /// <summary>evxl's scenario position on its own tier thresholds (rank_maxes in the API) (U).</summary>
     static Pos Position(double e, IReadOnlyList<double> n)
     {
         if (e <= 0 || n.Count == 0) return NoPos;
@@ -79,7 +79,7 @@ internal static class RankCalculationEngine
         return new(r, r + c, Math.Clamp(c, 0, 1), false);
     }
 
-    static Pos PosOf(ScenarioProgress s) => Position(s.Score, s.RankMaxes);
+    static Pos PosOf(ScenarioProgress s) => Position(s.Score, s.TierThresholds);
 
     static double Floor2(double x) => Math.Floor(x * 100) / 100;
 
@@ -104,7 +104,7 @@ internal static class RankCalculationEngine
     }
 
     /// <summary>evxl's X: highest threshold met, with progress to the next.</summary>
-    static RankResult Thresholds(double total, double[] n)
+    static TierResult Thresholds(double total, double[] n)
     {
         var rank = 0;
         for (var i = n.Length - 1; i >= 0; i--) if (total >= n[i]) { rank = i + 1; break; }
@@ -124,20 +124,20 @@ internal static class RankCalculationEngine
     // ---------- evxl's "complete" tier ----------
 
     /// <summary>Lowest scenario tier; 0 when any scenario is unplayed or unranked.</summary>
-    static int CompleteRank(Ctx c)
+    static int CompleteTier(Ctx c)
     {
         var min = int.MaxValue;
         foreach (var s in c.All)
         {
-            if (s.Score <= 0 || s.Rank <= 0) return 0;
-            min = Math.Min(min, s.Rank);
+            if (s.Score <= 0 || s.Tier <= 0) return 0;
+            min = Math.Min(min, s.Tier);
         }
-        return min == int.MaxValue || min >= c.RankNames.Count ? 0 : min;
+        return min == int.MaxValue || min >= c.TierNames.Count ? 0 : min;
     }
 
     // ---------- dispatch ----------
 
-    static RankResult? Custom(Ctx c)
+    static TierResult? Custom(Ctx c)
     {
         if (c.All.Count == 0) return null;
         return c.Method switch
@@ -151,13 +151,13 @@ internal static class RankCalculationEngine
             "sa-s2" => Energy(c, [1200, 1300, 1400, 1500, 1600], NonStrafe, 50, 1),
             "mira" => Energy(c, c.Key == "easy" ? [100, 200, 300, 400, 500] : [600, 700, 800, 900, 1000], _ => true, 50, 1),
             "val-energy" => Energy(c, ValThresholds(c.Key), _ => true, 100, 1),
-            "tpt" => CountRank(c, 5, exactNext: true),
-            "asb" => CountRank(c, 8, exactNext: true),
-            "e1se" => CountRank(c, 6, exactNext: true),
-            "dojo" => CountRank(c, 4),
-            "dojo2" => CountRank(c, 3),
-            "dojo3" => CountRank(c, 5),
-            "rbe" => CountRank(c, 9),
+            "tpt" => CountTier(c, 5, exactNext: true),
+            "asb" => CountTier(c, 8, exactNext: true),
+            "e1se" => CountTier(c, 6, exactNext: true),
+            "dojo" => CountTier(c, 4),
+            "dojo2" => CountTier(c, 3),
+            "dojo3" => CountTier(c, 5),
+            "rbe" => CountTier(c, 9),
             "ssb2" => Ssb2(c),
             "tsk" => Tsk(c),
             "aplus-alt" => AplusAlt(c),
@@ -229,8 +229,8 @@ internal static class RankCalculationEngine
                         if (thr != null) take = Energy(cur, thr, lower, upper, true) > Energy(best, thr, lower, upper, true);
                         else
                         {
-                            var o = s.RankMaxes.Count > 0 ? s.Score / s.RankMaxes[0] : 0;
-                            var p = best.S is { RankMaxes.Count: > 0 } b ? b.Score / b.RankMaxes[0] : 0;
+                            var o = s.TierThresholds.Count > 0 ? s.Score / s.TierThresholds[0] : 0;
+                            var p = best.S is { TierThresholds.Count: > 0 } b ? b.Score / b.TierThresholds[0] : 0;
                             take = o > p;
                         }
                     }
@@ -249,7 +249,7 @@ internal static class RankCalculationEngine
         double T(double d) => trunc ? Math.Truncate(d) : d;
         if (e.P.Base == 0 && e.P.Precise == 0)
         {
-            var maxes = e.S?.RankMaxes ?? [];
+            var maxes = e.S?.TierThresholds ?? [];
             if (e.Score <= 0 || maxes.Count < 2) return 0;
             var m = maxes[0];
             var f = maxes[1] - m;
@@ -279,7 +279,7 @@ internal static class RankCalculationEngine
 
     // ---------- basic (evxl's le) ----------
 
-    static RankResult Basic(Ctx c)
+    static TierResult Basic(Ctx c)
     {
         var best = BestPerSub(c, null, 0, 0);
         var ranks = new List<int>();
@@ -303,7 +303,7 @@ internal static class RankCalculationEngine
 
     // ---------- energy family (evxl's te / ee) ----------
 
-    static RankResult Energy(Ctx c, double[] thr, Func<string, bool> filter, double lower, double upper, double? cap = null, bool uncapped = false)
+    static TierResult Energy(Ctx c, double[] thr, Func<string, bool> filter, double lower, double upper, double? cap = null, bool uncapped = false)
     {
         if (thr.Length == 0) return new(0, 0);
         var best = BestPerSub(c, thr, lower, upper);
@@ -320,7 +320,7 @@ internal static class RankCalculationEngine
         var count = best.Count(b => filter(b.Sub));
         var total = energies.Count == count ? Round1(Harmonic(energies.Where(x => x > 0).ToList(), count)) : 0;
         var result = Thresholds(total, thr);
-        if (uncapped && result.Rank >= thr.Length && thr.Length > 0)
+        if (uncapped && result.Tier >= thr.Length && thr.Length > 0)
         {
             var last = thr[^1];
             var prev = thr.Length > 1 ? thr[^2] : last - 100;
@@ -331,12 +331,12 @@ internal static class RankCalculationEngine
         return result;
     }
 
-    static RankResult VtEnergy(Ctx c)
+    static TierResult VtEnergy(Ctx c)
     {
         var thr = VtThresholds(c);
         var lower = c.Key == "novice" ? 0 : 100;
         var result = Energy(c, thr, NonStrafe, lower, 1);
-        if (c.Key == "advanced" && c.Tiers.Count > 0 && result.Rank >= c.Tiers.Count)
+        if (c.Key == "advanced" && c.Tiers.Count > 0 && result.Tier >= c.Tiers.Count)
             result = Energy(c, thr, NonStrafe, lower, double.PositiveInfinity, uncapped: true);
         return result;
     }
@@ -349,7 +349,7 @@ internal static class RankCalculationEngine
             static string Norm(string s) => new string(s.ToLowerInvariant().Where(char.IsAsciiLetterLower).ToArray());
             static bool Placeholder(string s) => Norm(s) is "unranked" or "norank" or "nodata" or "notcomplete";
             var first = c.Tiers.FirstOrDefault(t => t.Trim().Length > 0 && !Placeholder(t))
-                ?? c.RankNames.Select(n => n.Trim()).FirstOrDefault(n => n.Length > 0 && !Placeholder(n));
+                ?? c.TierNames.Select(n => n.Trim()).FirstOrDefault(n => n.Length > 0 && !Placeholder(n));
             return first != null && Norm(first).StartsWith("grandmaster") ? all[8..14] : all[9..15];
         }
         return c.Key switch { "novice" => all[0..4], "intermediate" => all[4..8], "advanced" => all[8..12], _ => all };
@@ -382,7 +382,7 @@ internal static class RankCalculationEngine
 
     static double[] SiblingThresholds(Ctx c) => SiblingSlice(c).SkipLast(1).ToArray();
 
-    static RankResult GenericEnergy(Ctx c)
+    static TierResult GenericEnergy(Ctx c)
     {
         var slice = SiblingSlice(c);
         return slice.Length == 0 ? new(0, 0) : Energy(c, slice[..^1], _ => true, 100, 1, cap: slice[^1]);
@@ -390,7 +390,7 @@ internal static class RankCalculationEngine
 
     // ---------- top-2 subcategory energy (evxl's ue) ----------
 
-    static RankResult SubEnergy(Ctx c, double[] thr, double? cap)
+    static TierResult SubEnergy(Ctx c, double[] thr, double? cap)
     {
         if (thr.Length == 0) return new(0, 0);
         var energies = new List<double>();
@@ -412,7 +412,7 @@ internal static class RankCalculationEngine
         return new(rank, Band(total, thr, rank));
     }
 
-    static RankResult SnakBox(Ctx c)
+    static TierResult SnakBox(Ctx c)
     {
         double[] thr = c.Key == "medium" ? [400, 500, 600, 700, 800, 900, 1100] : ThresholdsFromSiblings(c);
         return SubEnergy(c, thr, thr[^1]);
@@ -421,9 +421,9 @@ internal static class RankCalculationEngine
     // ---------- tier-count methods (dojo, tpt, ...) ----------
 
     /// <summary>exactNext: evxl's ce counts only scenarios at exactly the next tier toward progress.</summary>
-    static RankResult CountRank(Ctx c, int required, bool exactNext = false)
+    static TierResult CountTier(Ctx c, int required, bool exactNext = false)
     {
-        var ranks = c.All.Where(s => s.Rank > 0).Select(s => s.Rank).ToList();
+        var ranks = c.All.Where(s => s.Tier > 0).Select(s => s.Tier).ToList();
         if (ranks.Count == 0) return new(0, 0);
         var counts = ranks.GroupBy(r => r).ToDictionary(g => g.Key, g => g.Count());
         var rank = 0;
@@ -434,18 +434,18 @@ internal static class RankCalculationEngine
         return new(rank, progress);
     }
 
-    static RankResult Hewchy(Ctx c)
+    static TierResult Hewchy(Ctx c)
     {
-        var ranks = c.All.Select(s => s.Rank).ToList();
+        var ranks = c.All.Select(s => s.Tier).ToList();
         var rank = 0;
         for (var s = ranks.Max(); s > 0; s--) if (ranks.Count(r => r >= s) >= 12) { rank = s; break; }
         var progress = rank > 0 ? Math.Min(ranks.Count(r => r >= rank + 1) / 12.0, 1) : 0;
         return new(rank, progress);
     }
 
-    static RankResult Routine(Ctx c)
+    static TierResult Routine(Ctx c)
     {
-        var ranks = c.All.Where(s => s.Rank > 0).Select(s => s.Rank).ToList();
+        var ranks = c.All.Where(s => s.Tier > 0).Select(s => s.Tier).ToList();
         var total = c.All.Count;
         var need = (int)Math.Ceiling(total / 2.0);
         var counts = ranks.GroupBy(r => r).ToDictionary(g => g.Key, g => g.Count());
@@ -458,17 +458,17 @@ internal static class RankCalculationEngine
 
     // ---------- Revenge selectable top-N ----------
 
-    static RankResult SelectableTopN(Ctx c)
+    static TierResult SelectableTopN(Ctx c)
     {
-        var baseCount = c.Selection?.BaseRankScoreCount ?? 12;
-        var fullPool = c.Selection?.FullPoolRankScoreCount;
+        var baseCount = c.Selection?.BaseTierScoreCount ?? 12;
+        var fullPool = c.Selection?.FullPoolTierScoreCount;
         var minCat = c.Selection?.MinPerCategory ?? 0;
         var minSub = c.Selection?.MinPerSubcategory ?? 0;
         var scored = new List<Pos>();
         foreach (var s in c.All)
         {
             if (s.Score <= 0) continue;
-            scored.Add(s.RankMaxes.Count > 0 ? PosOf(s) : new(s.Rank, s.Rank, 0, false));
+            scored.Add(s.TierThresholds.Count > 0 ? PosOf(s) : new(s.Tier, s.Tier, 0, false));
         }
         var required = fullPool ?? baseCount;
         var catIssue = c.Cats.Any(g => g.Subs.Sum(s => s.Scenarios.Count) < minCat);
@@ -484,7 +484,7 @@ internal static class RankCalculationEngine
     // ---------- point / harmonic tables ----------
 
     /// <summary>evxl's Ne (mh, avasive): every scenario needs a score; harmonic mean of per-scenario points.</summary>
-    static RankResult PointsHarmonic(Ctx c, Dictionary<string, double[]> table, string fallback)
+    static TierResult PointsHarmonic(Ctx c, Dictionary<string, double[]> table, string fallback)
     {
         var t = table.TryGetValue(c.Key, out var own) ? own : table[fallback];
         var energies = new List<double>();
@@ -492,11 +492,11 @@ internal static class RankCalculationEngine
         {
             var p = PosOf(s);
             double e;
-            if (p.Base == 0) e = Math.Truncate(s.Score / (s.RankMaxes.Count > 0 && s.RankMaxes[0] != 0 ? s.RankMaxes[0] : 1) * t[0]);
-            else if (p.Maxed && p.Base == s.RankMaxes.Count)
+            if (p.Base == 0) e = Math.Truncate(s.Score / (s.TierThresholds.Count > 0 && s.TierThresholds[0] != 0 ? s.TierThresholds[0] : 1) * t[0]);
+            else if (p.Maxed && p.Base == s.TierThresholds.Count)
             {
-                var r = s.RankMaxes[^1];
-                var f = s.RankMaxes.Count > 1 ? s.RankMaxes[^2] : 0;
+                var r = s.TierThresholds[^1];
+                var f = s.TierThresholds.Count > 1 ? s.TierThresholds[^2] : 0;
                 var b = r - f;
                 if (b == 0) b = 1;
                 e = Math.Truncate(t[^1] + (s.Score - r) / b * 100);
@@ -514,20 +514,20 @@ internal static class RankCalculationEngine
         return Thresholds(total, t);
     }
 
-    static RankResult Ssb2(Ctx c)
+    static TierResult Ssb2(Ctx c)
     {
         double[] thr = Steps(10);
         var energies = c.All.Select(s =>
         {
             var p = PosOf(s);
             if (p.Base == 0 && s.Score == 0) return 0d;
-            return p.Maxed && p.Base == s.RankMaxes.Count ? Math.Min(p.Base * 100 + p.Progress * 100, 1050) : p.Base * 100 + p.Progress * 100;
+            return p.Maxed && p.Base == s.TierThresholds.Count ? Math.Min(p.Base * 100 + p.Progress * 100, 1050) : p.Base * 100 + p.Progress * 100;
         }).ToList();
         var total = Math.Truncate(Harmonic(energies.Where(x => x > 0).ToList(), energies.Count));
         return Thresholds(total, thr);
     }
 
-    static RankResult AplusAlt(Ctx c)
+    static TierResult AplusAlt(Ctx c)
     {
         var thr = c.Tiers.Count > 0 ? Steps(c.Tiers.Count) : Steps(10);
         var share = c.All.Count > 0 ? 100.0 / c.All.Count : 0;
@@ -535,12 +535,12 @@ internal static class RankCalculationEngine
         foreach (var s in c.All)
         {
             var p = PosOf(s);
-            sum += p.Base == 0 ? s.Score / (s.RankMaxes.Count > 0 && s.RankMaxes[0] != 0 ? s.RankMaxes[0] : 1) * share : (p.Base + p.Progress) * share;
+            sum += p.Base == 0 ? s.Score / (s.TierThresholds.Count > 0 && s.TierThresholds[0] != 0 ? s.TierThresholds[0] : 1) * share : (p.Base + p.Progress) * share;
         }
         return Thresholds(Math.Round(sum * 100) / 100, thr);
     }
 
-    static RankResult Rxzu(Ctx c)
+    static TierResult Rxzu(Ctx c)
     {
         double[] t = c.Key switch
         {
@@ -549,23 +549,23 @@ internal static class RankCalculationEngine
             _ => [],
         };
         if (t.Length == 0) return new(0, 0);
-        double total = c.All.Sum(s => s.Rank > 0 ? t[Math.Min(s.Rank, t.Length) - 1] : 0);
+        double total = c.All.Sum(s => s.Tier > 0 ? t[Math.Min(s.Tier, t.Length) - 1] : 0);
         var avg = total / c.All.Count;
         var rank = CountAtOrBelow(t, avg);
         return new(rank, Band(avg, t, rank));
     }
 
-    static RankResult Miyu(Ctx c)
+    static TierResult Miyu(Ctx c)
     {
         double[] t = [16, 24, 32, 40, 48, 56, 63];
-        double total = c.All.Sum(s => s.Rank <= 0 ? 0 : 2 + (s.Rank - 1));
+        double total = c.All.Sum(s => s.Tier <= 0 ? 0 : 2 + (s.Tier - 1));
         var rank = CountAtOrBelow(t, total);
         return new(rank, Band(total, t, rank));
     }
 
-    static RankResult GenericEnergyAlt(Ctx c)
+    static TierResult GenericEnergyAlt(Ctx c)
     {
-        var count = c.Tiers.Count > 0 ? c.Tiers.Count : c.All[0].RankMaxes.Count;
+        var count = c.Tiers.Count > 0 ? c.Tiers.Count : c.All[0].TierThresholds.Count;
         var s = Steps(count);
         if (s.Length == 0) return new(0, 0);
         var cap = s[^1] + 50;
@@ -576,12 +576,12 @@ internal static class RankCalculationEngine
             if (sc.Score > 0)
             {
                 var p = PosOf(sc);
-                if (p.Base == 0) f = sc.Score / (sc.RankMaxes.Count > 0 && sc.RankMaxes[0] != 0 ? sc.RankMaxes[0] : 1) * s[0];
+                if (p.Base == 0) f = sc.Score / (sc.TierThresholds.Count > 0 && sc.TierThresholds[0] != 0 ? sc.TierThresholds[0] : 1) * s[0];
                 else if (p.Maxed)
                 {
-                    var idx = sc.RankMaxes.Count - 1;
-                    var n = sc.RankMaxes[idx];
-                    var prev = idx > 0 ? sc.RankMaxes[idx - 1] : 0;
+                    var idx = sc.TierThresholds.Count - 1;
+                    var n = sc.TierThresholds[idx];
+                    var prev = idx > 0 ? sc.TierThresholds[idx - 1] : 0;
                     var span = Math.Abs(n - prev);
                     if (span == 0) span = 1;
                     f = s[^1] + Math.Min((sc.Score - n) / span, .5) * 100;
@@ -619,16 +619,16 @@ internal static class RankCalculationEngine
         return list;
     }
 
-    static RankResult MiraApex(Ctx c)
+    static TierResult MiraApex(Ctx c)
     {
         if (c.Tiers.Count == 0) return new(0, 0);
         var t = Steps(c.Tiers.Count, 10, 10);
         var energies = SubMaxima(c, (s, p) =>
         {
-            if (s.RankMaxes.Count == 0) return 0;
+            if (s.TierThresholds.Count == 0) return 0;
             double y;
-            if (p.Base == 0) { var x = s.RankMaxes[0]; y = x > 0 ? Math.Min(s.Score / x, 1) * t[0] : 0; }
-            else if (p.Maxed && p.Base == s.RankMaxes.Count) y = t[^1];
+            if (p.Base == 0) { var x = s.TierThresholds[0]; y = x > 0 ? Math.Min(s.Score / x, 1) * t[0] : 0; }
+            else if (p.Maxed && p.Base == s.TierThresholds.Count) y = t[^1];
             else { var lo = At(t, p.Base - 1); var hi = p.Base < t.Length ? t[p.Base] : t[^1]; y = lo + p.Progress * (hi - lo); }
             return Math.Max(0, Math.Truncate(y));
         });
@@ -642,7 +642,7 @@ internal static class RankCalculationEngine
         return new(rank, Band(u, t, rank));
     }
 
-    static RankResult Dm(Ctx c)
+    static TierResult Dm(Ctx c)
     {
         var r = c.Tiers.Count;
         if (r == 0) return new(0, 0);
@@ -655,10 +655,10 @@ internal static class RankCalculationEngine
         {
             if (p.Base == 0) return 0;
             double x;
-            if (p.Maxed && p.Base == sc.RankMaxes.Count)
+            if (p.Maxed && p.Base == sc.TierThresholds.Count)
             {
-                var last = sc.RankMaxes[^1];
-                var prev = sc.RankMaxes.Count > 1 ? sc.RankMaxes[^2] : 0;
+                var last = sc.TierThresholds[^1];
+                var prev = sc.TierThresholds.Count > 1 ? sc.TierThresholds[^2] : 0;
                 var w = Math.Abs(last - prev);
                 if (w == 0) w = 1;
                 x = s[^1] + Math.Max(0, (sc.Score - last) / w) * 10;
@@ -675,7 +675,7 @@ internal static class RankCalculationEngine
         return new(rank, Band(h, s, rank));
     }
 
-    static RankResult DmS3(Ctx c)
+    static TierResult DmS3(Ctx c)
     {
         double[] t = [100, 200, 300, 1510];
         if (c.Key.Contains("boss")) t = [1300, 1400, 1500, 1510];
@@ -687,8 +687,8 @@ internal static class RankCalculationEngine
         var energies = SubMaxima(c, (sc, p) =>
         {
             double y;
-            if (p.Base == 0) { var x = sc.RankMaxes.Count > 0 && sc.RankMaxes[0] != 0 ? sc.RankMaxes[0] : 1; y = Math.Min(sc.Score / x * t[0], t[0]); }
-            else if (p.Maxed && p.Base == sc.RankMaxes.Count) y = t[^1];
+            if (p.Base == 0) { var x = sc.TierThresholds.Count > 0 && sc.TierThresholds[0] != 0 ? sc.TierThresholds[0] : 1; y = Math.Min(sc.Score / x * t[0], t[0]); }
+            else if (p.Maxed && p.Base == sc.TierThresholds.Count) y = t[^1];
             else { var lo = At(t, p.Base - 1); var hi = p.Base < t.Length ? t[p.Base] : t[^1]; y = lo + p.Progress * (hi - lo); }
             return Math.Max(0, Math.Truncate(y));
         });
@@ -700,7 +700,7 @@ internal static class RankCalculationEngine
         return new(rank, Band(u, t, rank));
     }
 
-    static RankResult RaS5(Ctx c)
+    static TierResult RaS5(Ctx c)
     {
         var thr = SiblingThresholds(c);
         if (thr.Length == 0) return new(0, 0);
@@ -717,7 +717,7 @@ internal static class RankCalculationEngine
                 double q;
                 if (p.Base == 0)
                 {
-                    var h = s.RankMaxes.Count > 0 && s.RankMaxes[0] != 0 ? s.RankMaxes[0] : 1;
+                    var h = s.TierThresholds.Count > 0 && s.TierThresholds[0] != 0 ? s.TierThresholds[0] : 1;
                     double g = 0, z = 0;
                     if (reactive) { g = c.Key == "entry" ? 800 : 830; z = 2; }
                     var d = h - g;
@@ -729,7 +729,7 @@ internal static class RankCalculationEngine
                     }
                     q = thr[0] * (j / 100);
                 }
-                else if (p.Maxed && p.Base == s.RankMaxes.Count) q = thr[^1];
+                else if (p.Maxed && p.Base == s.TierThresholds.Count) q = thr[^1];
                 else
                 {
                     var lo = At(thr, p.Base - 1);
@@ -752,9 +752,9 @@ internal static class RankCalculationEngine
         return new(rank, Band(k, thr, rank));
     }
 
-    static RankResult IrisEnergy(Ctx c)
+    static TierResult IrisEnergy(Ctx c)
     {
-        var tierCount = c.Tiers.Count > 0 ? c.Tiers.Count : c.All[0].RankMaxes.Count;
+        var tierCount = c.Tiers.Count > 0 ? c.Tiers.Count : c.All[0].TierThresholds.Count;
         double start = c.Key switch
         {
             "novice" or "beginner" or "easy" or "intermediate" => 100,
@@ -774,11 +774,11 @@ internal static class RankCalculationEngine
                 {
                     var o = s.Score;
                     double v = 0;
-                    if (o > 0 && s.RankMaxes.Count > 0)
+                    if (o > 0 && s.TierThresholds.Count > 0)
                     {
                         var p = PosOf(s);
                         if (p.Base == 0) v = 0;
-                        else if (p.Maxed && p.Base == s.RankMaxes.Count) v = a[^1];
+                        else if (p.Maxed && p.Base == s.TierThresholds.Count) v = a[^1];
                         else { var lo = At(a, p.Base - 1); var hi = p.Base < a.Length && a[p.Base] != 0 ? a[p.Base] : a[^1]; v = lo + p.Progress * (hi - lo); }
                         v = Math.Max(0, JsRound(v * 100) / 100);
                     }
@@ -798,7 +798,7 @@ internal static class RankCalculationEngine
         return new(rank, Band(h, a, rank));
     }
 
-    static RankResult JadeEnergy(Ctx c, int? fixedTop, string uncappedName, bool alwaysUncapped)
+    static TierResult JadeEnergy(Ctx c, int? fixedTop, string uncappedName, bool alwaysUncapped)
     {
         var a = SiblingSlice(c).SkipLast(1).ToArray();
         if (a.Length == 0) return new(0, 0);
@@ -814,18 +814,18 @@ internal static class RankCalculationEngine
             {
                 var j = s.Score;
                 double b = 0, y = 0;
-                if (j > 0 && s.RankMaxes.Count > 0)
+                if (j > 0 && s.TierThresholds.Count > 0)
                 {
                     var p = PosOf(s);
                     if (p.Base == 0)
                     {
-                        var d = s.RankMaxes[0];
+                        var d = s.TierThresholds[0];
                         if (d > 0) { b = Math.Min(j / d, 1) * a[0]; y = b; }
                     }
-                    else if (p.Maxed && p.Base == s.RankMaxes.Count)
+                    else if (p.Maxed && p.Base == s.TierThresholds.Count)
                     {
-                        var w = s.RankMaxes[^1];
-                        var d = s.RankMaxes.Count > 1 ? s.RankMaxes[^2] : 0;
+                        var w = s.TierThresholds[^1];
+                        var d = s.TierThresholds.Count > 1 ? s.TierThresholds[^2] : 0;
                         var span = Math.Abs(w - d);
                         if (span == 0) span = 1;
                         var ke = Math.Max(0, (j - w) / span);
@@ -869,7 +869,7 @@ internal static class RankCalculationEngine
 
     // ---------- category-based methods ----------
 
-    static RankResult RaS4(Ctx c)
+    static TierResult RaS4(Ctx c)
     {
         var easy = c.Key == "easy";
         double[] t = easy ? [20, 50, 80, 110, 140, 170] : [200, 235, 270, 320, 360, 400];
@@ -877,7 +877,7 @@ internal static class RankCalculationEngine
         var total = c.Cats.Sum(cat =>
             cat.Subs.SelectMany(s => s.Scenarios).Select(s => (S: s, P: PosOf(s)))
                 .OrderByDescending(x => x.P.Precise).Take(4)
-                .Sum(x => Weighted(x.S.Score, x.S.RankMaxes, t, 3 / 2.0)));
+                .Sum(x => Weighted(x.S.Score, x.S.TierThresholds, t, 3 / 2.0)));
         return Thresholds(total, o);
     }
 
@@ -897,7 +897,7 @@ internal static class RankCalculationEngine
         return r[o] + (e - n[o]) / (n[o] - n[o - 1]) * (r[o] - r[o - 1]) / t;
     }
 
-    static RankResult CbS1(Ctx c)
+    static TierResult CbS1(Ctx c)
     {
         double[] r = [300, 600, 900, 1200, 1500, 1800];
         double sum = 0;
@@ -905,11 +905,11 @@ internal static class RankCalculationEngine
         {
             var p = PosOf(s);
             double m;
-            if (p.Base == 0) m = s.Score / (s.RankMaxes.Count > 0 ? s.RankMaxes[0] : double.NaN) * r[0];
-            else if (p.Maxed && p.Base == s.RankMaxes.Count)
+            if (p.Base == 0) m = s.Score / (s.TierThresholds.Count > 0 ? s.TierThresholds[0] : double.NaN) * r[0];
+            else if (p.Maxed && p.Base == s.TierThresholds.Count)
             {
-                var last = s.RankMaxes[p.Base - 1];
-                var prev = p.Base > 1 ? s.RankMaxes[p.Base - 2] : 0;
+                var last = s.TierThresholds[p.Base - 1];
+                var prev = p.Base > 1 ? s.TierThresholds[p.Base - 2] : 0;
                 var span = Math.Abs(last - prev);
                 if (span == 0) span = 1;
                 var idx = Math.Min(p.Base + Math.Max(0, (s.Score - last) / span), r.Length - 1);
@@ -921,26 +921,26 @@ internal static class RankCalculationEngine
         return Thresholds(sum, r);
     }
 
-    static RankResult AplusS1(Ctx c)
+    static TierResult AplusS1(Ctx c)
     {
         var basic = Basic(c);
         double plus = double.PositiveInfinity;
         foreach (var (_, subs) in c.Cats)
         {
-            var ranks = subs.SelectMany(s => s.Scenarios).Select(s => s.Rank).Where(x => x > 0).OrderDescending().ToList();
+            var ranks = subs.SelectMany(s => s.Scenarios).Select(s => s.Tier).Where(x => x > 0).OrderDescending().ToList();
             plus = Math.Min(plus, ranks.Count >= 3 ? ranks[2] : 0);
         }
         if (double.IsInfinity(plus)) plus = 0;
-        return new((int)Math.Max(basic.Rank, plus), basic.Progress);
+        return new((int)Math.Max(basic.Tier, plus), basic.Progress);
     }
 
-    static RankResult Tsk(Ctx c)
+    static TierResult Tsk(Ctx c)
     {
         var data = c.All.Select(s => (Pos: PosOf(s), S: s)).ToList();
-        var overMax = data.Count(d => d.Pos.Maxed && d.Pos.Base == d.S.RankMaxes.Count && d.S.Score > d.S.RankMaxes[^1]);
+        var overMax = data.Count(d => d.Pos.Maxed && d.Pos.Base == d.S.TierThresholds.Count && d.S.Score > d.S.TierThresholds[^1]);
         var counts = new Dictionary<int, int>();
         foreach (var d in data) if (d.Pos.Base > 0) counts[d.Pos.Base] = counts.GetValueOrDefault(d.Pos.Base) + 1;
-        (int? OverMax, int? MaxRank, int Needed)? cfg = c.Key switch
+        (int? OverMax, int? MaxTier, int Needed)? cfg = c.Key switch
         {
             "beginner" => (null, null, 4),
             "main" => (null, null, 8),
@@ -955,7 +955,7 @@ internal static class RankCalculationEngine
             _ => null,
         };
         if (cfg is not { } a) return Basic(c);
-        var top = c.RankNames.Count > 0 ? c.RankNames.Count - 1 : Math.Max(0, data.Max(d => d.S.RankMaxes.Count));
+        var top = c.TierNames.Count > 0 ? c.TierNames.Count - 1 : Math.Max(0, data.Max(d => d.S.TierThresholds.Count));
         int Threshold(int k)
         {
             foreach (var r in counts.Keys.OrderDescending())
@@ -970,10 +970,10 @@ internal static class RankCalculationEngine
         }
         int g = 0;
         double d2 = 0;
-        if (a.OverMax is { } om && overMax >= om) { g = c.RankNames.Count > 0 ? c.RankNames.Count - 1 : 10; d2 = 1; }
-        else if (a.MaxRank is { } mr)
+        if (a.OverMax is { } om && overMax >= om) { g = c.TierNames.Count > 0 ? c.TierNames.Count - 1 : 10; d2 = 1; }
+        else if (a.MaxTier is { } mr)
         {
-            var k = data.Where(d => d.S.RankMaxes.Count > 0 && d.Pos.Base == d.S.RankMaxes.Count).ToList();
+            var k = data.Where(d => d.S.TierThresholds.Count > 0 && d.Pos.Base == d.S.TierThresholds.Count).ToList();
             if (k.Count >= mr) { g = k.Max(d => d.Pos.Base); if (g >= top) d2 = 1; }
             else { g = Threshold(a.Needed); if (g > 0) d2 = Next(g, a.Needed); }
         }
@@ -981,11 +981,11 @@ internal static class RankCalculationEngine
         return new(g, d2);
     }
 
-    static RankResult Xyz(Ctx c)
+    static TierResult Xyz(Ctx c)
     {
-        var groups = c.Subs.Select(s => s.Scenarios.Select(x => x.Rank).ToList()).ToList();
+        var groups = c.Subs.Select(s => s.Scenarios.Select(x => x.Tier).ToList()).ToList();
         var flat = groups.SelectMany(g => g).ToList();
-        var maxLen = c.All.Count == 0 ? 0 : c.All.Max(s => s.RankMaxes.Count);
+        var maxLen = c.All.Count == 0 ? 0 : c.All.Max(s => s.TierThresholds.Count);
         var g0 = Math.Max(maxLen, c.Tiers.Count);
         var l = flat.Count;
         if (g0 <= 0) return new(0, 0);
@@ -1034,7 +1034,7 @@ internal static class RankCalculationEngine
         return new(f, total > 0 ? H((double)have / total) : 0);
     }
 
-    static RankResult Xyz2(Ctx c)
+    static TierResult Xyz2(Ctx c)
     {
         int[]? order = c.Key switch
         {
@@ -1050,7 +1050,7 @@ internal static class RankCalculationEngine
             var r = new List<int>();
             var p = new List<Pos>();
             foreach (var s in subs.SelectMany(x => x.Scenarios))
-                if (s.Rank > 0) { var pos = PosOf(s); r.Add(pos.Base); p.Add(pos); }
+                if (s.Tier > 0) { var pos = PosOf(s); r.Add(pos.Base); p.Add(pos); }
             ranks.Add(r); poss.Add(p);
         }
         var total = c.All.Count;
@@ -1083,7 +1083,7 @@ internal static class RankCalculationEngine
         return new(m, n > 0 ? Math.Clamp(sum / n, 0, 1) : 0);
     }
 
-    static RankResult XyzSmoothness(Ctx c)
+    static TierResult XyzSmoothness(Ctx c)
     {
         var t = c.All.Count;
         var o = c.Tiers.Count;
@@ -1093,7 +1093,7 @@ internal static class RankCalculationEngine
         var ranks = c.All.Select(x =>
         {
             if (x.Score <= 0) return 0;
-            return x.RankMaxes.Count > 0 ? Math.Max(0, PosOf(x).Base) : Math.Max(0, x.Rank);
+            return x.TierThresholds.Count > 0 ? Math.Max(0, PosOf(x).Base) : Math.Max(0, x.Tier);
         }).ToList();
         int Count(int r) => ranks.Count(x => x >= r);
         var g = Count(o);
@@ -1107,9 +1107,9 @@ internal static class RankCalculationEngine
         return new(h, k > 0 ? Math.Clamp((double)m / k, 0, 1) : 0);
     }
 
-    static RankResult Aoi(Ctx c)
+    static TierResult Aoi(Ctx c)
     {
-        var lists = c.Subs.Select(sub => sub.Scenarios.Where(s => s.Score > 0).Select(s => s.Rank).ToList()).ToList();
+        var lists = c.Subs.Select(sub => sub.Scenarios.Where(s => s.Score > 0).Select(s => s.Tier).ToList()).ToList();
         var distinct = lists.SelectMany(l => l).Where(x => x > 0).Distinct().OrderDescending().ToList();
         var rank = 0;
         foreach (var i in distinct)
@@ -1129,14 +1129,14 @@ internal static class RankCalculationEngine
         return new(rank, progress);
     }
 
-    static RankResult Aoi2(Ctx c)
+    static TierResult Aoi2(Ctx c)
     {
         var required = c.Diff == "輝" ? 1 : c.All.Count;
-        var done = c.All.Count(s => s.Score > 0 && s.Rank > 0);
+        var done = c.All.Count(s => s.Score > 0 && s.Tier > 0);
         return Thresholds(done, [required]);
     }
 
-    static RankResult Aimbeast(Ctx c)
+    static TierResult Aimbeast(Ctx c)
     {
         var anyPlayed = false;
         var unrankedCategory = false;
@@ -1149,7 +1149,7 @@ internal static class RankCalculationEngine
             var anyUnranked = false;
             foreach (var s in subs.SelectMany(x => x.Scenarios))
             {
-                var m = s.Score > 0 ? s.Rank : 0;
+                var m = s.Score > 0 ? s.Tier : 0;
                 if (s.Score > 0) anyPlayed = true;
                 if (m <= 0) anyUnranked = true; else { sum += m; ranked++; }
             }
@@ -1159,13 +1159,13 @@ internal static class RankCalculationEngine
         }
         var avg = count > 0 ? total / count : 0;
         var rank = anyPlayed && !unrankedCategory ? (int)Math.Floor(avg) : 0;
-        var top = c.RankNames.Count > 0 ? c.RankNames.Count - 1 : 0;
+        var top = c.TierNames.Count > 0 ? c.TierNames.Count - 1 : 0;
         var progress = anyPlayed && !unrankedCategory ? Math.Clamp(avg - rank, 0, 1) : 0;
         if (rank >= top && top > 0) { rank = top; progress = 1; }
         return new(rank, progress);
     }
 
-    static RankResult AimbeastPartial(Ctx c)
+    static TierResult AimbeastPartial(Ctx c)
     {
         var needed = (int)Math.Ceiling(c.All.Count / 2.0);
         double total = 0;
@@ -1186,7 +1186,7 @@ internal static class RankCalculationEngine
         var enough = needed > 0 && ranked >= needed;
         var avg = count > 0 ? total / count : 0;
         var rank = enough ? (int)Math.Floor(avg) : 0;
-        var top = c.RankNames.Count > 0 ? c.RankNames.Count - 1 : 0;
+        var top = c.TierNames.Count > 0 ? c.TierNames.Count - 1 : 0;
         var progress = enough ? Math.Clamp(avg - rank, 0, 1) : 0;
         if (rank >= top && top > 0) { rank = top; progress = 1; }
         return new(rank, progress);

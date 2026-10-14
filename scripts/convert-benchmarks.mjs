@@ -10,7 +10,7 @@ const out = fileURLToPath(new URL("../src/KovaaksCompanion.Core/Benchmarks/playl
 
 const playlists = JSON.parse(readFileSync(src, "utf8")).map(b => ({
   name: b.benchmarkName,
-  rankCalculation: b.rankCalculation ?? "basic",
+  tierCalculation: b.rankCalculation ?? "basic",
   abbr: b.abbreviation,
   color: b.color,
   levels: b.difficulties.map(d => ({
@@ -18,7 +18,7 @@ const playlists = JSON.parse(readFileSync(src, "utf8")).map(b => ({
     id: d.kovaaksBenchmarkId,
     code: d.sharecode,
     tierColors: d.rankColors,
-    selection: d.scenarioSelection?.enabled ? { baseRankScoreCount: d.scenarioSelection.baseRankScoreCount ?? 12, fullPoolRankScoreCount: d.scenarioSelection.fullPoolRankScoreCount, minPerCategory: d.scenarioSelection.minPerCategory ?? 0, minPerSubcategory: d.scenarioSelection.minPerSubcategory ?? 0 } : undefined,
+    selection: d.scenarioSelection?.enabled ? { baseTierScoreCount: d.scenarioSelection.baseRankScoreCount ?? 12, fullPoolTierScoreCount: d.scenarioSelection.fullPoolRankScoreCount, minPerCategory: d.scenarioSelection.minPerCategory ?? 0, minPerSubcategory: d.scenarioSelection.minPerSubcategory ?? 0 } : undefined,
     groups: d.categories.map(c => ({
       name: c.categoryName,
       color: c.color,

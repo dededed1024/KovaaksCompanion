@@ -8,12 +8,12 @@ using KovaaksCompanion.Core.Benchmarks;
 
 namespace KovaaksCompanion.App;
 
-public sealed record BenchRow(string Scenario, double? Best, bool FromServer, int Plays, DateTime? LastPlayed, IReadOnlyList<double> Maxes);
+public sealed record BenchRow(string Scenario, double? Best, bool FromCloud, int Plays, DateTime? LastPlayed, IReadOnlyList<double> Maxes);
 public sealed record BenchSub(string Name, Brush Color, IReadOnlyList<BenchRow> Rows);
 public sealed record BenchCategory(string Name, Brush Color, IReadOnlyList<BenchSub> Subs);
 
 /// <summary>Aggregate of one category: mean tier progress (<see cref="Value"/>), its rank and fraction, played count and scenarios per tier (index 0 = unranked).</summary>
-public sealed record CategoryStat(double Value, int Rank, double Fraction, int Played, int Total, int[] Counts);
+public sealed record CategoryStat(double Value, int Tier, double Fraction, int Played, int Total, int[] Counts);
 
 /// <summary>
 /// Benchmark table built in code: one rounded card per category with a header (rank, progress to the next tier, played), the tier
@@ -171,8 +171,8 @@ public sealed class BenchmarkTable : UserControl
         var sum = 0.0;
         foreach (var r in rows)
         {
-            sum += r.Maxes.Count == 0 ? 0 : Tier.ValueOf(r.Best ?? 0, r.Maxes);
-            counts[r.Maxes.Count == 0 ? 0 : Math.Min(Tier.TierOf(r.Best ?? 0, r.Maxes).Rank, tiers)]++;
+            sum += r.Maxes.Count == 0 ? 0 : TierLadder.ValueOf(r.Best ?? 0, r.Maxes);
+            counts[r.Maxes.Count == 0 ? 0 : Math.Min(TierLadder.TierOf(r.Best ?? 0, r.Maxes).Tier, tiers)]++;
         }
         var v = rows.Count == 0 ? 0 : sum / rows.Count;
         var rank = Math.Min((int)Math.Floor(v + 1e-9), tiers);
@@ -224,9 +224,9 @@ public sealed class BenchmarkTable : UserControl
         var subs = cat.Subs.Where(s => s.Rows.Count > 0).ToList();
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 160, SharedSizeGroup = "name" });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
-        for (var i = 0; i < tiers; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 44 });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+        for (var i = 0; i < tiers; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 52 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
 
         if (ShowCategoryHeader)
@@ -237,21 +237,21 @@ public sealed class BenchmarkTable : UserControl
             for (var i = 0; i < 4; i++) head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Brush? rankBrush = stat.Rank >= 1 && stat.Rank <= tierBrushes.Count ? tierBrushes[stat.Rank - 1] : null;
-            var nextBrush = stat.Rank < tiers && stat.Rank < tierBrushes.Count ? tierBrushes[stat.Rank] : rankBrush ?? dim;
+            Brush? rankBrush = stat.Tier >= 1 && stat.Tier <= tierBrushes.Count ? tierBrushes[stat.Tier - 1] : null;
+            var nextBrush = stat.Tier < tiers && stat.Tier < tierBrushes.Count ? tierBrushes[stat.Tier] : rankBrush ?? dim;
             void H(UIElement e, int col) { Grid.SetColumn(e, col); head.Children.Add(e); }
             H(Cell(cat.Name, 15, Res("Fg"), HorizontalAlignment.Left, FontWeights.SemiBold, null, false), 0);
             H(new Border
             {
                 CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 Background = WithAlpha(rankBrush ?? dim, 0.15),
-                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANKED") : tierNames[stat.Rank - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = rankBrush == null ? Res("Fg") : ChartPaths.TextTone(rankBrush) },
+                Child = new TextBlock { Text = rankBrush == null ? L.T("UNRANKED") : tierNames[stat.Tier - 1], FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = rankBrush == null ? Res("Fg") : ChartPaths.TextTone(rankBrush) },
             }, 1);
             var bar = new Grid { Width = 120, Height = 4, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
-            H(Cell(stat.Rank >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
+            H(Cell(stat.Tier >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
             if (ShowCaptureButton)
             {
                 var cb = CaptureButton(() => CategoryCaptureRequested?.Invoke(cat));
@@ -265,11 +265,11 @@ public sealed class BenchmarkTable : UserControl
         var cr = AddRow(g, ColH);
         Put(g, new Border { BorderBrush = Res("Separator"), BorderThickness = new Thickness(0, 0, 0, 1) }, cr, 0, cols);
         Put(g, Cell(L.T("SCENARIO"), 10.5, dim, HorizontalAlignment.Left, FontWeights.SemiBold, new Thickness(16, 0, 0, 0)), cr, 0);
-        Put(g, Cell(L.T("Score").ToUpperInvariant(), 10.5, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
+        Put(g, Cell(L.T("Score").ToUpperInvariant(), 12, dim, HorizontalAlignment.Right, FontWeights.SemiBold, new Thickness(0, 0, 8, 0)), cr, 1);
         for (var k = 0; k < tiers; k++)
         {
             // Canvas desires no size, so the label cannot widen its column (the tier columns split the available width equally); it is centred by hand.
-            var lbl = Cell(TierText.Label(tierNames[k]), 10, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Left, FontWeights.Bold, null, false);
+            var lbl = Cell(TierText.Label(tierNames[k]), 11.5, k < tierBrushes.Count ? ChartPaths.TextTone(tierBrushes[k]) : dim, HorizontalAlignment.Left, FontWeights.Bold, null, false);
             var host = new Canvas();
             host.Children.Add(lbl);
             void Center() { Canvas.SetLeft(lbl, (host.ActualWidth - lbl.ActualWidth) / 2); Canvas.SetTop(lbl, (host.ActualHeight - lbl.ActualHeight) / 2); }
@@ -370,8 +370,8 @@ public sealed class BenchmarkTable : UserControl
         var fg = Res("Fg");
         var tiers = tierNames.Count;
         var unplayed = row.Plays == 0 && row.Best == null;
-        var pos = Tier.TierOf(row.Best ?? 0, row.Maxes);
-        var rank = row.Maxes.Count == 0 ? 0 : pos.Rank;
+        var pos = TierLadder.TierOf(row.Best ?? 0, row.Maxes);
+        var rank = row.Maxes.Count == 0 ? 0 : pos.Tier;
         Brush? rowBrush = rank >= 1 && rank <= tierBrushes.Count ? tierBrushes[rank - 1] : null;
 
         void Add(UIElement e, int col) { e.IsHitTestVisible = false; Put(g, e, r, col); }
@@ -381,12 +381,12 @@ public sealed class BenchmarkTable : UserControl
         var score = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         score.Children.Add(Tab(new TextBlock
         {
-            Text = row.Best is { } b ? b.ToString("0.#", CultureInfo.InvariantCulture) : "–", FontSize = 13, FontWeight = FontWeights.SemiBold,
+            Text = row.Best is { } b ? b.ToString("0.#", CultureInfo.InvariantCulture) : "–", FontSize = 15, FontWeight = FontWeights.SemiBold,
             Foreground = row.Best == null || rowBrush == null ? dim : ChartPaths.TextTone(rowBrush), VerticalAlignment = VerticalAlignment.Center,
         }));
         Add(score, 1);
 
-        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100%" : $"{pos.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
+        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100%" : $"{pos.Fraction * 100:0}%", 13, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
 
         var sepText = Argb("#66FFFFFF");
         var nextText = Argb("#B3FFFFFF");
@@ -419,7 +419,7 @@ public sealed class BenchmarkTable : UserControl
             {
                 var tb = new TextBlock
                 {
-                    Text = row.Maxes[k - 1].ToString("#,0.##", CultureInfo.InvariantCulture), FontSize = 11.5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    Text = row.Maxes[k - 1].ToString("#,0.##", CultureInfo.InvariantCulture), FontSize = 13.5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                     Foreground = reached ? fg : next ? nextText : sepText, FontWeight = reached ? FontWeights.SemiBold : FontWeights.Normal,
                 };
                 if (next && row.Best != null) tb.Margin = new Thickness(0, 0, 0, 4);
