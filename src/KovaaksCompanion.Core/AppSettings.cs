@@ -12,6 +12,11 @@ public sealed record AppSettings
     public string DataFolder { get; init; } = "";
     /// <summary>SteamID64 used for server scores. Empty = detect from Steam's loginusers.vdf.</summary>
     public string SteamId { get; init; } = "";
+    /// <summary>Webapp username of <see cref="WebUsernameSteamId"/>, resolved once from the server (finding it takes several requests).</summary>
+    public string WebUsername { get; init; } = "";
+    public string WebUsernameSteamId { get; init; } = "";
+    /// <summary>The resolved webapp username when it belongs to <paramref name="steamId"/>, else null.</summary>
+    public string? UsernameFor(string steamId) => WebUsername.Length > 0 && WebUsernameSteamId == steamId ? WebUsername : null;
     public bool StartWithWindows { get; init; } = true;
     /// <summary>UI language code ("en", "ko"); empty = follow Windows.</summary>
     public string Language { get; init; } = "";
@@ -72,17 +77,19 @@ public sealed record AppSettings
         }
     }
     [JsonIgnore] public string ReplaysFolder => Path.Combine(DataRoot, "sessions");
-    [JsonIgnore] public string UiFile => Path.Combine(DataRoot, "ui.json");
-    [JsonIgnore] public string LiveRunFile => Path.Combine(DataRoot, "live-runs.json");
-    /// <summary>Cache and playlist-scenarios data live in LocalAppData, not in the user-chosen data root.</summary>
+    [JsonIgnore] public string UiFile => Path.Combine(DefaultDataFolder, "ui.json");
+    /// <summary>Session ids per run, signed like runs.dat and kept next to it.</summary>
+    [JsonIgnore] public string LiveRunFile => Path.Combine(RunsCacheFolder, "sessions.dat");
+    /// <summary>Cache data lives in LocalAppData, not in the user-chosen data root.</summary>
     [JsonIgnore] public string CacheFolder => Path.Combine(DefaultDataFolder, "cache");
     /// <summary>Deleted runs keep their replay data here (everything but the video), so their graphs still show.</summary>
     [JsonIgnore] public string CachedReplaysFolder => Path.Combine(CacheFolder, "sessions");
-    /// <summary>The run history cache (runs.dat) lives in the data root so it survives with the replays.</summary>
-    [JsonIgnore] public string RunsCacheFolder => Path.Combine(DataRoot, "history");
+    /// <summary>The run history cache (runs.dat) lives with the other caches in LocalAppData; the data root only holds output.</summary>
+    [JsonIgnore] public string RunsCacheFolder => Path.Combine(DefaultDataFolder, "history");
     public Benchmarks.StatsCache OpenCache() => new(CacheFolder, RunsCacheFolder);
-    [JsonIgnore] public string PlaylistIndexFile => Path.Combine(DefaultDataFolder, "playlist-scenarios.dat");
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
+    /// <summary>Diagnostic log; lives in the data root next to the replays.</summary>
+    [JsonIgnore] public string LogFile => Path.Combine(DataRoot, "logs", "app.log");
     [JsonIgnore] public string CapturesFolder => Path.Combine(DataRoot, "captures");
     /// <summary><see cref="CapturesFolder"/>, created (with a UAC grant when the location needs one).</summary>
     public string EnsureCapturesFolder()
@@ -90,6 +97,33 @@ public sealed record AppSettings
         var dir = CapturesFolder;
         AccessGuard.Run(dir, true, () => Directory.CreateDirectory(dir));
         return dir;
+    }
+
+    /// <summary>
+    /// Moves files earlier versions kept elsewhere to where they live now: ui.json, history\runs.dat and the session cache (once live-runs.json, now history\sessions.dat)
+    /// out of the data root, and the session cache out of the LocalAppData root. Never overwrites; never throws.
+    /// </summary>
+    public void MigrateLocalState()
+    {
+        try
+        {
+            var history = Path.Combine(DataRoot, "history");
+            var moves = new List<(string From, string To)> { (Path.Combine(DefaultDataFolder, "live-runs.json"), LiveRunFile), (Path.Combine(history, "live-runs.json"), LiveRunFile) };
+            if (!string.Equals(DataRoot, DefaultDataFolder, StringComparison.OrdinalIgnoreCase))
+                moves.AddRange([
+                    (Path.Combine(DataRoot, "ui.json"), UiFile),
+                    (Path.Combine(DataRoot, "live-runs.json"), LiveRunFile),
+                    (Path.Combine(history, Benchmarks.StatsCache.RunsFile), Path.Combine(RunsCacheFolder, Benchmarks.StatsCache.RunsFile)),
+                ]);
+            foreach (var (from, to) in moves)
+            {
+                if (!File.Exists(from) || File.Exists(to)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Move(from, to);
+            }
+            if (!string.Equals(history, RunsCacheFolder, StringComparison.OrdinalIgnoreCase) && Directory.Exists(history) && !Directory.EnumerateFileSystemEntries(history).Any()) Directory.Delete(history);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.AppLog.Write("migrate", "local state move failed: " + e.Message); }
     }
 
     /// <summary>Fills KovaaksPath from detection when it is empty or missing; unchanged when nothing is found.</summary>

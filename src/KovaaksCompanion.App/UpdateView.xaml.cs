@@ -1,18 +1,22 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Update;
 
 namespace KovaaksCompanion.App;
 
-/// <summary>"Update available" popup (scrim + card): Update opens the release page in the browser.</summary>
+/// <summary>"Update available" popup (scrim + card): Update downloads, verifies and installs the new exe in place; without a verifiable asset it opens the download in the browser.</summary>
 public partial class UpdateView : UserControl
 {
+    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
+
     ReleaseInfo? _release;
-    bool _open;
+    bool _open, _busy;
     int _tok;
 
     public UpdateView() => InitializeComponent();
@@ -24,6 +28,9 @@ public partial class UpdateView : UserControl
     {
         if (_open) return;
         _release = release;
+        _busy = false;
+        UpdateBtn.IsEnabled = LaterBtn.IsEnabled = true;
+        Status.Visibility = Visibility.Collapsed;
         Versions.Text = $"v{App.CurrentVersion.ToString(3)} → v{release.Version.ToString(3)}";
         Notes.Text = release.Notes;
         NotesScroll.Visibility = release.Notes.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -42,7 +49,7 @@ public partial class UpdateView : UserControl
     /// <summary>Closes the popup; false when it was not open.</summary>
     public bool Close()
     {
-        if (!_open) return false;
+        if (!_open || _busy) return false;
         _open = false;
         Popups.Closed(this);
         Animate(false, ++_tok);
@@ -52,7 +59,38 @@ public partial class UpdateView : UserControl
     void OnScrim(object sender, MouseButtonEventArgs e) => Close();
     void OnLater(object sender, RoutedEventArgs e) => Close();
 
-    void OnUpdate(object sender, RoutedEventArgs e)
+    async void OnUpdate(object sender, RoutedEventArgs e)
+    {
+        var release = _release;
+        var exe = Environment.ProcessPath;
+        if (release == null || exe == null || !SelfUpdate.CanInstall(release)) { OpenInBrowser(); return; }
+        _busy = true;
+        UpdateBtn.IsEnabled = LaterBtn.IsEnabled = false;
+        ShowStatus(L.T("Downloading…"), false);
+        try
+        {
+            var path = await SelfUpdate.Download(Http, release, exe, new Progress<double>(p => ShowStatus(L.F("Downloading… {0}%", (int)(p * 100)), false)));
+            ShowStatus(L.T("Restarting…"), false);
+            SelfUpdate.Install(exe, path);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("update", "install failed: " + ex.Message);
+            _busy = false;
+            UpdateBtn.IsEnabled = LaterBtn.IsEnabled = true;
+            ShowStatus(L.T("Update failed. Download it from the release page instead."), true);
+            OpenInBrowser();
+        }
+    }
+
+    void ShowStatus(string text, bool error)
+    {
+        Status.Text = text;
+        Status.Foreground = (Brush)FindResource(error ? "Red" : "Dim");
+        Status.Visibility = Visibility.Visible;
+    }
+
+    void OpenInBrowser()
     {
         Process.Start(new ProcessStartInfo(UpdateCheck.LatestDownload) { UseShellExecute = true })?.Dispose();
         Close();

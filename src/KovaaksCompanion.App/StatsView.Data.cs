@@ -27,13 +27,12 @@ public partial class StatsView
     static Dictionary<string, ServerBest> LoadServerBests(StatsCache cache, string steam) =>
         steam.Length == 0 ? new(StringComparer.OrdinalIgnoreCase) : cache.LoadServerBests(steam);
 
-    /// <summary>Stores a difficulty's progress and feeds the server-best and playlist-scenario lookups.</summary>
+    /// <summary>Stores a difficulty's progress and feeds the server-best lookups.</summary>
     void ApplyProgress(Difficulty d, BenchmarkProgress p)
     {
         _rawProgress[d.KovaaksBenchmarkId] = p;
         _progress[d.KovaaksBenchmarkId] = WithLocal(p);
         foreach (var s in p.Scenarios) if (s.Score > 0) _book.RaiseServerBest(s.Scenario, Math.Max(s.Score, _deletedBest.GetValueOrDefault(s.Scenario)));
-        _index.Set(d.KovaaksBenchmarkId, p.Scenarios.Select(s => s.Scenario));
     }
 
     /// <summary>Builds every difficulty's progress from the bundled thresholds and the cached server bests.</summary>
@@ -73,15 +72,14 @@ public partial class StatsView
         {
             var cache = Cache;
             if (_serverSyncedAt is { } at && DateTime.Now - at < SyncInterval) return;
-            var user = await Task.Run(() => cache.LoadUsername(steam));
+            var user = _host.Settings.UsernameFor(steam);
             if (string.IsNullOrEmpty(user))
             {
                 var likely = AllDifficulties().Select(x => x.D)
                     .OrderByDescending(d => KovaaksCompanion.Core.Benchmarks.RankData.Get(d.KovaaksBenchmarkId) is { } b ? b.Categories.Sum(c => c.Scenarios.Count(s => _lib.Runs(s.Name).Count > 0)) : 0).ToList();
                 user = await _api.ResolveUsernameAsync(steam, likely, 6, ct);
                 if (string.IsNullOrEmpty(user)) return;
-                var name = user;
-                await Task.Run(() => cache.SaveUsername(steam, name));
+                _host.ApplySettings(_host.Settings with { WebUsername = user, WebUsernameSteamId = steam });
             }
             var bests = await _api.GetTotalPlaysAsync(user, ct);
             if (bests.Count == 0) return;
@@ -143,7 +141,7 @@ public partial class StatsView
         var changed = false;
         try
         {
-            var user = await Task.Run(() => cache.LoadUsername(steam));
+            var user = _host.Settings.UsernameFor(steam);
             if (string.IsNullOrEmpty(user)) return false;
             var gate = new SemaphoreSlim(MaxParallel);
             var fresh = new Dictionary<string, List<CloudScore>>();

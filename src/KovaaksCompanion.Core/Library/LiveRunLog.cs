@@ -4,27 +4,66 @@ using System.Text.Json;
 namespace KovaaksCompanion.Core.Library;
 
 /// <summary>
-/// Session id per run in live-runs.json, a signed masked file (<see cref="SignedFile"/>): run key (<see cref="UiState.RunKey"/>) to the session's id.
-/// Runs sharing an id are one <see cref="PlaySession"/>. Ids &gt; 0 are live sessions (game launch ticks); ids &lt; 0 are sessions
-/// grouped once by <see cref="PlaySession.DefaultGap"/> (legacy local runs, server records) and then kept. A tampered file reads as empty.
+/// Session id per run in sessions.dat, a signed masked file (<see cref="SignedFile"/>): run key (<see cref="UiState.RunKey"/>) to the session's id.
+/// Plays (local runs and server-only scores alike) sharing an id are one <see cref="PlaySession"/>. Ids are GUIDs. A live session is one game launch;
+/// plays without an id (legacy local runs, server records) are grouped once by <see cref="PlaySession.DefaultGap"/> and then kept. A tampered file reads as empty.
 /// </summary>
 public static class LiveRunLog
 {
-    public static Dictionary<string, long> Load(string path)
+    static readonly object Gate = new();
+
+    static readonly Dictionary<string, Guid> Pending = [];
+
+    /// <summary>The main map plus the live session's runs.</summary>
+    public static Dictionary<string, Guid> Load(string path)
+    {
+        lock (Gate)
+        {
+            var all = LoadFile(path);
+            foreach (var kv in Pending) all[kv.Key] = kv.Value;
+            return all;
+        }
+    }
+
+    /// <summary>Writes the live session's runs into the main file.</summary>
+    public static void Flush(string path)
+    {
+        lock (Gate)
+        {
+            if (Pending.Count == 0) return;
+            var all = LoadFile(path);
+            foreach (var kv in Pending) all[kv.Key] = kv.Value;
+            SaveFile(path, all);
+            Pending.Clear();
+        }
+    }
+
+    static Dictionary<string, Guid> LoadFile(string path)
     {
         try
         {
-            if (SignedFile.TryReadMasked(path) is { } b) return JsonSerializer.Deserialize<Dictionary<string, long>>(b) ?? [];
+            if (SignedFile.TryReadMasked(path) is { } b) return Parse(b);
             // Older plain-JSON file: accepted once; the next save signs it.
-            if (File.Exists(path) && SignedFile.TryRead(path) == null && IsPlainJson(path)) return JsonSerializer.Deserialize<Dictionary<string, long>>(File.ReadAllText(path)) ?? [];
+            if (File.Exists(path) && SignedFile.TryRead(path) == null && IsPlainJson(path)) return Parse(File.ReadAllBytes(path));
             return [];
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return []; }
     }
 
+    /// <summary>GUID strings; files from before GUIDs hold numbers, which map to a fixed GUID each so their sessions stay together.</summary>
+    static Dictionary<string, Guid> Parse(byte[] json)
+    {
+        try { return JsonSerializer.Deserialize<Dictionary<string, Guid>>(json) ?? []; }
+        catch (JsonException)
+        {
+            var old = JsonSerializer.Deserialize<Dictionary<string, long>>(json) ?? [];
+            return old.ToDictionary(kv => kv.Key, kv => new Guid(0, 0, 0, BitConverter.GetBytes(kv.Value)));
+        }
+    }
+
     static bool IsPlainJson(string path) => File.ReadAllBytes(path) is { Length: > 0 } b && b[0] == (byte)'{';
 
-    static void Save(string path, Dictionary<string, long> all)
+    static void SaveFile(string path, Dictionary<string, Guid> all)
     {
         try
         {
@@ -34,45 +73,52 @@ public static class LiveRunLog
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("live runs save " + path, e); }
     }
 
-    /// <summary>Tags a run with its live session id and returns the updated map.</summary>
-    public static Dictionary<string, long> Add(string path, string scenario, DateTime end, long liveId)
+    /// <summary>A new id for one session.</summary>
+    public static Guid NewId() => Guid.NewGuid();
+
+    /// <summary>Tags a run with its live session id (memory only until <see cref="Flush"/>) and returns <paramref name="current"/> with it added.</summary>
+    public static Dictionary<string, Guid> Add(IReadOnlyDictionary<string, Guid> current, string scenario, DateTime end, Guid liveId)
     {
-        var all = Load(path);
-        all[UiState.RunKey(scenario, end)] = liveId;
-        Save(path, all);
-        return all;
+        var key = UiState.RunKey(scenario, end);
+        lock (Gate) Pending[key] = liveId;
+        return new Dictionary<string, Guid>(current) { [key] = liveId };
     }
 
     /// <summary>
-    /// Gives plays without a session id one: it joins the previous play's session when that is not a live one and the gap
+    /// Gives plays without a session id one: it joins the previous play's session when the gap
     /// to it is at most <see cref="PlaySession.DefaultGap"/>, else starts a new session. Persists when anything changed and returns the map.
     /// </summary>
-    public static Dictionary<string, long> Assign(string path, IEnumerable<(string Scenario, DateTime Start, DateTime End)> plays)
+    public static Dictionary<string, Guid> Assign(string path, IEnumerable<(string Scenario, DateTime Start, DateTime End)> plays)
+    {
+        lock (Gate) return AssignLocked(path, plays);
+    }
+
+    static Dictionary<string, Guid> AssignLocked(string path, IEnumerable<(string Scenario, DateTime Start, DateTime End)> plays)
     {
         var all = Load(path);
         var changed = false;
-        long? prevId = null;
+        Guid? prevId = null;
         var prevEnd = DateTime.MinValue;
         foreach (var (scenario, start, end) in plays.OrderBy(p => p.Start))
         {
             var key = UiState.RunKey(scenario, end);
             if (!all.TryGetValue(key, out var id))
             {
-                id = prevId is < 0 and var p && start - prevEnd <= PlaySession.DefaultGap ? p : -start.Ticks;
+                id = prevId is { } p && start - prevEnd <= PlaySession.DefaultGap ? p : NewId();
                 all[key] = id;
                 changed = true;
             }
             prevId = id;
             prevEnd = end;
         }
-        if (changed) Save(path, all);
+        if (changed)
+        {
+            SaveFile(path, all.Where(kv => !Pending.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value)); // the live session's runs wait for Flush
+        }
         return all;
     }
 
-    /// <summary>Legacy local runs (no live id) and server records, in one pass each, so a record never joins a run's session.</summary>
-    public static Dictionary<string, long> AssignRuns(string path, IEnumerable<RunRecord> runs) =>
+    /// <summary>Runs without a session id (local runs and server-only scores alike).</summary>
+    public static Dictionary<string, Guid> AssignAll(string path, IEnumerable<RunRecord> runs) =>
         Assign(path, runs.Select(r => (r.Scenario, r.Start, r.End)));
-
-    public static Dictionary<string, long> AssignServer(string path, IEnumerable<(string Scenario, DateTime Time)> records) =>
-        Assign(path, records.Select(r => (r.Scenario, r.Time, r.Time)));
 }

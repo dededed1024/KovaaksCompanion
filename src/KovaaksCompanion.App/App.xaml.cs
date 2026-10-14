@@ -55,6 +55,7 @@ public partial class App : Application
             }
         }
         PublishVersion();
+        if (Environment.ProcessPath is { } exe) SelfUpdate.Cleanup(exe);
         _quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
         _quitWait = ThreadPool.RegisterWaitForSingleObject(_quitEvent, (_, _) => Dispatcher.BeginInvoke(new Action(Shutdown)), null, Timeout.Infinite, false);
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);

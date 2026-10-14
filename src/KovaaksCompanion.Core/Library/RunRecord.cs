@@ -6,8 +6,8 @@ namespace KovaaksCompanion.Core.Library;
 
 /// <summary>Lightweight summary of one past run, enough for history and statistics. <paramref name="Cm360"/> is the sensitivity the run was played at (null when the CSV has no usable sens or DPI).
 /// <paramref name="Dpi"/> is the DPI the CSV recorded; <paramref name="FixedDpi"/> is the DPI the user corrected it to (0 = not corrected), already applied to <paramref name="Cm360"/>.
-/// <paramref name="Speed"/> holds the mouse-speed figures of the run's trajectory; only set for archived (deleted) runs, whose trajectory file is gone.</summary>
-public sealed record RunRecord(string Scenario, DateTime Start, DateTime End, double Score, double Accuracy, int Kills, PerfSummary? Perf = null, double? Cm360 = null, RunSpeed? Speed = null, int Dpi = 0, int FixedDpi = 0)
+/// <paramref name="Accuracy"/> and <paramref name="Kills"/> are null for a play only the server knows (<see cref="FromServer"/>). <paramref name="Speed"/> holds the mouse-speed figures of the run's trajectory; only set for archived (deleted) runs, whose trajectory file is gone.</summary>
+public sealed record RunRecord(string Scenario, DateTime Start, DateTime End, double Score, double? Accuracy, int? Kills, PerfSummary? Perf = null, double? Cm360 = null, RunSpeed? Speed = null, int Dpi = 0, int FixedDpi = 0)
 {
     public TimeSpan Duration => End - Start;
 
@@ -19,6 +19,9 @@ public sealed record RunRecord(string Scenario, DateTime Start, DateTime End, do
 
     /// <summary>The DPI the run's sensitivity is computed with.</summary>
     public int EffectiveDpi => FixedDpi > 0 ? FixedDpi : Dpi;
+
+    /// <summary>A server score with no local run: just when it happened and the score, everything else unknown.</summary>
+    public static RunRecord FromServer(string scenario, DateTime time, double score) => new(scenario, time, time, score, null, null);
 
     public static RunRecord From(RunStats r, PerfSummary? perf = null)
     {

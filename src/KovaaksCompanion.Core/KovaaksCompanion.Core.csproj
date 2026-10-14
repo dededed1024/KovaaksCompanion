@@ -12,6 +12,18 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
+  <!-- Falls back to KOVAAKS_WEBHOOK_URL=... in the git-ignored repo-root .env when the variable is not set. -->
+  <PropertyGroup Condition="'$(KOVAAKS_WEBHOOK_URL)' == '' And Exists('$(MSBuildThisFileDirectory)../../.env')">
+    <KOVAAKS_WEBHOOK_URL>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../.env')), 'KOVAAKS_WEBHOOK_URL=(\S+)').Groups[1].Value)</KOVAAKS_WEBHOOK_URL>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(KOVAAKS_WEBHOOK_URL)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WebhookUrl</_Parameter1>
+      <_Parameter2>$(KOVAAKS_WEBHOOK_URL)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Benchmarks/playlists.json" LogicalName="playlists.json" />
     <EmbeddedResource Include="Benchmarks/rank-data.json" LogicalName="rank-data.json" />

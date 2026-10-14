@@ -53,7 +53,7 @@ public sealed class ScenarioStats
     public double Average => Records.Count == 0 ? 0 : Records.Average(r => r.Score);
     public double? Latest => Records.Count == 0 ? null : Records[^1].Score;
     public DateTime? LastPlayed => Records.Count == 0 ? null : Records[^1].Time;
-    public double AverageAccuracy => Runs.Count == 0 ? 0 : Runs.Average(r => r.Accuracy);
+    public double AverageAccuracy => Runs.Select(r => r.Accuracy).OfType<double>().DefaultIfEmpty(0).Average();
     public TimeSpan TimePlayed => TimeSpan.FromTicks(Runs.Sum(r => r.Duration.Ticks));
 
     /// <summary>Mean accuracy drift (second half minus first half) over runs that have per-second data. Null without any.</summary>

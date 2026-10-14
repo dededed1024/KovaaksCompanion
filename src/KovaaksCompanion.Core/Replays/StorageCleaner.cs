@@ -22,6 +22,21 @@ public static class StorageCleaner
     public static List<StoredReplay> Scan(string root) =>
         ReplayStore.List(root).Select(s => new StoredReplay(s.Folder, s.Info, FolderBytes(s.Folder))).ToList();
 
+    /// <summary>The replays of the newest play session (the one a replay was just saved into).</summary>
+    public static List<StoredReplay> NewestSession(IEnumerable<StoredReplay> all, TimeSpan? maxGap = null)
+    {
+        var gap = maxGap ?? PlaySession.DefaultGap;
+        var session = new List<StoredReplay>();
+        StoredReplay? next = null;
+        foreach (var s in all.OrderByDescending(s => s.Info.Start))
+        {
+            if (next != null && PlaySession.NewSession(s.Info.Scenario, s.Info.End, next.Info.Scenario, next.Info.Start, next.Info.End, gap)) break;
+            session.Add(s);
+            next = s;
+        }
+        return session;
+    }
+
     /// <summary>Runs that a later run of the same scenario in the same play session scored higher than. Runs for which <paramref name="keep"/> is true stay.</summary>
     public static List<StoredReplay> Superseded(IEnumerable<StoredReplay> all, Func<ReplayInfo, bool> keep, TimeSpan? maxGap = null)
     {

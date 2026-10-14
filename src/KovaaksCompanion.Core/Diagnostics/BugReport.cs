@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 
 namespace KovaaksCompanion.Core.Diagnostics;
@@ -5,8 +6,10 @@ namespace KovaaksCompanion.Core.Diagnostics;
 /// <summary>Posts a user-written bug report plus the scrubbed log tail to a Discord webhook.</summary>
 public static class BugReport
 {
-    /// <summary>Discord webhook URL; empty hides the report UI.</summary>
-    public const string WebhookUrl = "https://discord.com/api/webhooks/1559176651538047036/zOct-NDKlDEuLwNXdoeNW1Zksd8P782S6k9hgbLlcAEaYW55269KDwpH1dXrdqtFmBB1";
+    /// <summary>Discord webhook URL, baked in at build time from the KOVAAKS_WEBHOOK_URL environment variable (see the Core csproj). Empty hides the report UI.</summary>
+    public static readonly string WebhookUrl =
+        typeof(BugReport).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "WebhookUrl")?.Value ?? "";
 
     const int MaxContent = 1900;
 

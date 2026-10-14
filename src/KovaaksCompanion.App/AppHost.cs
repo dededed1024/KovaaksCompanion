@@ -33,16 +33,18 @@ public sealed class AppHost : IDisposable
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     sealed class Pending(string scenario, DateTime end) { public string Scenario = scenario; public DateTime End = end; public double Progress; }
     readonly List<Pending> _pending = [];
-    /// <summary>Id of the open live session (the game process start ticks); null while the game is not running.</summary>
-    volatile Tuple<long>? _liveBox;
-    long? _liveId { get => _liveBox?.Item1; set => _liveBox = value is { } v ? Tuple.Create(v) : null; }
+    /// <summary>The play session of the running game.</summary>
+    public LiveSession Live { get; }
 
     public AppHost(Application app)
     {
         _app = app;
+        Live = new LiveSession(_settings.LiveRunFile);
         var loaded = _settings;
         _settings = loaded.WithDetectedPaths(); // the default data root depends on where KovaaK's is
         _settingsDirty = _settings != loaded;
+        AppLog.FilePath = _settings.LogFile;
+        _settings.MigrateLocalState();
         FolderAccess.Register(); _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile);
         L.Set(_settings.Language);
         Theme.Apply(_settings.Theme);
@@ -111,7 +113,7 @@ public sealed class AppHost : IDisposable
                 .GroupBy(r => r.Scenario, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Max(r => r.Score), StringComparer.OrdinalIgnoreCase);
             var pb = !_best.TryGetValue(run.Scenario, out var best) || run.Score > best;
-            if (pb) _best[run.Scenario] = run.Score;
+            if (pb) { _best[run.Scenario] = run.Score; Live.NotePersonalBest(run.Scenario, run.End); }
             return pb;
         }
     }
@@ -121,32 +123,61 @@ public sealed class AppHost : IDisposable
     readonly object _cleanGate = new();
 
     /// <summary>
-    /// Deletes replay folders per the storage settings (beaten runs, then the oldest while over the size limit), never favorite runs, and keeps their scores in the cache.
-    /// Returns true when something was deleted; <paramref name="notify"/> then also raises <see cref="RunFinished"/> so the views reload.
+    /// Deletes the replay folders <paramref name="pick"/> chooses (never favorite runs, nor personal bests when kept) and keeps their statistics in the cache.
+    /// Right after a save it runs before the views reload, so they never list a run that is about to go. Returns true when something was deleted.
     /// </summary>
-    bool Cleanup(bool notify)
+    bool RetireReplays(Func<List<StoredReplay>, Func<ReplayInfo, bool>, List<StoredReplay>> pick)
     {
         try
         {
             lock (_cleanGate)
             {
                 var s = _settings;
-                if (!s.DeleteBeatenRuns && s.StorageLimitGb <= 0 && s.MaxAgeDays <= 0) return false;
                 var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet());
                 var cache = s.OpenCache();
                 var all = StorageCleaner.Scan(s.ReplaysFolder);
                 var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, cache.LoadAllScores().ToDictionary(kv => kv.Key, kv => kv.Value.Scores)).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
                 bool Keep(ReplayInfo i) => favs.Contains(UiState.RunKey(i.Scenario, i.End)) || pbs.Contains(UiState.RunKey(i.Scenario, i.End));
-                var victims = s.DeleteBeatenRuns ? StorageCleaner.Superseded(all, Keep) : [];
-                victims.AddRange(StorageCleaner.Expired(all.Except(victims).ToList(), s.MaxAgeDays, DateTime.Now, Keep));
-                victims.AddRange(StorageCleaner.OverLimit(all.Except(victims).ToList(), StorageCleaner.LimitBytes(s.StorageLimitGb), Keep));
-                var n = StorageCleaner.Delete(victims, cache, s.CachedReplaysFolder);
+                var n = StorageCleaner.Delete(pick(all, Keep), cache, s.CachedReplaysFolder);
                 if (n > 0) AppLog.Write("storage", $"deleted {n} replay folder(s)");
-                if (n > 0 && notify) RunFinished?.Invoke();
                 return n > 0;
             }
         }
         catch (Exception e) { AppLog.Write("storage", "cleanup failed: " + e.Message); return false; }
+    }
+
+    /// <summary>
+    /// A replay was saved: deletes the replays of its live session that a later run of the same scenario beat (see <see cref="LiveSession.Saved"/>).
+    /// Other sessions are never touched.
+    /// </summary>
+    void DeleteBeatenRuns(ReplayInfo saved, string folder)
+    {
+        try
+        {
+            lock (_cleanGate)
+            {
+                var s = _settings;
+                var favs = s.DeleteBeatenRuns ? _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet()) : [];
+                var victims = Live.Saved(saved, folder, s.DeleteBeatenRuns, i => favs.Contains(UiState.RunKey(i.Scenario, i.End)), s.KeepPersonalBests);
+                if (victims.Count == 0) return;
+                var n = StorageCleaner.Delete(victims, s.OpenCache(), s.CachedReplaysFolder);
+                if (n > 0) AppLog.Write("storage", $"deleted {n} beaten replay folder(s)");
+            }
+        }
+        catch (Exception e) { AppLog.Write("storage", "beaten runs cleanup failed: " + e.Message); }
+    }
+
+    /// <summary>Storage limits: replays older than the maximum age, then the oldest while over the size limit.</summary>
+    bool EnforceStorageLimits()
+    {
+        var s = _settings;
+        if (s.StorageLimitGb <= 0 && s.MaxAgeDays <= 0) return false;
+        return RetireReplays((all, keep) =>
+        {
+            var victims = StorageCleaner.Expired(all, s.MaxAgeDays, DateTime.Now, keep);
+            victims.AddRange(StorageCleaner.OverLimit(all.Except(victims).ToList(), StorageCleaner.LimitBytes(s.StorageLimitGb), keep));
+            return victims;
+        });
     }
 
     /// <summary>
@@ -192,6 +223,7 @@ public sealed class AppHost : IDisposable
         if (detected != _settings || _settingsDirty)
         {
             _settings = detected;
+            AppLog.FilePath = _settings.LogFile;
             try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
         }
         PreflightAccess();
@@ -220,7 +252,7 @@ public sealed class AppHost : IDisposable
             }
             AppLog.Write("replay", $"saved {folder}");
             CacheReplays(folder);
-            Cleanup(notify: false); // before the views reload, so they never list a run that is about to go
+            DeleteBeatenRuns(info, folder); // before the views reload, so they never list a run that is about to go
             ReplaySaved?.Invoke(info, folder);
         };
 
@@ -228,7 +260,7 @@ public sealed class AppHost : IDisposable
 
         BuildTray();
         Autostart.Refresh(_settings.StartWithWindows);
-        _ = Task.Run(() => { CacheReplays(); Cleanup(notify: true); });
+        _ = Task.Run(() => { CacheReplays(); if (EnforceStorageLimits()) RunFinished?.Invoke(); });
         if (showMain) ShowMain("Stats");
         _ = CheckForUpdate();
     }
@@ -240,7 +272,7 @@ public sealed class AppHost : IDisposable
         _watcher.RunFinished += (run, csv) =>
         {
             AppLog.Write("replay", $"run finished: {csv}");
-            if (_liveId is { } liveId) PlaySession.LiveIds = LiveRunLog.Add(_settings.LiveRunFile, run.Scenario, run.End, liveId);
+            Live.Tag(run.Scenario, run.End);
             var item = new Pending(run.Scenario, run.End);
             lock (_pending) { _pending.Add(item); }
             RunFinished?.Invoke(); // the run shows now, with a progress ring until the clip is saved
@@ -301,8 +333,8 @@ public sealed class AppHost : IDisposable
             Fps = _settings.VideoFps,
         }, () => HandCamConfig.From(_settings));
         _video.Error += m => { SetError("video: " + m); ErrorReporter.Report("video", new VideoProblem(m)); };
-        _video.GameLaunched += t => _liveId = t.Ticks;
-        _video.GameExited += () => _liveId = null;
+        _video.GameLaunched += Live.Launch;
+        _video.GameExited += () => _ = Live.Exit();
         _video.StateChanged += () => GameStateChanged?.Invoke();
         try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }
     }
@@ -409,6 +441,7 @@ public sealed class AppHost : IDisposable
     {
         var old = _settings;
         _settings = s;
+        AppLog.FilePath = s.LogFile;
         try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
         PreflightAccess();
         if (s.Language != old.Language || s.Theme != old.Theme)
@@ -418,12 +451,13 @@ public sealed class AppHost : IDisposable
             _app.Dispatcher.BeginInvoke(RebuildMain);
         }
         else if (s.UiScale != old.UiScale) _app.Dispatcher.Invoke(() => _main?.ApplyScale(s.UiScale));
-        if (s.StorageLimitGb != old.StorageLimitGb || s.MaxAgeDays != old.MaxAgeDays || s.DeleteBeatenRuns != old.DeleteBeatenRuns || s.KeepPersonalBests != old.KeepPersonalBests)
-            _ = Task.Run(() => { CacheReplays(); Cleanup(notify: true); });
+        if (s.StorageLimitGb != old.StorageLimitGb || s.MaxAgeDays != old.MaxAgeDays)
+            _ = Task.Run(() => { CacheReplays(); if (EnforceStorageLimits()) RunFinished?.Invoke(); });
     }
 
     public void Dispose()
     {
+        Live.Flush();
         _tray?.Dispose();
         _trayIcon?.Dispose();
         _watcher?.Dispose();

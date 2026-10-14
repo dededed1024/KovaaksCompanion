@@ -35,7 +35,6 @@ public partial class StatsView : UserControl
     ScoreBook _book = new(new RunLibrary([]));
     RunLibrary _lib => _book.Lib;
     List<ReplayInfo> _replays = [];
-    readonly PlaylistIndex _index;
     readonly Dictionary<string, int> _diffChoice = new(StringComparer.OrdinalIgnoreCase);
     BrowserItem? _popupItem;
     string? _playlist, _scrollCat;
@@ -48,7 +47,6 @@ public partial class StatsView : UserControl
     {
         InitializeComponent();
         _host = host;
-        _index = new PlaylistIndex(host.Settings.PlaylistIndexFile);
         Heading.Text = L.T("Loading…");
         host.ReplaySaved += OnReplaySaved;
         host.RunFinished += OnRunFinished;
@@ -277,9 +275,6 @@ public partial class StatsView : UserControl
 
     void OnGameStateChanged() => Dispatcher.InvokeAsync(() =>
     {
-        var active = _host.GameActive;
-        if (active && !_gameWasActive) _liveSince = DateTime.Now;
-        _gameWasActive = active;
         CheckLive();
     });
 
@@ -310,9 +305,9 @@ public partial class StatsView : UserControl
             return (scanned.WithArchived(cache.ArchivedRuns()).WithDpiFixes(dpiFixes), infos, LoadServerBests(cache, _host.Settings.EffectiveSteamId), cache.BestScores(), cache.LoadAllScores());
         });
         _book = _book.WithLibrary(lib);
-        PlaySession.LiveIds = LiveRunLog.AssignRuns(_host.Settings.LiveRunFile, lib.AllRuns);
         (_replays, _deletedBest) = (replays, deletedBest);
         foreach (var (n, c) in scores) _book.SetCloud(n, c.Scores);
+        AssignSessionIds();
         foreach (var (n, v) in deletedBest) _book.RaiseServerBest(n, v);
         if (_rawProgress.Count == 0 || serverBest.Count != _serverBest.Count) { _serverBest = serverBest; RebuildProgress(); }
         else ReapplyLocal();
@@ -661,7 +656,7 @@ public partial class StatsView : UserControl
         (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.RankMaxes.Count > 0) ? (pr, id) : null;
         if (int.TryParse(_playlist, out var cur) && Find(cur) is { } sel) return sel;
 
-        var live = LiveNow() && PlaySession.Group(_lib.AllRuns).FirstOrDefault() is { } s && s.End >= _liveSince
+        var live = LiveNow() && _host.Live.Find(PlaySession.Group(_lib.AllRuns)) is { } s
             ? s.Runs.Select(r => r.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
         return AllDifficulties()
@@ -669,7 +664,7 @@ public partial class StatsView : UserControl
             .Select(x => (x.Id, x.Order, Hit: Find(x.Id)))
             .Where(x => x.Hit != null)
             .OrderByDescending(x => _host.Ui.IsFavorite($"{x.Id}"))
-            .ThenByDescending(x => _index.Scenarios(x.Id).Any(live.Contains))
+            .ThenByDescending(x => PlaylistScenarios(x.Id).Any(live.Contains))
             .ThenByDescending(x => LastPlayed(x.Id) ?? DateTime.MinValue)
             .ThenBy(x => x.Order) // lowest playlist index
             .Select(x => x.Hit)

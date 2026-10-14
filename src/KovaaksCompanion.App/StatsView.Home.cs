@@ -41,10 +41,6 @@ public partial class StatsView
     FrameworkElement? _liveCard;
     bool _livePillOn, _liveShown;
 
-    // Closed until the game runs under this app, so sessions from before launch are never live.
-    bool _gameWasActive;
-    DateTime _liveSince = DateTime.Now;
-
     /// <summary>The newest session is live while the game runs: a session is one game launch.</summary>
     bool LiveNow() => _host.GameActive;
 
@@ -142,7 +138,8 @@ public partial class StatsView
     }
 
     /// <summary>Local runs that beat every earlier local run and server score of their scenario.</summary>
-    IReadOnlySet<RunRecord> PbSet() => _book.PersonalBestRuns;
+    /// <summary>Personal-best runs, server-only plays included.</summary>
+    IReadOnlySet<RunRecord> PbSet() => ServerRuns().Pbs is { Count: > 0 } sp ? _book.PersonalBestRuns.Concat(sp).ToHashSet() : _book.PersonalBestRuns;
 
     UIElement BuildHome()
     {
@@ -747,22 +744,46 @@ public partial class StatsView
 
     DateTime? _selDay;
 
+    /// <summary>Server scores with no local run (other PC, plays from before the app) as runs, and which of them are personal bests.</summary>
+    (List<RunRecord> Runs, HashSet<RunRecord> Pbs) ServerRuns()
+    {
+        List<RunRecord> runs = [];
+        HashSet<RunRecord> pbs = [];
+        foreach (var n in _book.AllScenarios)
+        {
+            var stats = _book.For(n);
+            foreach (var r in stats.Records.Where(r => r.Run == null))
+            {
+                var run = RunRecord.FromServer(n, r.Time, r.Score);
+                runs.Add(run);
+                if (stats.PersonalBests.Contains(r)) pbs.Add(run);
+            }
+        }
+        return (runs, pbs);
+    }
+
+    /// <summary>Gives every run without a session id one (local runs and server-only scores in one pass) and loads the ids for grouping.</summary>
+    void AssignSessionIds() => PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.LiveRunFile, _lib.AllRuns.Concat(ServerRuns().Runs));
+
     /// <summary>The sessions that have a run on <paramref name="day"/>, one clickable row each (opens the session popup), under a day heading.</summary>
     void FillDay(StackPanel host, DateTime day, IReadOnlySet<RunRecord> pbs)
     {
         host.Children.Clear();
-        var sessions = PlaySession.Group(_lib.AllRuns, all: _lib.AllRuns, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
+        var plays = _lib.AllRuns.Concat(ServerRuns().Runs).ToList(); // pbs already counts the server-only ones (PbSet)
+        PlaySession.LiveIds = LiveRunLog.AssignAll(_host.Settings.LiveRunFile, plays);
+        var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.Runs.Any(r => r.End.Date == day)).ToList();
         host.Children.Add(Text(DayLabel(day) + " · " + (sessions.Count == 1 ? L.F("{0} session", sessions.Count) : L.F("{0} sessions", sessions.Count)), 15, FgB, FontWeights.SemiBold, new Thickness(0, 0, 0, 8)));
         DateTime? liveStart = null;
         if (LiveNow())
         {
-            var newest = PlaySession.Group(_lib.AllRuns).FirstOrDefault();
-            if (newest != null && newest.End >= _liveSince) liveStart = newest.Start;
-            else if (day == _liveSince.Date)
+            var all = PlaySession.Group(plays);
+            var since = _host.Live.Since;
+            if (_host.Live.Find(all) is { } live) liveStart = live.Start;
+            else if (day == since.Date)
             {
                 // No run yet in this launch: show a temporary empty session until the first run lands.
-                liveStart = _liveSince;
-                sessions.Insert(0, new PlaySession([], 0) { Number = (newest?.Number ?? 0) + 1, Opened = _liveSince });
+                liveStart = since;
+                sessions.Insert(0, new PlaySession([], 0) { Number = (all.FirstOrDefault()?.Number ?? 0) + 1, Opened = since });
             }
         }
         foreach (var s in sessions)
@@ -776,11 +797,11 @@ public partial class StatsView
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
             var rowTitle = new TextBlock();
-            rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = isLive ? Solid("#FF453A") : FgB });
-            rowTitle.Inlines.Add(new System.Windows.Documents.Run("  " + ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
+            rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}  ") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = isLive ? Solid("#FF453A") : FgB });
+            rowTitle.Inlines.Add(new System.Windows.Documents.Run(ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
             rowTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             info.Children.Add(rowTitle);
-            var counts = Text((s.RunCount == 1 ? L.F("{0} play", s.RunCount) : L.F("{0} plays", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + $" · {s.AverageAccuracy:P0}", 12, DimB, null, new Thickness(0, 2, 0, 0));
+            var counts = Text((s.RunCount == 1 ? L.F("{0} play", s.RunCount) : L.F("{0} plays", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + (s.AverageAccuracy is { } acc ? $" · {acc:P0}" : ""), 12, DimB, null, new Thickness(0, 2, 0, 0));
             counts.TextWrapping = TextWrapping.Wrap;
             info.Children.Add(counts);
             g.Children.Add(info);
@@ -796,52 +817,15 @@ public partial class StatsView
             var chev = Chevron(HorizontalAlignment.Right);
             chev.FontSize = 10;
             Grid.SetColumn(chev, pbCount >= 1 ? 2 : 1);
-            if (s.Runs.Count > 0) g.Children.Add(chev);
+            if (s.RunCount > 0) g.Children.Add(chev);
             var row = new Border { CornerRadius = new CornerRadius(10), Background = rest, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
             if (isLive) { row.BorderBrush = Solid("#99FF453A"); row.BorderThickness = new Thickness(1); }
             var sess = s;
-            if (s.Runs.Count == 0) { row.Cursor = Cursors.Arrow; host.Children.Add(row); continue; }
+            if (s.RunCount == 0) { row.Cursor = Cursors.Arrow; host.Children.Add(row); continue; }
             RowClick.Attach(row, p => _host.ShowSession(sess, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : rest);
             row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
             row.MouseLeave += (_, _) => row.Background = rest;
             host.Children.Add(row);
-        }
-
-        // Server scores of the day that have no local run (other PC, older plays): grouped into sessions by the same gap.
-        var allServer = new List<(string Scenario, ScoreRecord Rec)>();
-        foreach (var n in _book.AllScenarios)
-            foreach (var rec in _book.For(n).Records.Where(r => r.Run == null)) allServer.Add((n, rec));
-        // Session ids are cached in live-runs.json; only records without one are grouped by the gap.
-        PlaySession.LiveIds = LiveRunLog.AssignServer(_host.Settings.LiveRunFile, allServer.Select(x => (x.Scenario, x.Rec.Time)));
-        var groups = allServer.Where(x => x.Rec.Time.Date == day)
-            .GroupBy(x => PlaySession.LiveIds.TryGetValue(KovaaksCompanion.Core.UiState.RunKey(x.Scenario, x.Rec.Time), out var id) ? id : 0)
-            .OrderByDescending(g => g.Max(x => x.Rec.Time))
-            .Select(g => g.ToList());
-        foreach (var grp in groups)
-        {
-            var start = grp.Min(x => x.Rec.Time);
-            var end = grp.Max(x => x.Rec.Time);
-            var scenarios = grp.Select(x => x.Scenario).Distinct().Count();
-            var pbCount = grp.Count(x => _book.For(x.Scenario).PersonalBests.Contains(x.Rec));
-            var g = new Grid { Margin = new Thickness(10, 0, 10, 0) };
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            if (pbCount >= 1) g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
-            info.Children.Add(Text(ClockFormat.Range(start, end), 12.5, DimB, FontWeights.Normal));
-            var counts = Text((grp.Count == 1 ? L.F("{0} play", grp.Count) : L.F("{0} plays", grp.Count)) + " · " + (scenarios == 1 ? L.F("{0} scenario", scenarios) : L.F("{0} scenarios", scenarios)), 12, DimB, null, new Thickness(0, 2, 0, 0));
-            counts.TextWrapping = TextWrapping.Wrap;
-            info.Children.Add(counts);
-            g.Children.Add(info);
-            if (pbCount >= 1)
-            {
-                var green = (Brush)FindResource("Green");
-                var badge = new Grid { Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-                badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.35 });
-                badge.Children.Add(new TextBlock { Text = pbCount >= 2 ? L.F("PB ×{0}", pbCount) : L.T("PB"), Foreground = green, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 3, 10, 3) });
-                Grid.SetColumn(badge, 1);
-                g.Children.Add(badge);
-            }
-            host.Children.Add(new Border { CornerRadius = new CornerRadius(10), Child = g, Margin = new Thickness(0, 0, 0, 2) });
         }
     }
 
@@ -909,7 +893,7 @@ public partial class StatsView
         stats.Inlines.Add(new System.Windows.Documents.Run(L.F("{0} PBs", pbCount)) { Foreground = pbCount > 0 ? (Brush)FindResource("Green") : DimB });
         Grid.SetColumn(stats, 1);
         head.Children.Add(stats);
-        if (!capture && s.Runs.Count > 0)
+        if (!capture && s.RunCount > 0)
         {
             var copy = new Button
             {
@@ -1097,11 +1081,14 @@ public partial class StatsView
     Border? _browseTabs;
     int _browseCols;
 
+    static IEnumerable<string> PlaylistScenarios(int id) =>
+        KovaaksCompanion.Core.Benchmarks.RankData.Get(id)?.Categories.SelectMany(c => c.Scenarios).Select(s => s.Name) ?? [];
+
     /// <summary>When any scenario of the playlist was last played, or null.</summary>
     DateTime? LastPlayed(int id)
     {
         DateTime? m = null;
-        foreach (var n in _index.Scenarios(id))
+        foreach (var n in PlaylistScenarios(id))
             if (_book.For(n).LastPlayed is { } t && (m == null || t > m)) m = t;
         return m;
     }

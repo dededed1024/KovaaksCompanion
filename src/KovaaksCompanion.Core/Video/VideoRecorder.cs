@@ -37,6 +37,7 @@ public sealed class VideoRecorder : IAsyncDisposable
     public async Task<bool> StartAsync(IReadOnlyList<ObsCamSpec> cams, CancellationToken ct = default)
     {
         AccessGuard.Run(_o.BufferDir, true, () => Directory.CreateDirectory(_o.BufferDir));
+        try { File.SetAttributes(_o.BufferDir, File.GetAttributes(_o.BufferDir) | FileAttributes.Hidden); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         foreach (var f in Directory.GetFiles(_o.BufferDir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) TryDelete(f);
 
         Target = await GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);

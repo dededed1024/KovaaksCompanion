@@ -467,7 +467,7 @@ public partial class StatsView
         var steam = _host.Settings.EffectiveSteamId;
         var ui = _host.Ui;
         var (persona, steamAvatar) = SteamAccount.Profile(_host.Settings.KovaaksPath, steam);
-        string DefaultName() => persona ?? (steam.Length == 0 ? null : Cache.LoadUsername(steam)) ?? (steam.Length == 0 ? L.T("Profile") : steam);
+        string DefaultName() => persona ?? (steam.Length == 0 ? null : _host.Settings.UsernameFor(steam)) ?? (steam.Length == 0 ? L.T("Profile") : steam);
 
         void Pick()
         {

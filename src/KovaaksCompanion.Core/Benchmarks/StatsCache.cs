@@ -8,7 +8,7 @@ record CachedRun(DateTime Time, double Score, RunRecord? Record);
 record CachedRuns(List<CachedRun> Runs, DateTime FetchedAt);
 
 /// <summary>
-/// Signed, masked binary cache (<see cref="SignedFile"/>) of server data under one folder (server bests, run history, usernames; the run history lives in <c>runsFolder</c> when given) so the app can show
+/// Signed, masked binary cache (<see cref="SignedFile"/>) of server data under one folder (server bests, run history; the run history lives in <c>runsFolder</c> when given) so the app can show
 /// data at startup and offline. Writes are atomic; unreadable files are treated as missing.
 /// </summary>
 public sealed partial class StatsCache(string folder, string? runsFolder = null)
@@ -114,11 +114,6 @@ public sealed partial class StatsCache(string folder, string? runsFolder = null)
             return !((i < recorded.Length && recorded[i] - r.Time < ScenarioStats.SameRunWindow) || (i > 0 && r.Time - recorded[i - 1] < ScenarioStats.SameRunWindow));
         }).ToList();
     }
-
-    /// <summary>Resolved webapp username per steamId.</summary>
-    public string? LoadUsername(string steamId) => Read<string>("usernames.dat").GetValueOrDefault(steamId);
-    public void SaveUsername(string steamId, string username) =>
-        Update<string>("usernames.dat", d => d[steamId] = username);
 
     Dictionary<string, V> Read<V>(string name)
     {
