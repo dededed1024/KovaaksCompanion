@@ -4,7 +4,7 @@ using KovaaksCompanion.Core.Video.Obs;
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Records one hand cam into its own rolling <see cref="PacketRing"/> on libobs's clock so a clip of it can be cut to the game clip's span.</summary>
+/// <summary>Records one webcam into its own rolling <see cref="PacketRing"/> on libobs's clock so a clip of it can be cut to the game clip's span.</summary>
 public sealed class CamRecorder : IAsyncDisposable
 {
     readonly VideoOptions _o;
@@ -19,7 +19,7 @@ public sealed class CamRecorder : IAsyncDisposable
     public bool IsRunning => _capture?.Output.IsActive == true;
     public string LastError { get; private set; } = "";
 
-    public async Task<bool> StartAsync(string deviceId, string encoder, int rotation = 0, HandCamCut? cut = null)
+    public async Task<bool> StartAsync(string deviceId, string encoder, int rotation = 0, WebcamCut? cut = null)
     {
         Directory.CreateDirectory(_dir);
         foreach (var f in Directory.GetFiles(_dir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) { try { File.Delete(f); } catch (Exception e) { Diagnostics.ErrorReporter.Report("cam chunk delete", e); } }
@@ -42,15 +42,15 @@ public sealed class CamRecorder : IAsyncDisposable
     public async Task<bool> ExtractAsync(ClipResult clip, string outputPath)
     {
         var ring = _ring;
-        if (ring == null || !ring.HasOrigin) { AppLog.Write("handcam", $"cam ring has no time origin (ring={(ring != null)}); no capture timestamps yet?"); return false; }
+        if (ring == null || !ring.HasOrigin) { AppLog.Write("webcam", $"cam ring has no time origin (ring={(ring != null)}); no capture timestamps yet?"); return false; }
         var origin = ring.ToRingSec(VideoRecorder.QpcToNs(clip.ClipStartQpc));
         var end = origin + clip.Duration.TotalSeconds;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
         while (ring.LastVideoSec < end && IsRunning && DateTime.UtcNow < deadline) await Task.Delay(100);
         var avc = Parameters();
-        if (avc == null) { AppLog.Write("handcam", "cam has no SPS/PPS"); return false; }
+        if (avc == null) { AppLog.Write("webcam", "cam has no SPS/PPS"); return false; }
         var span = await Task.Run(() => ring.WriteClip(outputPath, origin, end, avc, null, origin));
-        if (span == null) AppLog.Write("handcam", $"cam ring holds no video for {origin:F2}-{end:F2} s (last {ring.LastVideoSec:F2}, first key {ring.FirstKeySec})");
+        if (span == null) AppLog.Write("webcam", $"cam ring holds no video for {origin:F2}-{end:F2} s (last {ring.LastVideoSec:F2}, first key {ring.FirstKeySec})");
         return span != null;
     }
 

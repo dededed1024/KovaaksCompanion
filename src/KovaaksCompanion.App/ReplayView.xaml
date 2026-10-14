@@ -193,8 +193,8 @@
                                         </Viewbox>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="12,0,0,0" CornerRadius="8" Visibility="Collapsed"
-                                                    ToolTip="{app:Loc 'Overlay the previous local play'}" MouseLeftButtonUp="OnPrevClick">
-                                                <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev play'}" Foreground="{DynamicResource Dim}" FontSize="12.5"/>
+                                                    ToolTip="{app:Loc 'Overlay the previous local run'}" MouseLeftButtonUp="OnPrevClick">
+                                                <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev run'}" Foreground="{DynamicResource Dim}" FontSize="12.5"/>
                                             </Border>                                        </StackPanel>
                                     </Grid>
                                     <app:RunChart x:Name="Chart" Grid.Row="1" Margin="0,6,0,0" Cursor="Hand" MouseLeftButtonDown="OnChartDown" MouseMove="OnChartMove" MouseLeftButtonUp="OnChartUp"/>
@@ -253,7 +253,7 @@
                                                 Foreground="{DynamicResource Accent}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Click="OnMore"/>
                                     </StackPanel>
                                 </ScrollViewer>
-                                <TextBlock x:Name="NoRuns" Grid.Row="1" Text="{app:Loc 'No local plays yet'}" Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <TextBlock x:Name="NoRuns" Grid.Row="1" Text="{app:Loc 'No local runs yet'}" Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
                             </Grid>
                         </Border>
                     </Grid>

@@ -5,20 +5,20 @@ using KovaaksCompanion.Core.Video.Obs;
 namespace KovaaksCompanion.Core.Video;
 
 /// <summary>Glue for the App: records while the game runs, cuts clips on demand.</summary>
-public sealed class VideoCaptureService : IAsyncDisposable
+public sealed class RecordingService : IAsyncDisposable
 {
     private readonly VideoOptions _o;
     private readonly GameProcessWatcher _watcher;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Func<HandCamConfig>? _handCam;
+    private readonly Func<WebcamConfig>? _handCam;
     private VideoRecorder? _rec;
     /// <summary>Cams recorded on their own (save mode Separate) with the slot index they were configured at.</summary>
     private readonly List<(int Slot, CamRecorder Recorder)> _cams = [];
-    private HandCamConfig? _camConfig;
+    private WebcamConfig? _camConfig;
     private CancellationTokenSource? _startCts;
 
-    /// <param name="handCam">Read at each recording start; empty cam list = no hand-cam.</param>
-    public VideoCaptureService(VideoOptions? options = null, Func<HandCamConfig>? handCam = null)
+    /// <param name="handCam">Read at each recording start; empty cam list = no webcam.</param>
+    public RecordingService(VideoOptions? options = null, Func<WebcamConfig>? handCam = null)
     {
         _o = options ?? new VideoOptions();
         _handCam = handCam;
@@ -67,15 +67,15 @@ public sealed class VideoCaptureService : IAsyncDisposable
         {
             await DisposePreviousAsync();
             if (!await Task.Run(() => ObsRuntime.Start(_o.ObsRoot))) { Error?.Invoke("libobs: " + ObsRuntime.LastError); return; }
-            var cfg = _camConfig = _handCam?.Invoke() ?? new HandCamConfig([], HandCamSave.Composite);
-            var devices = cfg.Cams.Count > 0 ? await Task.Run(HandCamDeviceList.List) : [];
-            var resolved = new List<(int Slot, HandCamSlot Config, string Id)>();
+            var cfg = _camConfig = _handCam?.Invoke() ?? new WebcamConfig([], WebcamSave.Composite);
+            var devices = cfg.Cams.Count > 0 ? await Task.Run(WebcamDeviceList.List) : [];
+            var resolved = new List<(int Slot, WebcamSlot Config, string Id)>();
             for (int i = 0; i < cfg.Cams.Count; i++)
             {
-                if (HandCamDeviceList.Resolve(cfg.Cams[i], devices) is { } id) resolved.Add((i, cfg.Cams[i], id));
-                else Error?.Invoke($"hand cam {i + 1} off: device not found");
+                if (WebcamDeviceList.Resolve(cfg.Cams[i], devices) is { } id) resolved.Add((i, cfg.Cams[i], id));
+                else Error?.Invoke($"webcam {i + 1} off: device not found");
             }
-            var composite = cfg.Save == HandCamSave.Composite ? resolved.Select(r => new ObsCamSpec(r.Id, r.Config.Layout)).ToList() : [];
+            var composite = cfg.Save == WebcamSave.Composite ? resolved.Select(r => new ObsCamSpec(r.Id, r.Config.Layout)).ToList() : [];
 
             var rec = new VideoRecorder(_o);
             rec.Problem += m => Error?.Invoke(m);
@@ -84,7 +84,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
                 _rec = rec;
                 if (rec.Target is { Width: > 0, Height: > 0 } t) GameSized?.Invoke(t.Width, t.Height);
                 if (rec.AudioError.Length > 0) Error?.Invoke("audio off: " + rec.AudioError);
-                if (cfg.Save == HandCamSave.Separate) await StartSeparateCamsAsync(resolved, rec.Encoder!);
+                if (cfg.Save == WebcamSave.Separate) await StartSeparateCamsAsync(resolved, rec.Encoder!);
             }
             else if (!cts.IsCancellationRequested) Error?.Invoke(rec.LastError);
         }
@@ -102,7 +102,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
         if (old != null) await old.DisposeAsync();
     }
 
-    private async Task StartSeparateCamsAsync(List<(int Slot, HandCamSlot Config, string Id)> cams, string encoder)
+    private async Task StartSeparateCamsAsync(List<(int Slot, WebcamSlot Config, string Id)> cams, string encoder)
     {
         foreach (var (slot, config, id) in cams)
         {
@@ -110,9 +110,9 @@ public sealed class VideoCaptureService : IAsyncDisposable
             {
                 var cam = new CamRecorder(_o, slot);
                 if (await cam.StartAsync(id, encoder, config.Rotation, config.Cut)) _cams.Add((slot, cam));
-                else { Error?.Invoke($"hand cam {slot + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
+                else { Error?.Invoke($"webcam {slot + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
             }
-            catch (Exception e) { ErrorReporter.Report("webcam start", e); Error?.Invoke($"hand cam {slot + 1} off: " + e.Message); }
+            catch (Exception e) { ErrorReporter.Report("webcam start", e); Error?.Invoke($"webcam {slot + 1} off: " + e.Message); }
         }
     }
 
@@ -137,7 +137,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
 
     /// <summary>
     /// Null when there is no recorder / no footage for that window. The recorder (and its buffer) stays usable after the game exits.
-    /// With hand cams in Composite mode they are already in the video; in Separate mode handcamN.mp4 next to the clip holds cam N on the clip's timeline.
+    /// With webcams in Composite mode they are already in the video; in Separate mode handcamN.mp4 next to the clip holds cam N on the clip's timeline.
     /// </summary>
     public async Task<ClipResult?> ExtractClipAsync(long startQpc, long endQpc, string outputPath, Action<double>? progress = null)
     {
@@ -154,9 +154,9 @@ public sealed class VideoCaptureService : IAsyncDisposable
                 try
                 {
                     if (!await cam.ExtractAsync(clip, Path.Combine(dir, $"handcam{slot + 1}.mp4")))
-                        AppLog.Write("handcam", $"no footage from cam {slot + 1} for this clip");
+                        AppLog.Write("webcam", $"no footage from cam {slot + 1} for this clip");
                 }
-                catch (Exception e) { ErrorReporter.Report("webcam clip", e); Error?.Invoke("hand cam not saved: " + e.Message); }
+                catch (Exception e) { ErrorReporter.Report("webcam clip", e); Error?.Invoke("webcam not saved: " + e.Message); }
             }
         }
         progress?.Invoke(1);

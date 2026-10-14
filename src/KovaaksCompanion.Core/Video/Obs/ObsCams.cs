@@ -2,8 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace KovaaksCompanion.Core.Video.Obs;
 
-/// <summary>A hand cam composited into the game frame while recording.</summary>
-public sealed record ObsCamSpec(string DeviceId, HandCamLayout Layout);
+/// <summary>A webcam composited into the game frame while recording.</summary>
+public sealed record ObsCamSpec(string DeviceId, WebcamLayout Layout);
 
 /// <summary>DirectShow cam sources and their placement in a scene.</summary>
 internal static class ObsCamSource
@@ -29,7 +29,7 @@ internal static class ObsCamSource
     public static bool HasFrames(nint source) => ObsNative.obs_source_get_width(source) > 0;
 
     /// <summary>Adds the source to the scene as laid out by <paramref name="layout"/> inside a <paramref name="frameW"/> x <paramref name="frameH"/> frame (a 16:9 cam until <see cref="Fit"/> knows the real picture).</summary>
-    public static nint Place(nint scene, nint source, int frameW, int frameH, HandCamLayout layout)
+    public static nint Place(nint scene, nint source, int frameW, int frameH, WebcamLayout layout)
     {
         var item = ObsNative.obs_scene_add(scene, source);
         Fit(item, frameW, frameH, layout, 1280, 720);
@@ -37,11 +37,11 @@ internal static class ObsCamSource
     }
 
     /// <summary>Cut, scale, turn and position of the cam for a picture of <paramref name="srcW"/> x <paramref name="srcH"/> pixels; the picture is trimmed by the cut, never stretched.</summary>
-    public static void Fit(nint item, int frameW, int frameH, HandCamLayout layout, int srcW, int srcH)
+    public static void Fit(nint item, int frameW, int frameH, WebcamLayout layout, int srcW, int srcH)
     {
-        var (w, h) = HandCamGeometry.BoxSize(frameW, frameH, layout, (double)srcW / srcH);
-        var (x, y) = HandCamGeometry.Position(frameW, frameH, w, h, layout);
-        var cut = layout.Cut ?? new HandCamCut();
+        var (w, h) = WebcamGeometry.BoxSize(frameW, frameH, layout, (double)srcW / srcH);
+        var (x, y) = WebcamGeometry.Position(frameW, frameH, w, h, layout);
+        var cut = layout.Cut ?? new WebcamCut();
         int cl = (int)(srcW * cut.Left), ct = (int)(srcH * cut.Top), cr = (int)(srcW * cut.Right), cb = (int)(srcH * cut.Bottom);
         double visW = Math.Max(1, srcW - cl - cr), visH = Math.Max(1, srcH - ct - cb);
         var scale = (float)(layout.Sideways ? w / visH : w / visW);
@@ -56,7 +56,7 @@ internal static class ObsCamSource
 }
 
 /// <summary>
-/// One hand cam recorded on its own at the size the device delivers (trimmed by the cut when one is set): cam source -> private libobs canvas of that size -> encoder -> <see cref="PacketOutput"/>.
+/// One webcam recorded on its own at the size the device delivers (trimmed by the cut when one is set): cam source -> private libobs canvas of that size -> encoder -> <see cref="PacketOutput"/>.
 /// Used when the cam is saved as a separate file next to the game video.
 /// </summary>
 internal sealed class ObsCamCapture : IDisposable
@@ -77,7 +77,7 @@ internal sealed class ObsCamCapture : IDisposable
     public int Height => Sideways ? _camW : _camH;
 
     /// <summary>Opens the cam, waits for its first frame to learn the size, then builds the canvas and encoder at that size.</summary>
-    public async Task<bool> StartAsync(string deviceId, string encoderId, int quality, int rotation, HandCamCut? cut, Action<EncodedPacket> onPacket)
+    public async Task<bool> StartAsync(string deviceId, string encoderId, int quality, int rotation, WebcamCut? cut, Action<EncodedPacket> onPacket)
     {
         _rotation = rotation;
         if (!ObsRuntime.Run(() => { lock (_sync) return (_source = ObsCamSource.CreateNative(deviceId, "cam")) != 0; })) { Error = "cam source failed"; return false; }
@@ -91,7 +91,7 @@ internal sealed class ObsCamCapture : IDisposable
         }
         if (w <= 0 || h <= 0) { Error = "cam delivers no frames"; return false; }
         // the recorded picture is what the cut leaves of the cam
-        var c = cut ?? new HandCamCut();
+        var c = cut ?? new WebcamCut();
         _crop = new ObsNative.ItemCrop((int)(w * c.Left), (int)(h * c.Top), (int)(w * c.Right), (int)(h * c.Bottom));
         w -= _crop.Left + _crop.Right; h -= _crop.Top + _crop.Bottom;
         (_camW, _camH) = (Math.Max(16, w / 2 * 2), Math.Max(16, h / 2 * 2));

@@ -23,7 +23,7 @@ internal sealed class ObsCapture : IDisposable
     readonly ObsCaptureSpec _spec;
     nint _scene, _videoSource, _audioSource, _videoEncoder, _audioEncoder;
     readonly List<nint> _camSources = [];
-    readonly List<HandCamLayout> _camLayouts = [];
+    readonly List<WebcamLayout> _camLayouts = [];
     int _frameW, _frameH;
     readonly List<nint> _items = [];
     readonly object _sync = new();
@@ -79,7 +79,7 @@ internal sealed class ObsCapture : IDisposable
         foreach (var cam in _spec.Cams ?? [])
         {
             var src = ObsCamSource.CreateNative(cam.DeviceId, "cam" + (_camSources.Count + 1));
-            if (src == 0) { AppLog.Write("obs", "hand cam source failed: " + cam.DeviceId); continue; }
+            if (src == 0) { AppLog.Write("obs", "webcam source failed: " + cam.DeviceId); continue; }
             _camSources.Add(src);
             _items.Add(ObsCamSource.Place(_scene, src, baseW, baseH, cam.Layout));
             _camLayouts.Add(cam.Layout);
@@ -195,7 +195,7 @@ internal sealed class ObsCapture : IDisposable
             });
         }
         for (int i = 0; i < fitted.Length; i++)
-            if (!fitted[i]) AppLog.Write("handcam", $"cam {i + 1} delivered no frames within {wait.TotalSeconds:0} s, keeping the 16:9 box");
+            if (!fitted[i]) AppLog.Write("webcam", $"cam {i + 1} delivered no frames within {wait.TotalSeconds:0} s, keeping the 16:9 box");
     }
 
     public void Dispose()
@@ -220,7 +220,7 @@ internal sealed class ObsCapture : IDisposable
     }
 }
 
-/// <summary>Output sizing shared by the capture pipeline and the hand-cam layout.</summary>
+/// <summary>Output sizing shared by the capture pipeline and the webcam layout.</summary>
 public static class VideoGeometry
 {
     /// <summary>Even output size for a source capped to <paramref name="maxHeight"/> (aspect kept, never upscaled).</summary>

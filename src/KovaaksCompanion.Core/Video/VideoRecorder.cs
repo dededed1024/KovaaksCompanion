@@ -6,7 +6,7 @@ using KovaaksCompanion.Core.Video.Obs;
 namespace KovaaksCompanion.Core.Video;
 
 /// <summary>
-/// Records the game window + its audio (+ composited hand cams) through libobs into a rolling <see cref="PacketRing"/> and cuts clips out of it on demand.
+/// Records the game window + its audio (+ composited webcams) through libobs into a rolling <see cref="PacketRing"/> and cuts clips out of it on demand.
 /// </summary>
 public sealed class VideoRecorder : IAsyncDisposable
 {

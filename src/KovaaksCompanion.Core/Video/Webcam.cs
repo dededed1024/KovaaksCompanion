@@ -3,89 +3,89 @@
 namespace KovaaksCompanion.Core.Video;
 
 /// <summary>Part of the cam picture cut away on each side, as fractions of the picture (0-0.9) in the cam's own orientation (before any turn).</summary>
-public sealed record HandCamCut(double Left = 0, double Top = 0, double Right = 0, double Bottom = 0)
+public sealed record WebcamCut(double Left = 0, double Top = 0, double Right = 0, double Bottom = 0)
 {
     [System.Text.Json.Serialization.JsonIgnore] public double Width => 1 - Left - Right;
     [System.Text.Json.Serialization.JsonIgnore] public double Height => 1 - Top - Bottom;
     [System.Text.Json.Serialization.JsonIgnore] public bool IsNone => Left == 0 && Top == 0 && Right == 0 && Bottom == 0;
 }
 
-/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width the whole cam picture would take (the height follows the cam's own aspect; <see cref="HandCamLayout.Cut"/> then trims it, the scale stays); the cam's center as a position in the video from the left / top edge, pulled inside the frame when it would stick out.</summary>
-public sealed record HandCamLayout(int SizePercent = 25, int XPercent = 100, int YPercent = 0, int Rotation = 0, HandCamCut? Cut = null)
+/// <summary>Where and how large the webcam is composited into the game clip. Percentages: width of the video width the whole cam picture would take (the height follows the cam's own aspect; <see cref="WebcamLayout.Cut"/> then trims it, the scale stays); the cam's center as a position in the video from the left / top edge, pulled inside the frame when it would stick out.</summary>
+public sealed record WebcamLayout(int SizePercent = 25, int XPercent = 100, int YPercent = 0, int Rotation = 0, WebcamCut? Cut = null)
 {
     /// <summary>True when the cam is turned a quarter, so its box is portrait.</summary>
     public bool Sideways => Rotation is 90 or 270;
 }
 
-/// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, its place in the video and its rotation (0, 90, 180 or 270 degrees clockwise).</summary>
+/// <summary>One configured webcam: DirectShow name, its index among same-named devices, its place in the video and its rotation (0, 90, 180 or 270 degrees clockwise).</summary>
 /// <remarks><see cref="Cut"/>: parts of the picture cut away, null = none. <see cref="Aspect"/>: the cam's own width / height when known (settings preview only), 0 = unknown.</remarks>
-public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int X = 100, int Y = 0, int Rotation = 0, HandCamCut? Cut = null, double Aspect = 0)
+public sealed record WebcamSlot(string Device = "", int Number = 0, int Size = 25, int X = 100, int Y = 0, int Rotation = 0, WebcamCut? Cut = null, double Aspect = 0)
 {
     public const int Max = 3;
-    public HandCamLayout Layout => new(Size, X, Y, Rotation, Cut);
+    public WebcamLayout Layout => new(Size, X, Y, Rotation, Cut);
 }
 
 /// <summary>The configured cams as a list with value equality, so <see cref="AppSettings"/> still compares by content.</summary>
-public sealed class HandCamSlots : List<HandCamSlot>, IEquatable<HandCamSlots>
+public sealed class WebcamSlots : List<WebcamSlot>, IEquatable<WebcamSlots>
 {
-    public bool Equals(HandCamSlots? other) => other != null && this.SequenceEqual(other);
-    public override bool Equals(object? obj) => Equals(obj as HandCamSlots);
+    public bool Equals(WebcamSlots? other) => other != null && this.SequenceEqual(other);
+    public override bool Equals(object? obj) => Equals(obj as WebcamSlots);
     public override int GetHashCode() => this.Aggregate(0, (h, s) => HashCode.Combine(h, s));
 }
 
 /// <summary>A DirectShow video device; <see cref="Number"/> tells apart devices that share a name (0 = first). <see cref="Id"/> is libobs's device id (name:path), empty for a saved but absent device.</summary>
-public sealed record HandCamDevice(string Name, int Number, string Id = "")
+public sealed record WebcamDevice(string Name, int Number, string Id = "")
 {
     // identity is name + number (what the settings store); the libobs id only says how to open the device
-    public bool Equals(HandCamDevice? o) => o != null && o.Name == Name && o.Number == Number;
+    public bool Equals(WebcamDevice? o) => o != null && o.Name == Name && o.Number == Number;
     public override int GetHashCode() => HashCode.Combine(Name, Number);
     public override string ToString() => Number == 0 ? Name : $"{Name} ({Number + 1})";
 }
 
 /// <summary>What to keep per run: the cam composited into the game video, game and cam as separate files, or all three.</summary>
-public enum HandCamSave { Composite, Separate }
+public enum WebcamSave { Composite, Separate }
 
-/// <summary>Reads a saved name; unknown ones (e.g. the removed "Both") become <see cref="HandCamSave.Composite"/> instead of failing the whole settings file.</summary>
-public sealed class HandCamSaveConverter : System.Text.Json.Serialization.JsonConverter<HandCamSave>
+/// <summary>Reads a saved name; unknown ones (e.g. the removed "Both") become <see cref="WebcamSave.Composite"/> instead of failing the whole settings file.</summary>
+public sealed class WebcamSaveConverter : System.Text.Json.Serialization.JsonConverter<WebcamSave>
 {
-    public override HandCamSave Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
-        => reader.TokenType == System.Text.Json.JsonTokenType.String && Enum.TryParse<HandCamSave>(reader.GetString(), out var v) ? v : HandCamSave.Composite;
-    public override void Write(System.Text.Json.Utf8JsonWriter writer, HandCamSave value, System.Text.Json.JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
+    public override WebcamSave Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        => reader.TokenType == System.Text.Json.JsonTokenType.String && Enum.TryParse<WebcamSave>(reader.GetString(), out var v) ? v : WebcamSave.Composite;
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, WebcamSave value, System.Text.Json.JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
 }
 
-/// <summary>Hand-cam config read from the settings: empty <see cref="Device"/> = off.</summary>
-public sealed record HandCamConfig(IReadOnlyList<HandCamSlot> Cams, HandCamSave Save)
+/// <summary>webcam config read from the settings: empty <see cref="Device"/> = off.</summary>
+public sealed record WebcamConfig(IReadOnlyList<WebcamSlot> Cams, WebcamSave Save)
 {
-    public static HandCamConfig From(AppSettings s)
-        => new(s.HandCamEnabled ? s.HandCams.Where(c => c.Device.Length > 0).Take(HandCamSlot.Max).ToList() : [], s.HandCamSave);
+    public static WebcamConfig From(AppSettings s)
+        => new(s.WebcamEnabled ? s.Webcams.Where(c => c.Device.Length > 0).Take(WebcamSlot.Max).ToList() : [], s.WebcamSave);
 }
 
 /// <summary>DirectShow video devices as libobs's dshow_input source lists them.</summary>
-public static class HandCamDeviceList
+public static class WebcamDeviceList
 {
     /// <summary>Video devices in libobs order; repeated names get increasing numbers. Needs the libobs runtime started; empty otherwise.</summary>
-    public static List<HandCamDevice> List()
+    public static List<WebcamDevice> List()
     {
-        var devices = new List<HandCamDevice>();
+        var devices = new List<WebcamDevice>();
         if (!ObsRuntime.IsStarted) return devices;
         foreach (var (name, id) in ObsRuntime.DshowDevices())
-            devices.Add(new HandCamDevice(name, devices.Count(d => d.Name == name), id));
+            devices.Add(new WebcamDevice(name, devices.Count(d => d.Name == name), id));
         return devices;
     }
 
     /// <summary>libobs id of the saved device, null when it is not connected.</summary>
-    public static string? Resolve(HandCamSlot slot, IReadOnlyList<HandCamDevice> devices)
+    public static string? Resolve(WebcamSlot slot, IReadOnlyList<WebcamDevice> devices)
         => devices.FirstOrDefault(d => d.Name == slot.Device && d.Number == slot.Number)?.Id;
 }
 
-/// <summary>Where a hand cam sits in a game frame of a given size (percentages of the frame, see <see cref="HandCamLayout"/>).</summary>
-public static class HandCamGeometry
+/// <summary>Where a webcam sits in a game frame of a given size (percentages of the frame, see <see cref="WebcamLayout"/>).</summary>
+public static class WebcamGeometry
 {
     /// <summary>Shape assumed until the cam has delivered its first frame (and in the settings preview).</summary>
     public const double DefaultAspect = 16.0 / 9;
 
-    /// <summary>Box the cam occupies in a frame, as shown (after the turn): the whole picture is <see cref="HandCamLayout.SizePercent"/> of the frame width wide with the cam's own shape, the cut trims it; never larger than the frame.</summary>
-    public static (double Width, double Height) BoxSize(double gameWidth, double gameHeight, HandCamLayout l, double sourceAspect = DefaultAspect)
+    /// <summary>Box the cam occupies in a frame, as shown (after the turn): the whole picture is <see cref="WebcamLayout.SizePercent"/> of the frame width wide with the cam's own shape, the cut trims it; never larger than the frame.</summary>
+    public static (double Width, double Height) BoxSize(double gameWidth, double gameHeight, WebcamLayout l, double sourceAspect = DefaultAspect)
     {
         var src = sourceAspect > 0 ? sourceAspect : DefaultAspect;
         double cw = l.Cut?.Width ?? 1, ch = l.Cut?.Height ?? 1;
@@ -98,14 +98,14 @@ public static class HandCamGeometry
     }
 
     /// <summary>Same as <see cref="BoxSize"/> in even pixels.</summary>
-    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l, double sourceAspect = DefaultAspect)
+    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, WebcamLayout l, double sourceAspect = DefaultAspect)
     {
         var (w, h) = BoxSize(gameWidth, gameHeight, l, sourceAspect);
         return (Math.Max(16, (int)w / 2 * 2), Math.Max(16, (int)h / 2 * 2));
     }
 
     /// <summary>Top-left corner of the cam box centered on the layout's position, pulled inside the frame.</summary>
-    public static (int X, int Y) Position(int gameWidth, int gameHeight, double camWidth, double camHeight, HandCamLayout l)
+    public static (int X, int Y) Position(int gameWidth, int gameHeight, double camWidth, double camHeight, WebcamLayout l)
     {
         var x = Math.Clamp(gameWidth * Math.Clamp(l.XPercent, 0, 100) / 100.0 - camWidth / 2.0, 0, Math.Max(0, gameWidth - camWidth));
         var y = Math.Clamp(gameHeight * Math.Clamp(l.YPercent, 0, 100) / 100.0 - camHeight / 2.0, 0, Math.Max(0, gameHeight - camHeight));
@@ -114,7 +114,7 @@ public static class HandCamGeometry
 }
 
 /// <summary>Reads a cam's own shape by opening it for a moment.</summary>
-public static class HandCamProbe
+public static class WebcamProbe
 {
     /// <summary>Width / height of what the device delivers, 0 when it gives no frame within <paramref name="wait"/> (or is busy, e.g. already recording).</summary>
     public static async Task<double> AspectAsync(string deviceId, TimeSpan wait)
