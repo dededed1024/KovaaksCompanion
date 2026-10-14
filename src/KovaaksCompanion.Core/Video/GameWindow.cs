@@ -79,16 +79,19 @@ public static class GameWindow
         return ps.Count > 0;
     }
 
+    static readonly int MySession = CurrentSession();
+
+    static int CurrentSession() { using var me = Process.GetCurrentProcess(); return me.SessionId; }
+
     /// <summary>Processes named <paramref name="processName"/> in this app's own Windows session (another user's game is neither capturable nor readable).</summary>
     public static List<Process> InSession(string processName)
     {
-        int mine = Process.GetCurrentProcess().SessionId;
         var all = Process.GetProcessesByName(processName);
         var keep = new List<Process>();
         foreach (var p in all)
         {
             bool same;
-            try { same = p.SessionId == mine; } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { same = false; }
+            try { same = p.SessionId == MySession; } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { same = false; }
             if (same) keep.Add(p); else p.Dispose();
         }
         return keep;

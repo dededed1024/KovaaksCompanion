@@ -32,6 +32,8 @@ public sealed class VideoCaptureService : IAsyncDisposable
     public event Action<string>? Error;
     /// <summary>Raised (thread-pool thread) when <see cref="IsRecording"/> may have changed.</summary>
     public event Action? StateChanged;
+    /// <summary>Raised (thread-pool thread) with the size of the game window each time recording starts.</summary>
+    public event Action<int, int>? GameSized;
 
     /// <summary>Raised (thread-pool thread) with the start time of the game process each time the game is found running.</summary>
     public event Action<DateTime>? GameLaunched;
@@ -80,6 +82,7 @@ public sealed class VideoCaptureService : IAsyncDisposable
             if (await rec.StartAsync(composite, cts.Token))
             {
                 _rec = rec;
+                if (rec.Target is { Width: > 0, Height: > 0 } t) GameSized?.Invoke(t.Width, t.Height);
                 if (rec.AudioError.Length > 0) Error?.Invoke("audio off: " + rec.AudioError);
                 if (cfg.Save == HandCamSave.Separate) await StartSeparateCamsAsync(resolved, rec.Encoder!);
             }
@@ -101,12 +104,12 @@ public sealed class VideoCaptureService : IAsyncDisposable
 
     private async Task StartSeparateCamsAsync(List<(int Slot, HandCamSlot Config, string Id)> cams, string encoder)
     {
-        foreach (var (slot, _, id) in cams)
+        foreach (var (slot, config, id) in cams)
         {
             try
             {
                 var cam = new CamRecorder(_o, slot);
-                if (await cam.StartAsync(id, encoder)) _cams.Add((slot, cam));
+                if (await cam.StartAsync(id, encoder, config.Rotation, config.Cut)) _cams.Add((slot, cam));
                 else { Error?.Invoke($"hand cam {slot + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
             }
             catch (Exception e) { ErrorReporter.Report("webcam start", e); Error?.Invoke($"hand cam {slot + 1} off: " + e.Message); }

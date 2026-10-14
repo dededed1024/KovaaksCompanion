@@ -68,7 +68,7 @@ public sealed class VideoRecorder : IAsyncDisposable
                     AppLog.Write("video", $"game source size {w}x{h}");
                     if (w == 0 || h == 0) { AppLog.Write("video", "game capture delivers no frames"); Problem?.Invoke("game capture delivers no frames (window not captured)"); }
                 });
-                if (cap.CamSources.Count > 0) _ = Task.Run(async () => { await Task.Delay(2000); if (_capture == cap) cap.FixCamModes(); });
+                if (cap.CamSources.Count > 0) _ = cap.FitCamsAsync(TimeSpan.FromSeconds(6));
                 _ = Task.Run(async () => { for (int i = 0; i < 40 && _avc == null && _capture == cap; i++) { Parameters(cap); if (_avc == null) await Task.Delay(250); } });
                 return true;
             }

@@ -2,14 +2,27 @@
 
 namespace KovaaksCompanion.Core.Video;
 
-/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width (the height follows the cam's own aspect, so nothing is cropped); the cam's center as a position in the video from the left / top edge, pulled inside the frame when it would stick out.</summary>
-public sealed record HandCamLayout(int SizePercent = 25, int XPercent = 100, int YPercent = 0);
+/// <summary>Part of the cam picture cut away on each side, as fractions of the picture (0-0.9) in the cam's own orientation (before any turn).</summary>
+public sealed record HandCamCut(double Left = 0, double Top = 0, double Right = 0, double Bottom = 0)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public double Width => 1 - Left - Right;
+    [System.Text.Json.Serialization.JsonIgnore] public double Height => 1 - Top - Bottom;
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsNone => Left == 0 && Top == 0 && Right == 0 && Bottom == 0;
+}
 
-/// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, and its place in the video.</summary>
-public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int X = 100, int Y = 0)
+/// <summary>Where and how large the hand-cam is composited into the game clip. Percentages: width of the video width the whole cam picture would take (the height follows the cam's own aspect; <see cref="HandCamLayout.Cut"/> then trims it, the scale stays); the cam's center as a position in the video from the left / top edge, pulled inside the frame when it would stick out.</summary>
+public sealed record HandCamLayout(int SizePercent = 25, int XPercent = 100, int YPercent = 0, int Rotation = 0, HandCamCut? Cut = null)
+{
+    /// <summary>True when the cam is turned a quarter, so its box is portrait.</summary>
+    public bool Sideways => Rotation is 90 or 270;
+}
+
+/// <summary>One configured hand-cam: DirectShow name, its index among same-named devices, its place in the video and its rotation (0, 90, 180 or 270 degrees clockwise).</summary>
+/// <remarks><see cref="Cut"/>: parts of the picture cut away, null = none. <see cref="Aspect"/>: the cam's own width / height when known (settings preview only), 0 = unknown.</remarks>
+public sealed record HandCamSlot(string Device = "", int Number = 0, int Size = 25, int X = 100, int Y = 0, int Rotation = 0, HandCamCut? Cut = null, double Aspect = 0)
 {
     public const int Max = 3;
-    public HandCamLayout Layout => new(Size, X, Y);
+    public HandCamLayout Layout => new(Size, X, Y, Rotation, Cut);
 }
 
 /// <summary>The configured cams as a list with value equality, so <see cref="AppSettings"/> still compares by content.</summary>
@@ -68,18 +81,58 @@ public static class HandCamDeviceList
 /// <summary>Where a hand cam sits in a game frame of a given size (percentages of the frame, see <see cref="HandCamLayout"/>).</summary>
 public static class HandCamGeometry
 {
-    /// <summary>Box the cam occupies: width percent of the frame, height from the cam's aspect ratio, even pixels.</summary>
-    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l)
+    /// <summary>Shape assumed until the cam has delivered its first frame (and in the settings preview).</summary>
+    public const double DefaultAspect = 16.0 / 9;
+
+    /// <summary>Box the cam occupies in a frame, as shown (after the turn): the whole picture is <see cref="HandCamLayout.SizePercent"/> of the frame width wide with the cam's own shape, the cut trims it; never larger than the frame.</summary>
+    public static (double Width, double Height) BoxSize(double gameWidth, double gameHeight, HandCamLayout l, double sourceAspect = DefaultAspect)
     {
-        var w = Math.Max(16, gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100 / 2 * 2);
-        return (w, Math.Max(16, w * ObsCamSource.Height / ObsCamSource.Width / 2 * 2));
+        var src = sourceAspect > 0 ? sourceAspect : DefaultAspect;
+        double cw = l.Cut?.Width ?? 1, ch = l.Cut?.Height ?? 1;
+        var shownAspect = l.Sideways ? 1 / src : src;
+        var fullW = gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100;
+        double w = fullW * (l.Sideways ? ch : cw), h = fullW / shownAspect * (l.Sideways ? cw : ch);
+        if (h > gameHeight) { w *= gameHeight / h; h = gameHeight; }
+        if (w > gameWidth) { h *= gameWidth / w; w = gameWidth; }
+        return (w, h);
+    }
+
+    /// <summary>Same as <see cref="BoxSize"/> in even pixels.</summary>
+    public static (int Width, int Height) CamBox(int gameWidth, int gameHeight, HandCamLayout l, double sourceAspect = DefaultAspect)
+    {
+        var (w, h) = BoxSize(gameWidth, gameHeight, l, sourceAspect);
+        return (Math.Max(16, (int)w / 2 * 2), Math.Max(16, (int)h / 2 * 2));
     }
 
     /// <summary>Top-left corner of the cam box centered on the layout's position, pulled inside the frame.</summary>
-    public static (int X, int Y) Position(int gameWidth, int gameHeight, int camWidth, int camHeight, HandCamLayout l)
+    public static (int X, int Y) Position(int gameWidth, int gameHeight, double camWidth, double camHeight, HandCamLayout l)
     {
         var x = Math.Clamp(gameWidth * Math.Clamp(l.XPercent, 0, 100) / 100.0 - camWidth / 2.0, 0, Math.Max(0, gameWidth - camWidth));
         var y = Math.Clamp(gameHeight * Math.Clamp(l.YPercent, 0, 100) / 100.0 - camHeight / 2.0, 0, Math.Max(0, gameHeight - camHeight));
         return ((int)Math.Round(x), (int)Math.Round(y));
+    }
+}
+
+/// <summary>Reads a cam's own shape by opening it for a moment.</summary>
+public static class HandCamProbe
+{
+    /// <summary>Width / height of what the device delivers, 0 when it gives no frame within <paramref name="wait"/> (or is busy, e.g. already recording).</summary>
+    public static async Task<double> AspectAsync(string deviceId, TimeSpan wait)
+    {
+        if (!ObsRuntime.IsStarted || deviceId.Length == 0) return 0;
+        var src = ObsRuntime.Run(() => ObsCamSource.CreateNative(deviceId, "probe"));
+        if (src == 0) return 0;
+        try
+        {
+            var until = DateTime.UtcNow + wait;
+            while (DateTime.UtcNow < until)
+            {
+                var (w, h) = ObsRuntime.Run(() => ((int)ObsNative.obs_source_get_width(src), (int)ObsNative.obs_source_get_height(src)));
+                if (w > 0 && h > 0) return (double)w / h;
+                await Task.Delay(100);
+            }
+            return 0;
+        }
+        finally { ObsRuntime.Run(() => { ObsNative.obs_source_remove(src); ObsNative.obs_source_release(src); return true; }); }
     }
 }

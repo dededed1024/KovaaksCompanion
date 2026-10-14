@@ -357,6 +357,39 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ThemedMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="MinHeight" Value="38"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Margin="4,1" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" RecognizesAccessKey="False"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource Dim}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemedMenu" TargetType="ContextMenu">
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+            <Setter Property="HasDropShadow" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{DynamicResource Raised}" CornerRadius="12" Padding="0,4" Margin="0,4,0,8" MinWidth="{TemplateBinding MinWidth}">
+                            <ItemsPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
             <Setter Property="Padding" Value="12,0"/>

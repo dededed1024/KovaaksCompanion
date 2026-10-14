@@ -134,6 +134,9 @@
   <data name="Must be 17 digits" xml:space="preserve"><value>17자리 숫자여야 해요</value></data>
   <data name="Enter 30–1000" xml:space="preserve"><value>30–1000 사이로 입력</value></data>
   <data name="Size" xml:space="preserve"><value>크기</value></data>
+  <data name="Rotate" xml:space="preserve"><value>회전</value></data>
+  <data name="Remove" xml:space="preserve"><value>삭제</value></data>
+  <data name="No webcam found" xml:space="preserve"><value>웹캠 없음</value></data>
   <data name="Checking…" xml:space="preserve"><value>확인 중…</value></data>
   <data name="Could not check" xml:space="preserve"><value>확인 실패</value></data>
   <data name="Up to date" xml:space="preserve"><value>최신 버전</value></data>

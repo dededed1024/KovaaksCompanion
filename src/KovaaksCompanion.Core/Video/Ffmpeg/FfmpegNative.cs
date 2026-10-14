@@ -98,7 +98,7 @@ public static unsafe class FfmpegNative
             if (IsLoaded) return true;
             try
             {
-                if (_dir != binDir) { SetDllDirectory(binDir); _dir = binDir; }
+                if (_dir != binDir) { Obs.ObsNative.SetDllDirectory(binDir); _dir = binDir; }
                 // dependency order: avutil first, avformat last
                 _avutil = Open(binDir, "avutil-60.dll");
                 _swresample = Open(binDir, "swresample-6.dll");
@@ -181,7 +181,4 @@ public static unsafe class FfmpegNative
     public static nint ReadPtr(nint p, int off) => *(nint*)(p + off);
     public static int ReadInt(nint p, int off) => *(int*)(p + off);
     public static long ReadLong(nint p, int off) => *(long*)(p + off);
-
-    [DllImport("kernel32", EntryPoint = "SetDllDirectoryW", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    static extern bool SetDllDirectory(string path);
 }

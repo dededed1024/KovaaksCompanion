@@ -61,10 +61,11 @@ public partial class SettingsView : UserControl
         PbOnly.IsChecked = s.VideoPbOnly;
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
+        SizeCamFrame(s);
         CamOn.IsChecked = s.HandCamEnabled;
         ShowCamPanels(s.HandCamEnabled);
         foreach (RadioButton r in CamSaveBar.Children) r.IsChecked = (string)r.Tag == s.HandCamSave.ToString();
-        CamCards.Children.Clear(); CamCanvas.Children.Clear(); _cards.Clear();
+        CamCanvas.Children.Clear(); _cards.Clear(); _selected = null;
         foreach (var slot in s.HandCams) AddCamCard(slot);
         UpdateCamUi();
         UpdateLock();
@@ -233,77 +234,130 @@ public partial class SettingsView : UserControl
     void ShowCamPanels(bool on)
     {
         var v = on ? Visibility.Visible : Visibility.Collapsed;
-        CamPanel.Visibility = CamLeft.Visibility = CamDivider.Visibility = v;
+        CamLeft.Visibility = v;
     }
 
     void OnCamSave(object sender, RoutedEventArgs e) => Save();
 
-    void OnCamAdd(object sender, RoutedEventArgs e)
+    async void OnCamAdd(object sender, RoutedEventArgs e)
     {
         if (!CamAdd.IsEnabled) return;
-        AddCamCard(new HandCamSlot(Y: Math.Min(100, 35 * _cards.Count)));
-        UpdateCamUi();
-        Save();
+        await RefreshCamDevices();
+        var menu = new ContextMenu { Style = (Style)FindResource("ThemedMenu"), PlacementTarget = CamAdd, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, MinWidth = Math.Max(CamAdd.ActualWidth, 200) };
+        foreach (var d in _devices.Where(d => !_cards.Any(c => Equals(c.Device, d))))
+        {
+            var item = new MenuItem { Style = (Style)FindResource("ThemedMenuItem"), Header = d.ToString() };
+            item.Click += (_, _) =>
+            {
+                var card = AddCamCard(new HandCamSlot(d.Name, d.Number, Y: Math.Min(100, 35 * _cards.Count)), select: true);
+                UpdateCamUi();
+                Save();
+                _ = ProbeCam(card);
+            };
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Style = (Style)FindResource("ThemedMenuItem"), Header = L.T("No webcam found"), IsEnabled = false });
+        menu.IsOpen = true;
     }
+
+    void OnCamCanvasDown(object sender, MouseButtonEventArgs e) { _selected = null; UpdateCamUi(); }
 
     sealed class CamCard
     {
-        public required StackPanel Root;
-        public required TextBlock Title;
-        public required ComboBox Devices;
-        public required Slider Size;
+        public HandCamDevice? Device;
+        public int Size;
         public double X, Y;
+        public int Rotation;
+        public HandCamCut Cut = new();
+        public double Aspect;
+        public bool Probing;
         public required Border Marker;
         public required TextBlock Number;
+        public required Border[] Grips;
     }
 
     readonly List<CamCard> _cards = [];
+    CamCard? _selected;
+    Border? _bar;
     List<HandCamDevice> _devices = [];
     static readonly string[] CamColors = ["AccentFill", "Green", "Orange"];
+    const double BarW = 56, BarH = 28;
+
 
     HandCamSlots CamSlots(HandCamSlots cur)
     {
-        var next = _cards.Select(c => c.Devices.SelectedItem is HandCamDevice d
-            ? new HandCamSlot(d.Name, d.Number, (int)c.Size.Value, (int)Math.Round(c.X), (int)Math.Round(c.Y))
-            : new HandCamSlot("", 0, (int)c.Size.Value, (int)Math.Round(c.X), (int)Math.Round(c.Y)));
+        var next = _cards.Select(c => new HandCamSlot(c.Device?.Name ?? "", c.Device?.Number ?? 0, c.Size, (int)Math.Round(c.X), (int)Math.Round(c.Y), c.Rotation, c.Cut.IsNone ? null : c.Cut, c.Aspect));
         var list = new HandCamSlots(); list.AddRange(next);
         return list.Equals(cur) ? cur : list;
     }
 
-    void AddCamCard(HandCamSlot slot)
+    /// <summary>The floating rotate / delete buttons next to the selected preview box.</summary>
+    Border Bar()
     {
-        var root = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
-        var head = new Grid();
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 64 });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = new TextBlock { Foreground = (Brush)FindResource("Fg"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 8, 0) };
-        var remove = new Button { Content = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = (Brush)FindResource("Red"), ToolTip = "Remove", Style = (Style)FindResource("SheetClose"), Width = 34, Height = 30 };
-        var devices = new ComboBox { VerticalAlignment = VerticalAlignment.Center };
-        var size = new Slider { Minimum = 10, Maximum = 40, Value = slot.Size, SmallChange = 1, LargeChange = 5, IsSnapToTickEnabled = true, TickFrequency = 1, Margin = new Thickness(12, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Size") };
-        Grid.SetColumn(devices, 1); Grid.SetColumn(size, 2); Grid.SetColumn(remove, 3);
-        head.Children.Add(title); head.Children.Add(devices); head.Children.Add(size); head.Children.Add(remove);
-        root.Children.Add(head);
+        if (_bar != null) { if (!CamCanvas.Children.Contains(_bar)) CamCanvas.Children.Add(_bar); return _bar; }
+        Button Tool(string glyph, string tip, string brush, RoutedEventHandler click)
+        {
+            var b = new Button { Content = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 14, Foreground = (Brush)FindResource(brush), ToolTip = L.T(tip), Style = (Style)FindResource("SheetClose"), Width = BarH, Height = BarH };
+            b.Click += click;
+            return b;
+        }
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(Tool("\uE7AD", "Rotate", "Fg", (_, _) =>
+        {
+            if (_selected is not { } c) return;
+            c.Rotation = (c.Rotation + 90) % 360; UpdateCamUi(); Save();
+        }));
+        row.Children.Add(Tool("\uE74D", "Remove", "Red", (_, _) =>
+        {
+            if (_selected is not { } c) return;
+            _cards.Remove(c); CamCanvas.Children.Remove(c.Marker); _selected = null; UpdateCamUi(); Save();
+        }));
+        _bar = new Border { Child = row, Background = (Brush)FindResource("Surface"), CornerRadius = new CornerRadius(5), Visibility = Visibility.Collapsed };
+        _bar.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        Panel.SetZIndex(_bar, 10);
+        CamCanvas.Children.Add(_bar);
+        return _bar;
+    }
 
+    CamCard AddCamCard(HandCamSlot slot, bool select = false)
+    {
         var number = new TextBlock { Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85, Cursor = Cursors.SizeAll, Child = number };
-        var card = new CamCard { Root = root, Title = title, Devices = devices, Size = size, X = slot.X, Y = slot.Y, Number = number, Marker = marker };
+        var inner = new Grid();
+        inner.Children.Add(number);
+        // corners resize the cam, edges cut it
+        (bool L, bool R, bool T, bool B)[] sides = [(true, false, true, false), (false, true, true, false), (true, false, false, true), (false, true, false, true),
+                                                    (true, false, false, false), (false, true, false, false), (false, false, true, false), (false, false, false, true)];
+        var grips = new Border[sides.Length];
+        for (int i = 0; i < sides.Length; i++)
+        {
+            var (l, r, t, b) = sides[i];
+            bool corner = i < 4;
+            var g = new Border { Visibility = Visibility.Collapsed };
+            if (corner)
+            {
+                g.Width = g.Height = 9; g.CornerRadius = new CornerRadius(2); g.Background = Brushes.White; g.Opacity = 0.9;
+                g.Cursor = l == t ? Cursors.SizeNWSE : Cursors.SizeNESW;
+            }
+            else if (l || r) { g.Width = 8; g.Margin = new Thickness(0, 9, 0, 9); g.Background = Brushes.Transparent; g.Cursor = Cursors.SizeWE; }
+            else { g.Height = 8; g.Margin = new Thickness(9, 0, 9, 0); g.Background = Brushes.Transparent; g.Cursor = Cursors.SizeNS; }
+            g.HorizontalAlignment = l ? HorizontalAlignment.Left : r ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+            g.VerticalAlignment = t ? VerticalAlignment.Top : b ? VerticalAlignment.Bottom : VerticalAlignment.Stretch;
+            grips[i] = g;
+        }
+        for (int i = sides.Length - 1; i >= 0; i--) inner.Children.Add(grips[i]); // corners last, so they win over the edge strips
+        var marker = new Border { CornerRadius = new CornerRadius(3), Opacity = 0.85, Cursor = Cursors.SizeAll, Child = inner };
+        var card = new CamCard
+        {
+            Device = slot.Device.Length > 0 ? new HandCamDevice(slot.Device, slot.Number) : null,
+            Size = Math.Clamp(slot.Size, 10, 40), X = slot.X, Y = slot.Y, Rotation = slot.Rotation, Cut = slot.Cut ?? new HandCamCut(), Aspect = slot.Aspect, Marker = marker, Number = number, Grips = grips,
+        };
+        marker.ToolTip = card.Device?.ToString();
         _cards.Add(card);
         CamCanvas.Children.Add(marker);
-        CamCards.Children.Add(root);
+        if (select) _selected = card;
 
-        var items = new List<HandCamDevice>(_devices);
-        var saved = slot.Device.Length > 0 ? new HandCamDevice(slot.Device, slot.Number) : null;
-        if (saved != null && !items.Contains(saved)) items.Insert(0, saved);
-        devices.ItemsSource = items;
-        devices.SelectedItem = saved;
-        if (saved == null) devices.SelectedItem = items.FirstOrDefault(d => !_cards.Any(c => c != card && Equals(c.Devices.SelectedItem, d)));
-
-        void Changed(object? s, RoutedPropertyChangedEventArgs<double> e) { UpdateCamUi(); Save(); }
-        size.ValueChanged += Changed;
         Point grab = default;
-        marker.MouseLeftButtonDown += (_, e) => { marker.CaptureMouse(); grab = e.GetPosition(marker); Panel.SetZIndex(marker, 1); e.Handled = true; };
+        marker.MouseLeftButtonDown += (_, e) => { _selected = card; marker.CaptureMouse(); grab = e.GetPosition(marker); Panel.SetZIndex(marker, 1); UpdateCamUi(); e.Handled = true; };
         marker.MouseMove += (_, e) =>
         {
             if (!marker.IsMouseCaptured) return;
@@ -317,25 +371,108 @@ public partial class SettingsView : UserControl
             UpdateCamUi();
         };
         marker.MouseLeftButtonUp += (_, _) => { if (!marker.IsMouseCaptured) return; marker.ReleaseMouseCapture(); Panel.SetZIndex(marker, 0); ClearGuides(); Save(); };
-        devices.SelectionChanged += (_, _) => { UpdateCamUi(); Save(); };
-        remove.Click += (_, _) =>
+        for (int i = 0; i < sides.Length; i++)
+            if (i < 4) Corner(grips[i], sides[i].R, sides[i].B);
+            else Edge(grips[i], new[] { 0, 2, 1, 3 }[i - 4]);
+        return card;
+
+        // a corner resizes the cam (its shape stays) while the opposite corner stays put
+        void Corner(Border g, bool right, bool bottom)
         {
-            _cards.Remove(card);
-            CamCards.Children.Remove(root);
-            CamCanvas.Children.Remove(marker);
-            UpdateCamUi();
-            Save();
-        };
+            double sl = 0, st = 0, sw = 0, sh = 0;
+            g.MouseLeftButtonDown += (_, e) =>
+            {
+                _selected = card; g.CaptureMouse(); e.Handled = true;
+                (sl, st, sw, sh) = CamBox(card);
+            };
+            g.MouseMove += (_, e) =>
+            {
+                if (!g.IsMouseCaptured) return;
+                var p = ClampToFrame(e.GetPosition(CamCanvas)); // outside the preview the box stops at its edge
+                double fx = right ? sl : sl + sw, fy = bottom ? st : st + sh;
+                var shown = card.Rotation is 90 or 270 ? card.Cut.Height : card.Cut.Width; // part of the whole picture's width that is left
+                card.Size = Math.Clamp((int)Math.Round(Math.Abs(p.X - fx) / (CamW * shown) * 100), 10, 40);
+                var (_, _, w, h) = CamBox(card);
+                card.X = Math.Clamp(((right ? fx : fx - w) + w / 2) / CamW * 100, 0, 100);
+                card.Y = Math.Clamp(((bottom ? fy : fy - h) + h / 2) / CamH * 100, 0, 100);
+                UpdateCamUi();
+            };
+            g.MouseLeftButtonUp += (_, _) => { if (!g.IsMouseCaptured) return; g.ReleaseMouseCapture(); Save(); };
+        }
+
+        // an edge cuts the cam on that side (0 left, 1 top, 2 right, 3 bottom as shown); the picture keeps its scale and the opposite edge stays put
+        void Edge(Border g, int edge)
+        {
+            bool horizontal = edge % 2 == 0;
+            double sl = 0, st = 0, sw = 0, sh = 0;
+            g.MouseLeftButtonDown += (_, e) =>
+            {
+                _selected = card; g.CaptureMouse(); e.Handled = true;
+                (sl, st, sw, sh) = CamBox(card);
+            };
+            g.MouseMove += (_, e) =>
+            {
+                if (!g.IsMouseCaptured) return;
+                var p = ClampToFrame(e.GetPosition(CamCanvas));
+                var turned = card.Rotation is 90 or 270;
+                var fullW = CamW * card.Size / 100;
+                var fullH = fullW / (turned ? 1 / SourceAspect(card) : SourceAspect(card));
+                var fixedAt = edge switch { 0 => sl + sw, 1 => st + sh, 2 => sl, _ => st };
+                var kept = Math.Abs((horizontal ? p.X : p.Y) - fixedAt) / (horizontal ? fullW : fullH); // part of the whole picture that stays visible
+                // the edge as shown is another side of the cam when it is turned
+                var side = (edge - card.Rotation / 90 + 4) % 4;
+                var opposite = (side + 2) % 4;
+                var cut = card.Cut with { };
+                var other = CutOf(cut, opposite);
+                cut = WithCut(cut, side, Math.Clamp(1 - other - Math.Max(kept, 0.1), 0, 0.9 - other));
+                card.Cut = cut;
+                var (_, _, w, h) = CamBox(card);
+                if (horizontal) card.X = Math.Clamp(((edge == 2 ? sl : sl + sw - w) + w / 2) / CamW * 100, 0, 100);
+                else card.Y = Math.Clamp(((edge == 3 ? st : st + sh - h) + h / 2) / CamH * 100, 0, 100);
+                UpdateCamUi();
+            };
+            g.MouseLeftButtonUp += (_, _) => { if (!g.IsMouseCaptured) return; g.ReleaseMouseCapture(); Save(); };
+        }
     }
 
-    const double CamW = 240, CamH = 135, SnapDistance = 6;
+    static double SourceAspect(CamCard c) => c.Aspect > 0 ? c.Aspect : HandCamGeometry.DefaultAspect;
+    static double CutOf(HandCamCut c, int side) => side switch { 0 => c.Left, 1 => c.Top, 2 => c.Right, _ => c.Bottom };
+    static HandCamCut WithCut(HandCamCut c, int side, double v) => side switch { 0 => c with { Left = v }, 1 => c with { Top = v }, 2 => c with { Right = v }, _ => c with { Bottom = v } };
+    Point ClampToFrame(Point p) => new(Math.Clamp(p.X, 0, CamW), Math.Clamp(p.Y, 0, CamH));
+
+    const double CamW = 480, SnapDistance = 6;
     readonly List<UIElement> _guides = [];
 
     /// <summary>Preview box of a cam (the cam keeps 16:9), centered on its position and pulled inside the frame.</summary>
-    static (double L, double T, double W, double H) CamBox(CamCard c)
+    (double L, double T, double W, double H) CamBox(CamCard c)
     {
-        var w = CamW * c.Size.Value / 100; var h = w * 9 / 16;
+        var (w, h) = HandCamGeometry.BoxSize(CamW, CamH, new HandCamLayout(c.Size, 0, 0, c.Rotation, c.Cut), c.Aspect);
         return (Math.Clamp(CamW * c.X / 100 - w / 2, 0, CamW - w), Math.Clamp(CamH * c.Y / 100 - h / 2, 0, CamH - h), w, h);
+    }
+
+    double _camH = 270;
+    double CamH => _camH;
+    /// <summary>Shapes the preview like the game window (last recorded size, else the main screen).</summary>
+    void SizeCamFrame(AppSettings s)
+    {
+        double aspect = s.GameWidth > 0 && s.GameHeight > 0 ? (double)s.GameWidth / s.GameHeight : SystemParameters.PrimaryScreenWidth / SystemParameters.PrimaryScreenHeight;
+        _camH = Math.Round(CamW / Math.Clamp(aspect, 1.0, 2.6));
+        CamFrame.Height = _camH;
+    }
+
+    /// <summary>Reads the cam's own shape so the preview box matches it.</summary>
+    async Task ProbeCam(CamCard c)
+    {
+        if (c.Probing || c.Aspect > 0 || c.Device == null) return;
+        var id = _devices.FirstOrDefault(d => Equals(d, c.Device))?.Id;
+        if (string.IsNullOrEmpty(id)) return;
+        c.Probing = true;
+        try
+        {
+            var aspect = await HandCamProbe.AspectAsync(id, TimeSpan.FromSeconds(4));
+            if (aspect > 0 && _cards.Contains(c)) { c.Aspect = aspect; UpdateCamUi(); Save(); }
+        }
+        finally { c.Probing = false; }
     }
 
     void ClearGuides() { foreach (var g in _guides) CamCanvas.Children.Remove(g); _guides.Clear(); }
@@ -375,39 +512,39 @@ public partial class SettingsView : UserControl
         _guides.Add(line); CamCanvas.Children.Add(line);
     }
 
-    /// <summary>Titles, slider readouts, preview boxes and the Add button after any card or slider change.</summary>
+    /// <summary>Preview boxes, the selection tools and the Add button after any change.</summary>
     void UpdateCamUi()
     {
         for (int i = 0; i < _cards.Count; i++)
         {
             var c = _cards[i];
-            c.Title.Text = (i + 1).ToString();
             var (l, t, w, h) = CamBox(c);
             c.Marker.Width = w; c.Marker.Height = h;
             c.Marker.Background = (Brush)FindResource(CamColors[i % CamColors.Length]);
+            c.Marker.BorderBrush = c == _selected ? Brushes.White : null;
+            c.Marker.BorderThickness = new Thickness(c == _selected ? 1.5 : 0);
+            foreach (var g in c.Grips) g.Visibility = c == _selected ? Visibility.Visible : Visibility.Collapsed;
             c.Number.Text = (i + 1).ToString();
+            c.Number.RenderTransformOrigin = new Point(0.5, 0.5);
+            c.Number.RenderTransform = new RotateTransform(c.Rotation);
             Canvas.SetLeft(c.Marker, l); Canvas.SetTop(c.Marker, t);
         }
-        CamAdd.IsEnabled = _cards.Count < HandCamSlot.Max && _devices.Any(d => !_cards.Any(c => Equals(c.Devices.SelectedItem, d)));
+        var bar = Bar();
+        if (_selected is { } s)
+        {
+            var (l, t, w, h) = CamBox(s);
+            bar.Visibility = Visibility.Visible;
+            Canvas.SetLeft(bar, Math.Clamp(l + w - BarW, 0, CamW - BarW));
+            Canvas.SetTop(bar, t >= BarH + 2 ? t - BarH - 2 : Math.Min(t + h + 2, CamH - BarH));
+        }
+        else bar.Visibility = Visibility.Collapsed;
+        CamAdd.IsEnabled = _cards.Count < HandCamSlot.Max;
     }
 
     async Task RefreshCamDevices()
     {
         _devices = await Task.Run(() => AppHost.EnsureObs() ? HandCamDeviceList.List() : []);
-        var was = _loading; _loading = true;
-        foreach (var c in _cards)
-        {
-            var sel = c.Devices.SelectedItem as HandCamDevice;
-            var items = new List<HandCamDevice>(_devices);
-            if (sel != null && !items.Contains(sel)) items.Insert(0, sel);
-            c.Devices.ItemsSource = items;
-            c.Devices.SelectedItem = sel;
-        }
-        foreach (var c in _cards.Where(c => c.Devices.SelectedItem == null))
-            c.Devices.SelectedItem = _devices.FirstOrDefault(d => !_cards.Any(o => Equals(o.Devices.SelectedItem, d)));
-        _loading = was;
-        UpdateCamUi();
-        Save();
+        foreach (var c in _cards.ToList()) _ = ProbeCam(c);
     }
 
     void OnAutoStart(object sender, RoutedEventArgs e)

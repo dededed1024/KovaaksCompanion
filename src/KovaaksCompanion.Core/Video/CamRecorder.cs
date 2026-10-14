@@ -19,24 +19,19 @@ public sealed class CamRecorder : IAsyncDisposable
     public bool IsRunning => _capture?.Output.IsActive == true;
     public string LastError { get; private set; } = "";
 
-    public async Task<bool> StartAsync(string deviceId, string encoder)
+    public async Task<bool> StartAsync(string deviceId, string encoder, int rotation = 0, HandCamCut? cut = null)
     {
         Directory.CreateDirectory(_dir);
         foreach (var f in Directory.GetFiles(_dir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) { try { File.Delete(f); } catch (Exception e) { Diagnostics.ErrorReporter.Report("cam chunk delete", e); } }
         var ring = new PacketRing(_dir, TimeSpan.FromMinutes(_o.BufferMinutes));
         var cap = new ObsCamCapture();
-        if (!await Task.Run(() => cap.Start(deviceId, encoder, _o.Quality, ring.Append)))
+        if (!await cap.StartAsync(deviceId, encoder, _o.Quality, rotation, cut, ring.Append))
         {
             LastError = cap.Error;
             cap.Dispose(); ring.Dispose();
             return false;
         }
         (_ring, _capture) = (ring, cap);
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(2000);
-            if (_capture == cap) cap.FixMode();
-        });
         return true;
     }
 

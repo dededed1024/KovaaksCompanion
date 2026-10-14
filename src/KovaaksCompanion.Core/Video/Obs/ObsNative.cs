@@ -29,6 +29,7 @@ internal static unsafe partial class ObsNative
     public struct AudioInfo { public uint SamplesPerSec; public int Speakers; }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct ItemCrop { public int Left, Top, Right, Bottom; public ItemCrop(int l, int t, int r, int b) { Left = l; Top = t; Right = r; Bottom = b; } }
     public struct Vec2 { public float X, Y; public Vec2(float x, float y) { X = x; Y = y; } }
 
     /// <summary>struct encoder_packet (obs-encoder.h).</summary>
@@ -113,6 +114,9 @@ internal static unsafe partial class ObsNative
     [LibraryImport(Lib)] public static partial void obs_source_remove(nint source);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_pos(nint item, in Vec2 pos);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_alignment(nint item, uint alignment);
+    [LibraryImport(Lib)] public static partial void obs_sceneitem_set_rot(nint item, float degrees);
+    [LibraryImport(Lib)] public static partial void obs_sceneitem_set_scale(nint item, in Vec2 scale);
+    [LibraryImport(Lib)] public static partial void obs_sceneitem_set_crop(nint item, in ItemCrop crop);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds_type(nint item, int type);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds_alignment(nint item, uint alignment);
     [LibraryImport(Lib)] public static partial void obs_sceneitem_set_bounds_crop(nint item, [MarshalAs(UnmanagedType.U1)] bool crop);

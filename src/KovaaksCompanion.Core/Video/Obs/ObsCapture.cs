@@ -23,6 +23,8 @@ internal sealed class ObsCapture : IDisposable
     readonly ObsCaptureSpec _spec;
     nint _scene, _videoSource, _audioSource, _videoEncoder, _audioEncoder;
     readonly List<nint> _camSources = [];
+    readonly List<HandCamLayout> _camLayouts = [];
+    int _frameW, _frameH;
     readonly List<nint> _items = [];
     readonly object _sync = new();
     PacketOutput? _output;
@@ -73,12 +75,14 @@ internal sealed class ObsCapture : IDisposable
         _items.Add(item);
         // cams go on top of the game, each in its box (cover-scaled and cropped to it), in list order
         int baseW = t.Width & ~1, baseH = t.Height & ~1;
+        (_frameW, _frameH) = (baseW, baseH);
         foreach (var cam in _spec.Cams ?? [])
         {
-            var src = ObsCamSource.Create(cam.DeviceId, "cam" + (_camSources.Count + 1));
+            var src = ObsCamSource.CreateNative(cam.DeviceId, "cam" + (_camSources.Count + 1));
             if (src == 0) { AppLog.Write("obs", "hand cam source failed: " + cam.DeviceId); continue; }
             _camSources.Add(src);
             _items.Add(ObsCamSource.Place(_scene, src, baseW, baseH, cam.Layout));
+            _camLayouts.Add(cam.Layout);
         }
         ObsNative.obs_set_output_source(0, ObsNative.obs_scene_get_source(_scene));
 
@@ -168,14 +172,31 @@ internal sealed class ObsCapture : IDisposable
             return _videoSource == 0 ? (0, 0) : (ObsNative.obs_source_get_width(_videoSource), ObsNative.obs_source_get_height(_videoSource));
     }
 
-    /// <summary>Cams that deliver no frames at 1280x720@30 fall back to their device default mode.</summary>
-    public void FixCamModes() => ObsRuntime.Run(() =>
+    /// <summary>Once a cam has delivered its first frame, resizes its box to the cam's own shape (nothing is cropped); cams still silent after the wait keep the 16:9 box.</summary>
+    public async Task FitCamsAsync(TimeSpan wait)
     {
-        lock (_sync)
-            foreach (var c in _camSources)
-                if (!ObsCamSource.HasFrames(c)) { AppLog.Write("handcam", "no frames at 1280x720@30, using the device default"); ObsCamSource.UseDeviceDefault(c); }
-        return true;
-    });
+        var fitted = new bool[_camSources.Count];
+        var until = DateTime.UtcNow + wait;
+        while (fitted.Contains(false) && DateTime.UtcNow < until)
+        {
+            await Task.Delay(200);
+            ObsRuntime.Run(() =>
+            {
+                lock (_sync)
+                    for (int i = 0; i < fitted.Length && i < _camSources.Count; i++)
+                    {
+                        if (fitted[i]) continue;
+                        uint w = ObsNative.obs_source_get_width(_camSources[i]), h = ObsNative.obs_source_get_height(_camSources[i]);
+                        if (w == 0 || h == 0) continue;
+                        ObsCamSource.Fit(_items[i + 1], _frameW, _frameH, _camLayouts[i], (int)w, (int)h);
+                        fitted[i] = true;
+                    }
+                return true;
+            });
+        }
+        for (int i = 0; i < fitted.Length; i++)
+            if (!fitted[i]) AppLog.Write("handcam", $"cam {i + 1} delivered no frames within {wait.TotalSeconds:0} s, keeping the 16:9 box");
+    }
 
     public void Dispose()
     {
@@ -192,7 +213,7 @@ internal sealed class ObsCapture : IDisposable
         foreach (var i in _items) ObsNative.obs_sceneitem_remove(i);
         _items.Clear();
         foreach (var c in _camSources) { ObsNative.obs_source_remove(c); ObsNative.obs_source_release(c); }
-        _camSources.Clear();
+        _camSources.Clear(); _camLayouts.Clear();
         if (_videoSource != 0) { ObsNative.obs_source_release(_videoSource); _videoSource = 0; }
         if (_audioSource != 0) { ObsNative.obs_source_release(_audioSource); _audioSource = 0; }
         if (_scene != 0) { ObsNative.obs_scene_release(_scene); _scene = 0; }
