@@ -71,7 +71,7 @@
         </Border>
 
         <!-- Floating back-to-top button -->
-        <Border x:Name="TopButton" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,24" Width="40" Height="40" CornerRadius="20" Background="{DynamicResource Surface}"
+        <Border x:Name="TopButton" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,24" Width="40" Height="40" CornerRadius="20" app:Grain.Card="True" Background="{DynamicResource Surface}"
                 BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" Visibility="Collapsed" IsHitTestVisible="False" Cursor="Hand" MouseLeftButtonUp="OnTopButton"
                 ToolTip="{app:Loc 'To top'}">
             <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.45" Color="Black"/></Border.Effect>
@@ -167,11 +167,11 @@
         </Grid>
 
         <!-- First sync: covers the page until every scenario's server scores are in -->
-        <Grid x:Name="SyncOverlay" Visibility="Collapsed" Background="{DynamicResource Surface}">
+        <Border x:Name="SyncOverlay" Visibility="Collapsed" app:Grain.Card="True" Background="{DynamicResource Surface}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Border x:Name="SyncSpinHost" HorizontalAlignment="Center"/>
                 <TextBlock x:Name="SyncCount" HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="14" Foreground="{DynamicResource Dim}"/>
             </StackPanel>
-        </Grid>
+        </Border>
     </Grid>
 </UserControl>
