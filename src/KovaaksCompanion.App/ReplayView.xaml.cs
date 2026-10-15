@@ -568,8 +568,17 @@ public partial class ReplayView : UserControl
         DisarmDelete();
         ShowScenarioStar();
         PaintOverviewRow();
+    /// <summary>The implicit TextBlock style overrides an inherited foreground, so the glyph is an explicit TextBlock.</summary>
+    void TintDelete(Brush brush)
+    {
+        GlyphButton.Set(RunDelBtn, "", brush);
+    }
+
+    readonly System.Windows.Threading.DispatcherTimer _disarmTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+
         LayoutCard(new Size(ActualWidth, ActualHeight));
     }
+        _disarmTimer.Stop();
 
     /// <summary>The video folder and delete buttons exist only while the open run has a video file.</summary>
     void UpdateRunButtons()
@@ -584,30 +593,34 @@ public partial class ReplayView : UserControl
     void DisarmDelete()
     {
         _delArmed = false;
-        RunDelBtn.Foreground = DimB;
-        RunDelBtn.ToolTip = L.T("Delete Replay");
+        TintDelete(DimB);
+        RunDelBtn.ToolTip = L.T("Delete Video");
+            _disarmTimer.Tick -= OnDisarmTick;
+            _disarmTimer.Tick += OnDisarmTick;
+            _disarmTimer.Start();
     }
 
-    /// <summary>Trash button of the open run: the first click arms it (red), the second deletes the run and closes the popup.</summary>
+    void OnDisarmTick(object? sender, EventArgs e) => DisarmDelete();
+        var scenario = info.Scenario;
+        var end = _selEnd ?? info.End;
+
+    /// <summary>Trash button of the open run: the first click arms it (red, for 1 second), the second deletes the run and closes the popup.</summary>
     async void OnDeleteRun(object sender, RoutedEventArgs e)
     {
-        if (_runIdx < 0 || _runIdx >= _stats.Runs.Count) return;
+        if (_replay is null) return;
         if (!_delArmed)
         {
             _delArmed = true;
-            RunDelBtn.Foreground = (Brush)FindResource("Red");
+            TintDelete((Brush)FindResource("Red"));
             RunDelBtn.ToolTip = L.T("Click again to delete the replay for good");
             return;
         }
-        var r = _stats.Runs[_runIdx];
-        var scenario = r.Scenario;
-        if (_replay is null) return;
         var info = _replay.Info;
         UnloadMedia(); // releases the video file so it can be deleted
         DisarmDelete();
         if (!await _host.DeleteRun(info))
         {
-            if (_open && _d is not null) SelectRun(r.End);
+            if (_open && _d is not null) SelectRun(end);
             return;
         }
         if (!_open || _d is null) return;
@@ -1285,7 +1298,6 @@ public partial class ReplayView : UserControl
         MuteBtn.ToolTip = L.T(_muted ? "Unmute" : "Mute");
     }
 
-    void OnDelLeave(object sender, MouseEventArgs e) => DisarmDelete();
 
     void OnScreenDown(object sender, MouseButtonEventArgs e)
     {
