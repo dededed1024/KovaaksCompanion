@@ -1196,8 +1196,9 @@ public partial class StatsView
             .Where(i => !_favOnly || i.Fav);
         var o = BrowseSort switch
         {
-            1 => q.OrderByDescending(i => i.Tier).ThenByDescending(i => i.Frac),
-            2 => q.OrderBy(i => i.B.BenchmarkName).ThenBy(i => i.D.DifficultyName),
+            1 => q.OrderBy(i => i.Last ?? DateTime.MaxValue), // never played: last
+            2 => q.OrderByDescending(i => i.Tier).ThenByDescending(i => i.Frac),
+            3 => q.OrderBy(i => i.B.BenchmarkName).ThenBy(i => i.D.DifficultyName),
             _ => q.OrderByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Tier).ThenByDescending(i => i.Frac),
         };
         return o.Select(i => (i.B, i.D, i.Fav)).ToList();
@@ -1206,8 +1207,8 @@ public partial class StatsView
     /// <summary>Sort options per tab; the first is the default. The choice is kept per tab until the app closes.</summary>
     static readonly Dictionary<string, string[]> SortOptions = new()
     {
-        ["Playlists"] = ["Newest", "Progress", "Name"],
-        ["Scenarios"] = ["Newest", "Progress", "Tier", "Plays", "Name"],
+        ["Playlists"] = ["Newest", "Oldest", "Progress", "Name"],
+        ["Scenarios"] = ["Newest", "Oldest", "Tier", "Progress", "Plays", "Name"],
         ["Sessions"] = ["Newest", "Oldest", "Longest", "Most runs", "PB"],
         ["Runs"] = ["Newest", "Oldest", "Tier", "Progress"],
     };
@@ -1423,18 +1424,36 @@ public partial class StatsView
         var span = maxes[rank] - lower;
         return span > 0 ? Math.Clamp((score - lower) / span, 0, 1) : 0;
     }
+    /// <summary>A scenario's tier bands, and where its playlist's tiers sit among all tiers of the benchmark (the tiers of its earlier playlists, and the total).</summary>
+    sealed record TierSpan(List<ChartBand>? Bands, int Before, int Total);
+
     /// <summary>
-    /// Sort key for the tier order: tiers reached out of all tiers, then progress through the current one. Read from the same bands as the tier shown in the row (<see cref="TierBands"/>),
-    /// so the order always matches what the rows say; -1 when the scenario has no tiers. The bands are kept in <paramref name="cache"/>.
+    /// Sort key for the tier order: tiers reached out of all tiers of the benchmark, counting the tiers of its playlists one after another (Novice, then Intermediate, then Advanced),
+    /// then progress through the current tier. Read from the same bands as the tier shown in the row (<see cref="TierBands"/>), so the order matches what the rows say;
+    /// -1 when the scenario has no tiers. Spans are kept in <paramref name="cache"/>.
     /// </summary>
+    (double Ratio, double Progress) TierKey(Dictionary<string, TierSpan> cache, string scenario, double score)
+    {
+        if (!cache.TryGetValue(scenario, out var span)) cache[scenario] = span = SpanOf(scenario);
+        if (span.Bands is not { Count: > 0 }) return (-1, 0);
+        var maxes = span.Bands.Select(b => b.Value).ToList();
+        var total = Math.Max(span.Total, span.Before + maxes.Count);
+        var reached = maxes.Count(m => score >= m);
+        // below the first tier of its playlist: no credit for the tiers of the easier playlists, which the player may not have reached
+        return (reached == 0 ? 0 : (double)(span.Before + reached) / total, TierProgress(maxes, score));
+    }
+
     static readonly (double Ratio, double Progress) NoTier = (0, 0);
 
-    (double Ratio, double Progress) TierKey(Dictionary<string, List<ChartBand>?> cache, string scenario, double score)
+    TierSpan SpanOf(string scenario)
     {
-        if (!cache.TryGetValue(scenario, out var bands)) cache[scenario] = bands = TierBands(scenario);
-        if (bands is not { Count: > 0 }) return (-1, 0);
-        var maxes = bands.Select(b => b.Value).ToList();
-        return ((double)maxes.Count(m => score >= m) / maxes.Count, TierProgress(maxes, score));
+        var bands = TierBands(scenario);
+        if (bands == null || TierSource(scenario) is not { } h) return new(bands, 0, 0);
+        var diffs = BenchmarkCatalog.All.FirstOrDefault(b => b.Difficulties.Any(x => x.KovaaksBenchmarkId == h.Id))?.Difficulties;
+        if (diffs == null) return new(bands, 0, 0);
+        var sizes = diffs.Select(d => Math.Max(0, (KovaaksCompanion.Core.Benchmarks.TierData.Get(d.KovaaksBenchmarkId)?.TierNames.Count ?? 0) - 1)).ToList();
+        var at = diffs.ToList().FindIndex(d => d.KovaaksBenchmarkId == h.Id);
+        return new(bands, sizes.Take(at).Sum(), sizes.Sum());
     }
 
     /// <summary>Sort key: scenarios below 100% first, highest percent first; 100% and unranked scenarios last.</summary>
@@ -1447,22 +1466,23 @@ public partial class StatsView
     {
         var ui = _host.Ui;
         var data = TierData();
-        var bandCache = new Dictionary<string, List<ChartBand>?>(StringComparer.OrdinalIgnoreCase);
+        var bandCache = new Dictionary<string, TierSpan>(StringComparer.OrdinalIgnoreCase);
         var q = _book.AllScenarios.Concat(KovaaksCompanion.Core.Benchmarks.TierData.ScenarioNames).Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(n =>
             {
                 var s = _book.For(n);
                 double? pct = data.TryGetValue(n, out var t) ? TierProgress(t.Maxes, Math.Max(s.Best, t.Score)) : null;
-                var tier = BrowseSort == 2 ? TierKey(bandCache, n, s.Best) : NoTier;
+                var tier = BrowseSort is 2 or 3 ? TierKey(bandCache, n, s.Best) : NoTier;
                 return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: s.LastPlayed ?? DateTime.MinValue, Pct: pct, Tier: tier);
             })
             .Where(i => !_favOnly || i.Fav);
         var o = BrowseSort switch
         {
-            1 => q.OrderByDescending(i => PercentKey(i.Pct)).ThenByDescending(i => i.Last),
-            2 => q.OrderByDescending(i => i.Tier.Ratio).ThenByDescending(i => i.Tier.Progress),
-            3 => q.OrderByDescending(i => i.S.Plays),
-            4 => q.OrderBy(i => i.N, StringComparer.OrdinalIgnoreCase),
+            1 => q.OrderBy(i => i.Last == DateTime.MinValue ? DateTime.MaxValue : i.Last), // never played: last
+            2 => q.OrderByDescending(i => i.S.Best > 0 ? i.Tier.Ratio : -1).ThenByDescending(i => i.Tier.Progress), // never played: last
+            3 => q.OrderByDescending(i => i.S.Best > 0 && i.Tier.Ratio >= 0 ? i.Tier.Progress : -1).ThenByDescending(i => i.Last), // the % shown in the row; rows without one last
+            4 => q.OrderByDescending(i => i.S.Plays),
+            5 => q.OrderBy(i => i.N, StringComparer.OrdinalIgnoreCase),
             _ => q.OrderByDescending(i => i.Last).ThenByDescending(i => PercentKey(i.Pct)),
         };
         return o.Select(i => (Func<UIElement>)(() => ScenarioRow(i.N, i.S, i.Fav))).ToList();
@@ -1588,16 +1608,16 @@ public partial class StatsView
         var ui = _host.Ui;
         var data = TierData();
         var pbs = PbSet();
-        var bandCache = new Dictionary<string, List<ChartBand>?>(StringComparer.OrdinalIgnoreCase);
+        var bandCache = new Dictionary<string, TierSpan>(StringComparer.OrdinalIgnoreCase);
         var q = AllPlays()
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null,
-                Tier: BrowseSort == 2 ? TierKey(bandCache, r.Scenario, r.Score) : NoTier))
+                Tier: BrowseSort is 2 or 3 ? TierKey(bandCache, r.Scenario, r.Score) : NoTier))
             .Where(i => (!_favOnly || i.Fav) && (!_pbOnly || pbs.Contains(i.R)));
         var o = BrowseSort switch
         {
             1 => q.OrderBy(i => i.R.End),
             2 => q.OrderByDescending(i => i.Tier.Ratio).ThenByDescending(i => i.Tier.Progress),
-            3 => q.OrderByDescending(i => PercentKey(i.Pct)).ThenByDescending(i => i.R.End),
+            3 => q.OrderByDescending(i => i.Tier.Ratio >= 0 ? i.Tier.Progress : -1).ThenByDescending(i => i.R.End),
             _ => q.OrderByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct)),
         };
         return o.Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
