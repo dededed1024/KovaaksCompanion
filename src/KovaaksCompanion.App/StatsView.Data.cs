@@ -1,5 +1,7 @@
 ﻿using System.IO;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
@@ -65,23 +67,65 @@ public partial class StatsView
         try
         {
             var store = Store;
-            if (await Task.Run(store.CloudBestsSynced)) return;
-            if (_host.Settings.UsernameFor(steam) is not { Length: > 0 } user) return;
-            var bests = await _api.GetBestScoresAsync(user, ct);
-            if (bests.Count == 0) return;
-            await Task.Run(() => { try { store.SaveCloudBests(bests); } catch (IOException) { } });
-            foreach (var (n, v) in bests)
+            var synced = await Task.Run(store.CloudBestsSynced);
+            var user = _host.Settings.UsernameFor(steam);
+            if (string.IsNullOrEmpty(user))
             {
-                if (v > _archivedBest.GetValueOrDefault(n)) _archivedBest[n] = v;
-                _book.RaiseKnownBest(n, v);
+                ShowSync(0, 0);
+                var likely = AllDifficulties().Select(x => x.D)
+                    .OrderByDescending(d => KovaaksCompanion.Core.Benchmarks.TierData.Get(d.KovaaksBenchmarkId) is { } b ? b.Categories.Sum(c => c.Scenarios.Count(s => _lib.Runs(s.Name).Count > 0)) : 0)
+                    .Select(d => d.KovaaksBenchmarkId);
+                user = await _api.ResolveUsernameAsync(steam, likely, 6, ct);
+                if (string.IsNullOrEmpty(user)) return;
+                _host.ApplySettings(_host.Settings with { WebUsername = user, WebUsernameSteamId = steam });
             }
-            RebuildProgress();
+            if (!synced)
+            {
+                ShowSync(0, 0);
+                var bests = await _api.GetBestScoresAsync(user, ct);
+                if (bests.Count == 0) return;
+                await Task.Run(() => { try { store.SaveCloudBests(bests); } catch (IOException) { } });
+                foreach (var (n, v) in bests)
+                {
+                    if (v > _archivedBest.GetValueOrDefault(n)) _archivedBest[n] = v;
+                    _book.RaiseKnownBest(n, v);
+                }
+                RebuildProgress();
+            }
+            var first = FirstFetchScenarios();
+            if (first.Count > 0)
+            {
+                ShowSync(0, first.Count);
+                await EnsureCloudAsync(first, new Progress<int>(done => ShowSync(done, first.Count)));
+            }
             ScheduleRefresh();
             if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         }
         catch (OperationCanceledException) { }
         catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: the next reload tries again
-        finally { _syncing = false; UpdateTierMarks(false); } // server-side changes are no celebration
+        finally { _syncing = false; HideSync(); UpdateTierMarks(false); } // server-side changes are no celebration
+    }
+
+    /// <summary>The scenarios whose server scores were never fetched (a new or restored archive); the page waits for these.</summary>
+    List<string> FirstFetchScenarios() =>
+        _rawProgress.Values.SelectMany(p => p.Scenarios).Where(sc => sc.TierThresholds.Count > 0).Select(sc => sc.Scenario)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(n => !_everFetched.Contains(n) && (_archivedBest.ContainsKey(n) || _lib.Runs(n).Count > 0)).ToList();
+
+    void ShowSync(int done, int total)
+    {
+        if (SyncOverlay.Visibility != Visibility.Visible)
+        {
+            SyncSpinHost.Child = Spinner.Create((Brush)FindResource("Accent"), 32);
+            SyncOverlay.Visibility = Visibility.Visible;
+        }
+        SyncCount.Text = total > 0 ? $"{done} / {total}" : "";
+    }
+
+    void HideSync()
+    {
+        SyncOverlay.Visibility = Visibility.Collapsed;
+        SyncSpinHost.Child = null; // stops the animation
     }
 
     /// <summary>Redraws the hero and the playlist lists at most every 400 ms while progress updates arrive in a burst (a debounce would starve the redraw until the whole burst ends, leaving favourite cards empty).</summary>
@@ -104,6 +148,7 @@ public partial class StatsView
 
     readonly Dictionary<string, DateTime> _cloudFetched = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> _cloudInflight = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _everFetched = new(StringComparer.OrdinalIgnoreCase); // fetched at any time, however long ago
 
     /// <summary>Puts a scenario's cloud scores into the score book; Home is redrawn when they changed. Returns whether they changed.</summary>
     bool RememberCloud(string scenario, IReadOnlyList<CloudScore> scores)
@@ -118,7 +163,7 @@ public partial class StatsView
     /// <see cref="MaxParallel"/> requests at a time, cached and put into the score book. Scenarios the server has no plays
     /// of are skipped, and nothing is requested before the username is known. Returns whether any scores changed.
     /// </summary>
-    async Task<bool> EnsureCloudAsync(IEnumerable<string> scenarios)
+    async Task<bool> EnsureCloudAsync(IEnumerable<string> scenarios, IProgress<int>? progress = null)
     {
         var steam = _host.Settings.EffectiveSteamId;
         if (steam.Length == 0) return false;
@@ -128,6 +173,7 @@ public partial class StatsView
         var ct = _cts.Token;
         var store = Store;
         var changed = false;
+        var finished = 0;
         try
         {
             var user = _host.Settings.UsernameFor(steam);
@@ -142,10 +188,11 @@ public partial class StatsView
                     var l = await _api.GetLastScoresAsync(user, n, ct);
                     fresh[n] = l;
                     _cloudFetched[n] = DateTime.Now;
+                    _everFetched.Add(n);
                     changed |= RememberCloud(n, store.WithCached(n, l));
                 }
                 catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: keep what is cached
-                finally { gate.Release(); }
+                finally { gate.Release(); progress?.Report(++finished); }
             }));
             if (fresh.Count > 0) _ = Task.Run(() => { try { store.SaveScoresBatch(fresh); } catch (IOException) { } });
         }

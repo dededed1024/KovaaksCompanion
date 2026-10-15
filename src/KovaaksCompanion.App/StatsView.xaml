@@ -165,5 +165,13 @@
                 <Grid x:Name="SessionHost"/>
             </Border>
         </Grid>
+
+        <!-- First sync: covers the page until every scenario's server scores are in -->
+        <Grid x:Name="SyncOverlay" Visibility="Collapsed" Background="{DynamicResource Surface}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border x:Name="SyncSpinHost" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="SyncCount" HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="14" Foreground="{DynamicResource Dim}"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

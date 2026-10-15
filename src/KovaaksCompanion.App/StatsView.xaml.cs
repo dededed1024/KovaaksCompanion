@@ -307,6 +307,7 @@ public partial class StatsView : UserControl
         foreach (var (n, c) in scores)
         {
             _book.SetCloud(n, c.Scores);
+            if (c.FetchedAt > DateTime.MinValue) _everFetched.Add(n);
             if (DateTime.Now - c.FetchedAt < SyncInterval) _cloudFetched.TryAdd(n, c.FetchedAt); // fetched recently, even in an earlier run
         }
         AssignSessionIds();
