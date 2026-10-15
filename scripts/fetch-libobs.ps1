@@ -20,6 +20,7 @@ if ((Test-Path $pack) -and (Test-Path $marker) -and -not $Force) {
 $keep = @(
     '^bin/64bit/(avcodec-62|avdevice-62|avfilter-11|avformat-62|avutil-60|libcurl|libobs-d3d11|libobs-winrt|librist|libx264-164|obs|srt|swresample-6|swscale-9|w32-pthreads|zlib)\.dll$',
     '^bin/64bit/obs-(amf|nvenc|qsv)-test\.exe$',
+    '^data/obs-plugins/win-capture/get-graphics-offsets(32|64)\.exe$',
     '^data/libobs/[^/]+\.effect$',
     '^obs-plugins/64bit/(obs-ffmpeg|obs-nvenc|obs-qsv11|win-capture|win-dshow|win-wasapi)\.dll$'
 )

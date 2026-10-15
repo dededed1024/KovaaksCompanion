@@ -25,6 +25,8 @@ public partial class StatsView
     const int SessionRunsShown = 7;
     const double HomeBottomGap = 24;
     Border? _heroSlot, _playlistsSlot;
+    /// <summary>The activity calendar on top of the browse card; null without any play.</summary>
+    Border? _browseHead;
 
     void ShowHome()
     {
@@ -155,7 +157,7 @@ public partial class StatsView
         {
             _heroSlot = null;
         }
-        _playlistsSlot = new Border { Child = BuildBrowse() };
+        _browseHead = null;
         // The live session card sat in the sessions list, which Home no longer shows: there is no live card to jump to.
         _liveCard = null;
         _liveShown = LiveNow();
@@ -185,19 +187,15 @@ public partial class StatsView
                 cal.LiveDay = LiveNow() ? DateTime.Today : null;
             }, calendarShare: 2.4, maxCell: 26, maxWeeks: 24, stackBelow: 1000);
 
+            // The calendar shares the card of the Playlists / Scenarios / Sessions / Record tabs.
             if (activityCard is Border activityBorder)
             {
-                activityBorder.Padding = new Thickness(8, 12, 8, 8);
-                var wrapper = new StackPanel();
                 var inner = activityBorder.Child;
                 activityBorder.Child = null;
-                wrapper.Children.Add(BuildPlayStats(runs, plays, 24, 13, FontWeights.Medium));
-                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 8, 16, 14) });
-                wrapper.Children.Add(inner ?? new Border());
-                activityBorder.Child = wrapper;
+                _browseHead = new Border { Padding = new Thickness(0, 12, 0, 0), Child = inner };
             }
-            page.Children.Add(activityCard);
         }
+        _playlistsSlot = new Border { Child = BuildBrowse() };
         // The Playlists / Scenarios / Replays tabs close the page.
         page.Children.Add(_playlistsSlot);
         return page;
@@ -1153,7 +1151,7 @@ public partial class StatsView
     string _browseTab = "Playlists";
     Border? _browseHost;
     Border? _browseTabs;
-    Grid? _browseBar;
+    StackPanel? _browseBar;
     /// <summary>The lists on Home show only favorites.</summary>
     bool _favOnly;
     int _browseCols;
@@ -1225,10 +1223,8 @@ public partial class StatsView
         void ShowFilter() => GlyphButton.Set(filter, "", (Brush)FindResource(_favOnly ? "Yellow" : "Dim"));
         ShowFilter();
         filter.Click += (_, _) => { _favOnly = !_favOnly; ShowFilter(); FillBrowse(); };
-        _browseBar = new Grid();
-        _browseBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _browseBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(filter, 1);
+        filter.Margin = new Thickness(6, 4, 0, 8);
+        _browseBar = new StackPanel { Orientation = Orientation.Horizontal };
         _browseBar.Children.Add(_browseTabs);
         _browseBar.Children.Add(filter);
         _browseHost = new Border();
@@ -1282,6 +1278,12 @@ public partial class StatsView
             : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
 
         var body = new StackPanel();
+        if (_browseHead != null)
+        {
+            (_browseHead.Parent as Panel)?.Children.Remove(_browseHead);
+            body.Children.Add(_browseHead);
+            body.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 8, 16, 8) });
+        }
         if (_browseBar != null)
         {
             (_browseBar.Parent as Panel)?.Children.Remove(_browseBar);

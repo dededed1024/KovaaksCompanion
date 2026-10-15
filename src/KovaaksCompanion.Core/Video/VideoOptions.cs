@@ -7,7 +7,7 @@ public sealed record VideoOptions
     public string GameProcessName { get; init; } = "FPSAimTrainer-Win64-Shipping";
     /// <summary>Folder holding the rolling packet chunks.</summary>
     public string BufferDir { get; init; } = Path.Combine(Path.GetTempPath(), "KovaaksCompanion", "buffer");
-    public const int DefaultFps = 120;
+    public const int DefaultFps = 60;
     /// <summary>Capture frame rate (upper limit for window capture).</summary>
     public int Fps { get; init; } = DefaultFps;
     public int BufferMinutes { get; init; } = 10;

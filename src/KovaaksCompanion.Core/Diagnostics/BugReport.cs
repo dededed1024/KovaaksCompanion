@@ -32,13 +32,22 @@ public static class BugReport
         return text;
     }
 
-    /// <summary>Discord <c>payload_json</c> for a manual report: header and environment come first, so only the user text is cut at the content limit.</summary>
+    const int FeedbackColor = 0x5865F2;
+    const int MaxEmbedDescription = 4000;
+
+    /// <summary>Discord <c>payload_json</c> for a manual report: one blue embed with the user text as description and each environment line as an inline field; only the user text is cut at the embed limit.</summary>
     public static string BuildPayloadJson(string message, string version, string env)
     {
-        var head = $"**Feedback** v{version}\n{Scrub(env)}\n";
-        var content = head + Scrub(message);
-        if (content.Length > MaxContent) content = content[..MaxContent];
-        return JsonSerializer.Serialize(new { content });
+        var description = Scrub(message);
+        if (description.Length > MaxEmbedDescription) description = description[..MaxEmbedDescription];
+        var fields = Scrub(env).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(l => l.Split(':', 2))
+            .Where(p => p.Length == 2 && p[1].Trim().Length > 0)
+            .Take(25)
+            .Select(p => new { name = p[0].Trim(), value = p[1].Trim(), inline = true })
+            .ToArray();
+        var embed = new { title = "💬 Feedback", description, color = FeedbackColor, fields, footer = new { text = $"v{version}" }, timestamp = DateTime.UtcNow.ToString("o") };
+        return JsonSerializer.Serialize(new { embeds = new[] { embed } });
     }
 
     /// <summary>Embed color per severity: red, orange, yellow, gray.</summary>
@@ -51,11 +60,13 @@ public static class BugReport
     };
 
     /// <summary>Discord <c>payload_json</c> for an automatic error report: a colored embed titled with the severity number, exception details only, no OS or environment.</summary>
-    public static string BuildErrorPayloadJson(string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium)
+    public static string BuildErrorPayloadJson(string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium, ErrorReporter.ReportCount? count = null)
     {
         var description = Scrub($"{ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
         if (description.Length > MaxContent) description = description[..MaxContent];
-        var embed = new { title = Scrub($"[{(int)severity}] {title}"), description, color = SeverityColor(severity), footer = new { text = $"v{version} · severity {(int)severity} ({severity})" } };
+        var footer = $"v{version} · severity {(int)severity} ({severity})";
+        if (count is { } c) footer += $" · {c.Sent}/{c.Max} · same bug ×{c.SameBug}";
+        var embed = new { title = Scrub($"[{(int)severity}] {title}"), description, color = SeverityColor(severity), footer = new { text = footer } };
         return JsonSerializer.Serialize(new { embeds = new[] { embed } });
     }
 
@@ -96,11 +107,11 @@ public static class BugReport
     }
 
     /// <summary>Posts one automatic error message; no OS, environment or log.</summary>
-    public static async Task<bool> SendError(HttpClient http, string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium, CancellationToken ct = default)
+    public static async Task<bool> SendError(HttpClient http, string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium, ErrorReporter.ReportCount? count = null, CancellationToken ct = default)
     {
         try
         {
-            using var content = new StringContent(BuildErrorPayloadJson(title, ex, version, severity), System.Text.Encoding.UTF8, "application/json");
+            using var content = new StringContent(BuildErrorPayloadJson(title, ex, version, severity, count), System.Text.Encoding.UTF8, "application/json");
             using var res = await http.PostAsync(ErrorWebhookUrl, content, ct);
             return res.IsSuccessStatusCode;
         }

@@ -576,8 +576,8 @@ public sealed class AppHost : IDisposable
         _trayIcon?.Dispose();
         _watcher?.Dispose();
         _capture?.Dispose();
-        var stopped = _video?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(8)) ?? true;
-        if (stopped) BufferCleaner.Clean(_settings.BufferFolder); // libobs is shut down, so its chunks are junk
+        _video?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(8));
+        BufferCleaner.Clean(_settings.BufferFolder); // chunks are junk once we exit; if libobs hung, files it still holds are skipped and the next start removes them
     }
 }
 

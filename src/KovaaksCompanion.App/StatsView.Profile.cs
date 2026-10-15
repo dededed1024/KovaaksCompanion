@@ -56,20 +56,18 @@ public partial class StatsView
     (Color C1, Color C2) ProfileBgColors()
     {
         var b = Color.FromRgb(0x23, 0x23, 0x26);
-        Color c1 = Color.FromRgb(0x38, 0x38, 0x3E), c2 = Color.FromRgb(0x18, 0x18, 0x1B);
-        // With no profile color the card takes the app theme's background (the light theme keeps the dark card).
-        if (!Theme.IsLight && FindResource("Bg") is SolidColorBrush themeBg)
-        {
-            c1 = MixColor(themeBg.Color, Colors.White, 0.12);
-            c2 = MixColor(themeBg.Color, Colors.Black, 0.15);
-        }
+        // With no profile color the card is the neutral gray of its swatch, whatever the app theme's tint.
+        Color c1 = Color.FromRgb(0x3A, 0x3A, 0x3C), c2 = Color.FromRgb(0x1C, 0x1C, 0x1E);
         if (_host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb)
         {
             var light = ProfileLight;
             var black = sb.Color.R + sb.Color.G + sb.Color.B < 60;
             c1 = light ? sb.Color : MixColor(b, sb.Color, black ? 1 : 0.6);
             c2 = MixColor(Color.FromRgb(0x10, 0x10, 0x12), sb.Color, light ? 0.4 : black ? 1 : 0.0);
-            if (!light && !black) { c1 = Saturate(c1, 1.6); c2 = Saturate(c2, 1.6); }
+            var gray = Math.Max(sb.Color.R, Math.Max(sb.Color.G, sb.Color.B)) - Math.Min(sb.Color.R, Math.Min(sb.Color.G, sb.Color.B)) < 12;
+            // A gray stays that gray (a slight light-to-dark slope) instead of fading into the near-black base.
+            if (!light && !black && gray) { c1 = MixColor(sb.Color, Colors.White, 0.08); c2 = MixColor(sb.Color, Colors.Black, 0.3); }
+            else if (!light && !black) { c1 = Saturate(c1, 1.6); c2 = Saturate(c2, 1.6); }
             if (ProfileGold) { c1 = Color.FromRgb(0xFF, 0xE8, 0x73); c2 = Color.FromRgb(0xFF, 0xF3, 0xB0); }
         }
         return (c1, c2);
@@ -369,7 +367,7 @@ public partial class StatsView
             // Stats and calendar share one width, set to the picture's width.
             var body = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
             _profileBody = body;
-            var stats = BuildPlayStats(runs, plays, 26, 16, FontWeights.SemiBold, ProfileInk);
+            var stats = BuildPlayStats(runs, plays, 29, 17, FontWeights.SemiBold, ProfileInk);
             ((FrameworkElement)stats).Margin = new Thickness(4, 12, 4, 12);
             body.Children.Add(stats);
             var cal = new ActivityCalendar { EnglishOnly = true, MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 28) };

@@ -19,7 +19,19 @@ public partial class UpdateView : UserControl
     bool _open, _busy;
     int _tok;
 
-    public UpdateView() => InitializeComponent();
+    public UpdateView()
+    {
+        InitializeComponent();
+        SizeChanged += (_, _) => Fit();
+    }
+
+    /// <summary>Scales the card and its notes area with the window, within sensible bounds.</summary>
+    void Fit()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0) return;
+        Card.Width = Math.Clamp(ActualWidth * 0.4, 400, 640);
+        NotesScroll.MaxHeight = Math.Max(260, ActualHeight * 0.4);
+    }
 
     public bool IsOpen => _open;
 
@@ -41,6 +53,8 @@ public partial class UpdateView : UserControl
         Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null); Scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         Scale.ScaleX = Scale.ScaleY = 0.94;
         Visibility = Visibility.Visible;
+        UpdateLayout();
+        Fit();
         Popups.Opened(this, this, Close, () => { });
         UpdateLayout();
         Animate(true, tok);

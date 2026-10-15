@@ -705,7 +705,11 @@ public partial class SettingsView : UserControl
         ReportLogScroll.MaxHeight = Math.Clamp(e.NewSize.Height * 0.12, 110, 260);
     }
 
-    void OnReportText(object sender, TextChangedEventArgs e) => ReportBtn.IsEnabled = !_reporting && !string.IsNullOrWhiteSpace(ReportText.Text);
+    void OnReportText(object sender, TextChangedEventArgs e)
+    {
+        ReportBtn.IsEnabled = !_reporting && !string.IsNullOrWhiteSpace(ReportText.Text);
+        ReportCount.Text = $"{ReportText.Text.Length}/{ReportText.MaxLength}";
+    }
 
     async void OnReport(object sender, RoutedEventArgs e)
     {
@@ -776,9 +780,37 @@ public partial class SettingsView : UserControl
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
     }
 
-    void OnCopyDiscord(object sender, RoutedEventArgs e)
+    void OnCopyEmail(object sender, RoutedEventArgs e) => CopyAndFlash(sender, "dededed1024@icloud.com");
+
+    void OnCopyDiscord(object sender, RoutedEventArgs e) => CopyAndFlash(sender, "dededed1024");
+
+    void CopyAndFlash(object sender, string text)
     {
-        try { Clipboard.SetText("dededed1024"); } catch (System.Runtime.InteropServices.COMException ex) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("clipboard", ex, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
+        try { Clipboard.SetText(text); }
+        catch (System.Runtime.InteropServices.COMException ex)
+        {
+            KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("clipboard", ex, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low);
+            return;
+        }
+        if (sender is Button { Tag: not "flash" } btn) FlashCheck(btn);
+    }
+
+    /// <summary>Swaps the button's icon for a check mark for a moment, then restores it.</summary>
+    static void FlashCheck(Button btn)
+    {
+        var icon = btn.Content;
+        btn.Tag = "flash";
+        var check = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M2,8.5 L6,12.5 L14,3.5"),
+            Width = 16, Height = 16, Stretch = Stretch.Uniform, StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+        };
+        check.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Fg");
+        btn.Content = check;
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        timer.Tick += (_, _) => { timer.Stop(); btn.Content = icon; btn.Tag = null; };
+        timer.Start();
     }
 
     void OnLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)

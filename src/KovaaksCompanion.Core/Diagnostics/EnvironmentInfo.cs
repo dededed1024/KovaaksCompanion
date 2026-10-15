@@ -28,7 +28,7 @@ public static class EnvironmentInfo
         sb.AppendLine($"RAM: {ramBytes / (1024.0 * 1024 * 1024):0.#} GB");
         sb.AppendLine($"GPU: {(gpus.Count > 0 ? string.Join("; ", gpus) : "unknown")}");
         sb.AppendLine($"Screen: {app.Resolution}");
-        sb.AppendLine($"Video: {app.VideoQuality}, max {app.MaxFps} FPS");
+        sb.AppendLine($"Video: {app.VideoQuality}, {app.MaxFps} FPS");
         sb.Append($"Webcam: {(app.WebcamEnabled ? "on" : "off")}, {app.WebcamCount} configured");
         return sb.ToString();
     }

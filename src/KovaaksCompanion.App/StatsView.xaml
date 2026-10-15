@@ -29,7 +29,7 @@
         <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0" Margin="0,0,8,0">
             <StackPanel>
                 <!-- Profile card: laid out at one fixed design size (1753:600); the Viewbox scales everything in it together like a single image. -->
-                <Viewbox x:Name="ProfileBox" Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" Margin="0,60,0,0">
+                <Viewbox x:Name="ProfileBox" Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" Margin="0,40,0,0">
                     <Grid Width="1753">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
