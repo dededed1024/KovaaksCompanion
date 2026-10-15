@@ -73,6 +73,7 @@
   <data name="Language" xml:space="preserve"><value>언어</value></data>
   <data name="Theme" xml:space="preserve"><value>테마</value></data>
   <data name="UI size" xml:space="preserve"><value>UI 크기</value></data>
+  <data name="Developer: " xml:space="preserve"><value>개발자: </value></data>
   <data name="Playlists" xml:space="preserve"><value>플레이리스트</value></data>
   <data name="Favorite" xml:space="preserve"><value>즐겨찾기</value></data>
   <data name="Copy scenarios as image" xml:space="preserve"><value>시나리오를 이미지로 복사</value></data>

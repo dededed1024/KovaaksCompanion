@@ -689,6 +689,17 @@ public partial class SettingsView : UserControl
     void OnScrim(object sender, MouseButtonEventArgs e) => Close();
     void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
+    void OnIconLink(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url })
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+    }
+
+    void OnCopyDiscord(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText("dededed1024"); } catch (System.Runtime.InteropServices.COMException) { }
+    }
+
     void OnLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
     {
         Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
