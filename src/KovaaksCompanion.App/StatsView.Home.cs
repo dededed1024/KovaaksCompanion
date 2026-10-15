@@ -130,6 +130,7 @@ public partial class StatsView
     void RefreshHome()
     {
         if (_playlistsSlot == null) return;
+        InvalidateBrowse();
         if (_heroSlot != null) _heroSlot.Child = BuildTierHero();
         FillBrowse();
         if (_editOpen) FillProfileEditor();
@@ -938,7 +939,7 @@ public partial class StatsView
                 _host.Ui.ToggleFavoriteSession(s);
                 _host.SaveUi();
                 ShowStar();
-                if (_browseTab == "Sessions") FillBrowse();
+                if (_browseTab == "Sessions") { InvalidateBrowse(); FillBrowse(); }
             };
             if (SessionFolder(s) != null)
             {
@@ -1176,6 +1177,13 @@ public partial class StatsView
     /// <summary>When any scenario of the playlist was last played, or null.</summary>
     DateTime? LastPlayed(int id)
     {
+        if (_sortMemo == null) return LastPlayedCore(id);
+        if (!_sortMemo.LastPlayed.TryGetValue(id, out var v)) _sortMemo.LastPlayed[id] = v = LastPlayedCore(id);
+        return v;
+    }
+
+    DateTime? LastPlayedCore(int id)
+    {
         DateTime? m = null;
         foreach (var n in PlaylistScenarios(id))
             if (_book.For(n).LastPlayed is { } t && (m == null || t > m)) m = t;
@@ -1293,6 +1301,7 @@ public partial class StatsView
         FillSortBox();
         _browseBar.Children.Add(_sortBox);
         _browseHost = new Border();
+        InvalidateBrowse();
         FillBrowse();
         return _browseHost;
     }
@@ -1350,14 +1359,51 @@ public partial class StatsView
         SetHomePad(need);
     }
 
+    /// <summary>Sorted rows per tab, sort and filter. Sorting reads tier bands and scores of every scenario, so a tab or sort change reuses the list until the data changes (<see cref="InvalidateBrowse"/>).</summary>
+    readonly Dictionary<(string Tab, int Sort, bool FavOnly, bool PbOnly), List<Func<UIElement>>> _browseCache = [];
+
+    void InvalidateBrowse()
+    {
+        _browseCache.Clear();
+        _playsCache = null;
+        _sessionsCache = null;
+    }
+
+    (List<RunRecord> Plays, IReadOnlySet<RunRecord> Pbs)? _playsCache;
+    (List<PlaySession> Sessions, double RangeWidth)? _sessionsCache;
+
+    /// <summary>Every play and the personal bests among them, shared by the sort variants of the Sessions and Record tabs.</summary>
+    (List<RunRecord> Plays, IReadOnlySet<RunRecord> Pbs) BrowsePlays() => _playsCache ??= (AllPlays(), PbSet());
+
+    /// <summary>The sessions and the width of the widest time range (the number sits where it ends, so it lines up in every row); measuring text for every session is slow, so it is kept.</summary>
+    (List<PlaySession> Sessions, double RangeWidth) BrowseSessions()
+    {
+        if (_sessionsCache is { } c) return c;
+        var (plays, pbs) = BrowsePlays();
+        var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.RunCount > 0).ToList();
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var face = new Typeface(FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        var width = sessions.Select(s => new FormattedText(SessionRange(s), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face, 12, Brushes.Black, dpi).WidthIncludingTrailingWhitespace).DefaultIfEmpty(0).Max() + 2;
+        return (_sessionsCache = (sessions, width)).Value;
+    }
+
     void FillBrowseCore()
     {
         if (_browseHost == null) return;
         var tab = _browseTab;
         var cols = BrowseColumns(tab, HomeHost.Width);
         _browseCols = cols;
-        var items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
-            : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
+        var key = (tab, BrowseSort, _favOnly, _pbOnly);
+        if (!_browseCache.TryGetValue(key, out var items))
+        {
+            var memo = _sortMemo = new SortMemo();
+            try
+            {
+                _browseCache[key] = items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
+                    : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
+            }
+            finally { _sortMemo = null; SaveSortCache(memo); }
+        }
 
         var body = new StackPanel();
         if (_browseHead != null)
@@ -1539,13 +1585,7 @@ public partial class StatsView
     List<Func<UIElement>> SessionRows()
     {
         var ui = _host.Ui;
-        var plays = AllPlays();
-        var pbs = PbSet();
-        var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.RunCount > 0).ToList();
-        // the number sits where the widest time range ends, so it lines up in every row
-        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var face = new Typeface(FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-        var rangeWidth = sessions.Select(s => new FormattedText(SessionRange(s), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face, 12, Brushes.Black, dpi).WidthIncludingTrailingWhitespace).DefaultIfEmpty(0).Max() + 2;
+        var (sessions, rangeWidth) = BrowseSessions();
         var q = sessions.Select(s => (S: s, Fav: ui.IsFavoriteSession(s))).Where(i => (!_favOnly || i.Fav) && (!_pbOnly || i.S.PersonalBests > 0));
         var o = BrowseSort switch
         {
@@ -1607,9 +1647,9 @@ public partial class StatsView
     {
         var ui = _host.Ui;
         var data = TierData();
-        var pbs = PbSet();
+        var (plays, pbs) = BrowsePlays();
         var bandCache = new Dictionary<string, TierSpan>(StringComparer.OrdinalIgnoreCase);
-        var q = AllPlays()
+        var q = plays
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null,
                 Tier: BrowseSort is 2 or 3 ? TierKey(bandCache, r.Scenario, r.Score) : NoTier))
             .Where(i => (!_favOnly || i.Fav) && (!_pbOnly || pbs.Contains(i.R)));
@@ -1639,7 +1679,7 @@ public partial class StatsView
         var ranked = _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0;
         if (ranked)
         {
-            var pct = p!.OverallTier >= p.TierNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
+            var pct = p!.OverallTier >= p.TierNames.Count - 1 ? "100.00%" : $"{Math.Floor(p.OverallFraction * 10000 + 1e-6) / 100:0.00}%";
             info.Children.Add(Text($"{TierText.Label(p.OverallTierName)} · {pct}", 12, ChartPaths.TextTone(TierBrush(d, p.OverallTierName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
         }
         else info.Children.Add(Text(L.T("UNRANKED"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
@@ -1705,7 +1745,7 @@ public partial class StatsView
 
         var chart = new ScoreChart { IsHitTestVisible = false, EnglishOnly = L.Forced, MiniLineDown = 12 };
         // Not complete: the progress to the next tier as a whole number, truncated (never rounded up to 100).
-        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete, !complete && fraction is { } f ? $"{Math.Floor(Math.Clamp(f, 0, 1) * 100):0}" : null);
+        chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete, !complete && fraction is { } f ? $"{Math.Floor(Math.Clamp(f, 0, 1) * 10000 + 1e-6) / 100:0.00}" : null);
         if (cloudOf != null) _ = EnsureCloudAsync(cloudOf.Scenarios.Where(sc => sc.TierThresholds.Count > 0).Select(sc => sc.Scenario)); // a change redraws Home through the book
         chart.OpacityMask = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Colors.Transparent, 0.15), new GradientStop(Colors.White, 0.5) }, new Point(0, 0), new Point(1, 0));
 

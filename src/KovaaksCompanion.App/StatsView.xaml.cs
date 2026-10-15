@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using KovaaksCompanion.Core;
 using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Library;
 using KovaaksCompanion.Core.Replays;
@@ -585,22 +586,111 @@ public partial class StatsView : UserControl
     /// </summary>
     (BenchmarkProgress P, int Id)? TierSource(string scenario)
     {
+        if (_sortMemo is not { } memo) return TierSourceCore(scenario);
+        if (!memo.Sources.TryGetValue(scenario, out var hit)) memo.Sources[scenario] = hit = TierSourceFromDisk(memo, scenario);
+        return hit;
+    }
+
+    const int SortCacheSchema = 1;
+    const string SortCacheSig = "sig";
+    static string SortCacheFile => System.IO.Path.Combine(AppSettings.DefaultDataFolder, "cache", "browse" + CacheFile.Extension);
+
+    /// <summary>
+    /// The playlist a scenario's tiers come from, read from <c>cache/browse.cache</c> while nothing it depends on changed (see <see cref="SortCacheSignature"/>),
+    /// else found and written there for the next start.
+    /// </summary>
+    (BenchmarkProgress P, int Id)? TierSourceFromDisk(SortMemo memo, string scenario)
+    {
+        if (memo.Disk == null)
+        {
+            var sig = SortCacheSignature();
+            var all = CacheFile.Read<string>(SortCacheFile, SortCacheSchema);
+            var fresh = all.TryGetValue(SortCacheSig, out var s) && s == sig;
+            memo.Disk = fresh ? all : new(StringComparer.OrdinalIgnoreCase) { [SortCacheSig] = sig };
+            memo.DiskDirty = !fresh;
+        }
+        if (memo.Disk.TryGetValue(scenario, out var v) && int.TryParse(v, out var id))
+        {
+            if (id < 0) return null;
+            if (_progress.TryGetValue(id, out var p)) return (p, id);
+        }
+        var hit = TierSourceCore(scenario);
+        memo.Disk[scenario] = $"{hit?.Id ?? -1}";
+        memo.DiskDirty = true;
+        return hit;
+    }
+
+    /// <summary>Writes what the sort found, off the UI thread.</summary>
+    void SaveSortCache(SortMemo memo)
+    {
+        if (!memo.DiskDirty || memo.Disk == null) return;
+        var items = new Dictionary<string, string>(memo.Disk);
+        Task.Run(() => CacheFile.Write(SortCacheFile, SortCacheSchema, items));
+    }
+
+    /// <summary>Hash of everything the choice of a scenario's playlist depends on: the open playlist, the running session, and per playlist its favorite mark, the scenarios it has tiers for and when it was last played.</summary>
+    string SortCacheSignature()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(_playlist).Append('|');
+        foreach (var n in LiveScenarios().Order(StringComparer.OrdinalIgnoreCase)) sb.Append(n).Append(',');
+        foreach (var (_, d) in AllDifficulties())
+        {
+            var id = d.KovaaksBenchmarkId;
+            sb.Append('|').Append(id).Append(':').Append(_host.Ui.IsFavorite($"{id}") ? '1' : '0').Append(':').Append(LastPlayed(id)?.Ticks ?? 0).Append(':');
+            if (_progress.TryGetValue(id, out var p))
+                foreach (var sc in p.Scenarios) if (sc.TierThresholds.Count > 0) sb.Append(sc.Scenario).Append(',');
+            else sb.Append('-');
+        }
+        return Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
+    /// <summary>Answers kept while one list is sorted (see <see cref="FillBrowseCore"/>): sorting asks for the tier source of every scenario, and each ask would otherwise regroup all runs and rescan every playlist.</summary>
+    sealed class SortMemo
+    {
+        public readonly Dictionary<string, (BenchmarkProgress P, int Id)?> Sources = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<int, DateTime?> LastPlayed = [];
+        public readonly Dictionary<int, bool> InLive = [];
+        public HashSet<string>? Live;
+        public Dictionary<string, string>? Disk;
+        public bool DiskDirty;
+    }
+
+    SortMemo? _sortMemo;
+
+    (BenchmarkProgress P, int Id)? TierSourceCore(string scenario)
+    {
         (BenchmarkProgress P, int Id)? Find(int id) => _progress.TryGetValue(id, out var pr) && pr.Scenarios.Any(sc => sc.Scenario.Equals(scenario, StringComparison.OrdinalIgnoreCase) && sc.TierThresholds.Count > 0) ? (pr, id) : null;
         if (int.TryParse(_playlist, out var cur) && Find(cur) is { } sel) return sel;
 
-        var live = LiveNow() && _host.Live.Find(PlaySession.Group(_lib.AllRuns)) is { } s
-            ? s.Runs.Select(r => r.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : [];
+        var live = LiveScenarios();
+        bool InLive(int id)
+        {
+            if (_sortMemo == null) return PlaylistScenarios(id).Any(live.Contains);
+            if (!_sortMemo.InLive.TryGetValue(id, out var v)) _sortMemo.InLive[id] = v = PlaylistScenarios(id).Any(live.Contains);
+            return v;
+        }
         return AllDifficulties()
             .Select((x, order) => (Id: x.D.KovaaksBenchmarkId, Order: order))
             .Select(x => (x.Id, x.Order, Hit: Find(x.Id)))
             .Where(x => x.Hit != null)
             .OrderByDescending(x => _host.Ui.IsFavorite($"{x.Id}"))
-            .ThenByDescending(x => PlaylistScenarios(x.Id).Any(live.Contains))
+            .ThenByDescending(x => InLive(x.Id))
             .ThenByDescending(x => LastPlayed(x.Id) ?? DateTime.MinValue)
             .ThenBy(x => x.Order) // lowest playlist index
             .Select(x => x.Hit)
             .FirstOrDefault();
+    }
+
+    /// <summary>Scenarios of the running session, none when no game is active.</summary>
+    HashSet<string> LiveScenarios()
+    {
+        if (_sortMemo?.Live is { } m) return m;
+        var live = LiveNow() && _host.Live.Find(PlaySession.Group(_lib.AllRuns)) is { } s
+            ? s.Runs.Select(r => r.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
+        if (_sortMemo != null) _sortMemo.Live = live;
+        return live;
     }
 
     /// <summary>Name of the benchmark whose tiers <see cref="TierBands"/> uses for <paramref name="scenario"/>, or null.</summary>
