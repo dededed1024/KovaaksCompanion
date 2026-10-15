@@ -313,7 +313,7 @@
                             </Grid>
                                 </StackPanel>
                                 <StackPanel x:Name="ReportPanel" Grid.Column="2" Visibility="Collapsed" VerticalAlignment="Center">
-                                    <Button x:Name="ReportOpenBtn" Content="{app:Loc 'Report a bug'}" HorizontalAlignment="Right" Click="OnReportOpen"/>
+                                    <Button x:Name="ReportOpenBtn" Content="{app:Loc 'Send feedback'}" HorizontalAlignment="Right" Click="OnReportOpen"/>
                                 </StackPanel>
                             </Grid>
 
@@ -337,11 +337,11 @@
             <Border MaxWidth="480" Margin="48" HorizontalAlignment="Stretch" VerticalAlignment="Center" CornerRadius="18" Padding="20"
                     Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Edge}" BorderThickness="1">
                 <StackPanel>
-                    <TextBlock Text="{app:Loc 'Report a bug'}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"/>
+                    <TextBlock Text="{app:Loc 'Send feedback'}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"/>
                     <TextBox x:Name="ReportText" Margin="0,14,0,0" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" MaxLength="1500" Padding="12,10"
                              VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" TextChanged="OnReportText"/>
                     <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,14,0,6"
-                               Text="{app:Loc 'The following information is sent together with this report.'}"/>
+                               Text="{app:Loc 'The following information is sent together with this feedback.'}"/>
                     <Border CornerRadius="12" Background="{DynamicResource Panel}" Padding="12,10">
                         <StackPanel>
                             <TextBlock x:Name="ReportInfo" FontSize="12" Foreground="{DynamicResource Dim}" TextWrapping="Wrap"/>

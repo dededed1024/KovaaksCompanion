@@ -63,7 +63,7 @@
   <data name="Add webcam" xml:space="preserve"><value>웹캠 추가</value></data>
   <data name="About" xml:space="preserve"><value>정보</value></data>
   <data name="Check for updates" xml:space="preserve"><value>업데이트 확인</value></data>
-  <data name="Report a bug" xml:space="preserve"><value>버그 신고</value></data>
+  <data name="Send feedback" xml:space="preserve"><value>피드백 보내기</value></data>
   <data name="Unofficial. Not affiliated with KovaaK Games." xml:space="preserve"><value>KovaaK Games와 관련 없는 비공식 앱입니다.</value></data>
   <data name="Playlists from " xml:space="preserve"><value>플레이리스트 출처: </value></data>
   <data name=" (EviL)." xml:space="preserve"><value> (EviL).</value></data>
@@ -232,7 +232,7 @@
   <data name="Jerk" xml:space="preserve"><value>부드러움</value></data>
   <data name="Top 5%" xml:space="preserve"><value>상위 5%</value></data>
   <data name="Bottom 5%" xml:space="preserve"><value>하위 5%</value></data>
-  <data name="The following information is sent together with this report." xml:space="preserve"><value>다음 정보가 이 신고와 함께 전송됩니다.</value></data>
+  <data name="The following information is sent together with this feedback." xml:space="preserve"><value>다음 정보가 이 피드백과 함께 전송됩니다.</value></data>
   <data name="Application log (last 300 lines)" xml:space="preserve"><value>애플리케이션 로그 (최근 300줄)</value></data>
   <data name="Please try again in a moment" xml:space="preserve"><value>잠시 후 다시 시도해 주십시오</value></data>
   <data name="Apply" xml:space="preserve"><value>적용</value></data>

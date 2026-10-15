@@ -28,7 +28,7 @@ public static class BugReport
     /// <summary>Discord <c>payload_json</c> for a manual report: header and environment come first, so only the user text is cut at the content limit.</summary>
     public static string BuildPayloadJson(string message, string version, string env)
     {
-        var head = $"**Bug report** v{version}\n{Scrub(env)}\n";
+        var head = $"**Feedback** v{version}\n{Scrub(env)}\n";
         var content = head + Scrub(message);
         if (content.Length > MaxContent) content = content[..MaxContent];
         return JsonSerializer.Serialize(new { content });
