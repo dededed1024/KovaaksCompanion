@@ -1071,7 +1071,7 @@ public partial class ReplayView : UserControl
         head.Children.Add(legend);
         host.Children.Add(head);
 
-        const double AxisT = 1.5, Tail = 132, TailY = 12, CapMin = 0.2, CapMax = 0.95, BarH = 8, SlotH = 13, RowPad = 6, LabelW = 124, NumW = 84;
+        const double AxisT = 1.5, Tail = 132, TailY = 12, CapMin = 0.2, CapMax = 0.95, BarH = 8, Exaggerate = 2.5, SlotH = 13, RowPad = 6, LabelW = 124, NumW = 84;
         (string Name, (string Label, Func<RunSpeed, double?> Get, string Format)[] Specs)[] groups =
         [
             ("General", [speed[0], speed[1], speed[2], speed[3], time[2], ratio[1], other[1]]),
@@ -1101,10 +1101,10 @@ public partial class ReplayView : UserControl
             for (var r = 0; r < rows.Count; r++)
             {
                 var (spec, values) = rows[r];
-                // Length = (value / largest)^1.2: a small gap shows a little, a big gap shows a lot, all bars of a row shift left together by the shortest one's share, so the longest sits at CapMin of the width for close values, gaps intact, and moves out to CapMax as the spread grows.
+                // Length = (value / largest)^Exaggerate: a small gap shows a little, a big gap shows a lot, all bars of a row shift left together by the shortest one's share, so the longest sits at CapMin of the width for close values, gaps intact, and moves out to CapMax as the spread grows.
                 var hi = values.OfType<double>().DefaultIfEmpty(0).Max();
                 var lo = values.OfType<double>().DefaultIfEmpty(0).Min();
-                var low = hi > 0 ? Math.Pow(Math.Max(0, lo) / hi, 1.2) : 1;
+                var low = hi > 0 ? Math.Pow(Math.Max(0, lo) / hi, Exaggerate) : 1;
                 var shift = 1 - (CapMin + (CapMax - CapMin) * (1 - low));
                 var label = new TextBlock { Text = L.T(spec.Label), Foreground = DimB, FontSize = 12.5, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, RowPad, 8, RowPad) };
                 Grid.SetRow(label, r);
@@ -1124,7 +1124,7 @@ public partial class ReplayView : UserControl
                 for (var i = 0; i < lines.Count; i++)
                 {
                     if (values[i] is not { } y) continue;
-                    var frac = hi > 0 ? Math.Max(0.01, Math.Pow(Math.Max(0, y) / hi, 1.2) - shift) : 0;
+                    var frac = hi > 0 ? Math.Max(0.01, Math.Pow(Math.Max(0, y) / hi, Exaggerate) - shift) : 0;
                     nums.Children.Add(new TextBlock { Text = Show(y, spec.Format), Foreground = FgB, FontSize = 12, Height = SlotH, TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, LineHeight = SlotH });
                     var bar = new Grid { Height = SlotH };
                     bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(frac, 0.0001), GridUnitType.Star) });
