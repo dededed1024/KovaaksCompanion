@@ -382,14 +382,12 @@ public sealed class BenchmarkTable : UserControl
         score.Children.Add(Tab(new TextBlock
         {
             Text = row.Best is { } b ? b.ToString("0.#", CultureInfo.InvariantCulture) : "–", FontSize = 15, FontWeight = FontWeights.SemiBold,
-            Foreground = row.Best == null || rowBrush == null ? dim : ChartPaths.TextTone(rowBrush), VerticalAlignment = VerticalAlignment.Center,
+            Foreground = row.Best == null ? dim : fg, VerticalAlignment = VerticalAlignment.Center,
         }));
         Add(score, 1);
 
         Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100%" : $"{pos.Fraction * 100:0}%", 13, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
 
-        var sepText = Argb("#66FFFFFF");
-        var nextText = Argb("#B3FFFFFF");
         for (var k = 1; k <= tiers; k++)
         {
             // A 14px gutter column after the last tier keeps it short of the card's right edge, matching the 16px the name has on the left (the shape adds its own 2px inset).
@@ -420,7 +418,7 @@ public sealed class BenchmarkTable : UserControl
                 var tb = new TextBlock
                 {
                     Text = row.Maxes[k - 1].ToString("#,0.##", CultureInfo.InvariantCulture), FontSize = 13.5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = reached ? fg : next ? nextText : sepText, FontWeight = reached ? FontWeights.SemiBold : FontWeights.Normal,
+                    Foreground = fg, FontWeight = FontWeights.Normal,
                 };
                 if (next && row.Best != null) tb.Margin = new Thickness(0, 0, 0, 4);
                 System.Windows.Documents.Typography.SetNumeralAlignment(tb, FontNumeralAlignment.Tabular);
