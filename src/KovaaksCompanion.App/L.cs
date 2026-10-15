@@ -10,16 +10,39 @@ public static class L
     public static readonly (string Code, string Name)[] Languages = [("en", "English"), ("ko", "한국어")];
 
     static ResourceManager? _rm;
-    public static string Code { get; private set; } = "en";
-    public static CultureInfo Culture { get; private set; } = CultureInfo.InvariantCulture;
+    static string _code = "en";
+    static CultureInfo _culture = CultureInfo.InvariantCulture;
+    [ThreadStatic] static int _forceEnglish;
+    /// <summary>True inside an <see cref="English"/> scope.</summary>
+    public static bool Forced => _forceEnglish > 0;
+    public static string Code => _forceEnglish > 0 ? "en" : _code;
+    public static CultureInfo Culture => _forceEnglish > 0 ? CultureInfo.InvariantCulture : _culture;
+
+    sealed class EnglishScope : IDisposable
+    {
+        public void Dispose() => _forceEnglish--;
+    }
+
+    /// <summary>Until disposed, text lookups on this thread return the English source text and dates use US English, whatever language is selected (the profile card is always English).</summary>
+    public static IDisposable English(bool on = true)
+    {
+        if (on) _forceEnglish++;
+        return on ? new EnglishScope() : NoScope.Instance;
+    }
+
+    sealed class NoScope : IDisposable
+    {
+        public static readonly NoScope Instance = new();
+        public void Dispose() { }
+    }
 
     /// <summary>Picks the language: a known code, or Windows' UI language when empty/unknown.</summary>
     public static void Set(string? code)
     {
         var c = (code ?? "").Trim().ToLowerInvariant();
         if (!Languages.Any(l => l.Code == c)) c = Languages.Any(l => l.Code == CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) ? CultureInfo.CurrentUICulture.TwoLetterISOLanguageName : "en";
-        Code = c;
-        Culture = c == "en" ? CultureInfo.InvariantCulture : CultureInfo.GetCultureInfo(c);
+        _code = c;
+        _culture = c == "en" ? CultureInfo.InvariantCulture : CultureInfo.GetCultureInfo(c);
         _rm = c == "en" ? null : new ResourceManager("KovaaksCompanion.App.Resources.Strings_" + c, typeof(L).Assembly);
     }
 
@@ -33,7 +56,7 @@ public static class L
 
     public static string T(string key)
     {
-        if (_rm == null) return key;
+        if (_rm == null || _forceEnglish > 0) return key;
         try { return _rm.GetString(key, CultureInfo.InvariantCulture) ?? key; }
         catch (MissingManifestResourceException) { return key; }
     }

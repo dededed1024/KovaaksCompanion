@@ -104,7 +104,7 @@ public partial class SettingsView : UserControl
         // A preset shows its own background on the wheel and the slider, so touching them continues from what is on screen; the saved Custom pick is kept until then.
         var (hue, sat, val) = theme == "Custom" ? (s.CustomHue, s.CustomSaturation, s.CustomBrightness) : Theme.ToHsv(Theme.Swatch(theme).Bg);
         Wheel.Pick = (hue, sat);
-        Wheel.Active = theme == "Custom";
+        Wheel.Active = true;
         BrightnessSlider.Value = Math.Clamp(val, 0.1, 0.95) * 100;
         Wheel.Brightness = val;
         GrainSlider.Value = s.Grain;
@@ -692,6 +692,14 @@ public partial class SettingsView : UserControl
     static DateTime _lastReport = DateTime.MinValue;
     bool _reporting;
 
+    // The feedback popup grows with the window so it does not look tiny on a high-resolution monitor.
+    void OnReportOverlaySized(object sender, SizeChangedEventArgs e)
+    {
+        ReportCard.MaxWidth = Math.Clamp(e.NewSize.Width * 0.45, 480, 900);
+        ReportText.MinHeight = Math.Clamp(e.NewSize.Height * 0.16, 120, 300);
+        ReportLogScroll.MaxHeight = Math.Clamp(e.NewSize.Height * 0.12, 110, 260);
+    }
+
     void OnReportText(object sender, TextChangedEventArgs e) => ReportBtn.IsEnabled = !_reporting && !string.IsNullOrWhiteSpace(ReportText.Text);
 
     async void OnReport(object sender, RoutedEventArgs e)
@@ -765,7 +773,7 @@ public partial class SettingsView : UserControl
 
     void OnCopyDiscord(object sender, RoutedEventArgs e)
     {
-        try { Clipboard.SetText("dededed1024"); } catch (System.Runtime.InteropServices.COMException) { }
+        try { Clipboard.SetText("dededed1024"); } catch (System.Runtime.InteropServices.COMException ex) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("clipboard", ex, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
     }
 
     void OnLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)

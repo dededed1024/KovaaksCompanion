@@ -167,7 +167,15 @@ public sealed class ActivityCalendar : FrameworkElement
 
     Rect CellRect(int week, int row) => new(OffX + LeftW + week * (Cell + Gap), MonthH + row * (Cell + Gap), Cell, Cell);
 
+    /// <summary>Draws all text in English whatever the app language (the profile card).</summary>
+    public bool EnglishOnly { get; set; }
+
     protected override void OnRender(DrawingContext dc)
+    {
+        using (L.English(EnglishOnly)) RenderCore(dc);
+    }
+
+    void RenderCore(DrawingContext dc)
     {
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;

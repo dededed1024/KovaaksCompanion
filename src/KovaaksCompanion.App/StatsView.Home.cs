@@ -52,7 +52,7 @@ public partial class StatsView
         if (_liveCard != null && !_popupOpen && HomeScroll.IsVisible && _liveCard.IsDescendantOf(HomeScroll) && HomeScroll.ActualHeight > 0)
         {
             try { want = _liveCard.TransformToAncestor(HomeScroll).Transform(new Point(0, 0)).Y >= HomeScroll.ActualHeight; }
-            catch (InvalidOperationException) { }
+            catch (InvalidOperationException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("home view", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
         }
         if (want == _livePillOn) return;
         _livePillOn = want;
@@ -183,16 +183,16 @@ public partial class StatsView
                 cal.Set(_book.PlaysPerDay, ChartPaths.TextTone((Brush)FindResource("Accent")));
                 cal.PbDays = _book.PersonalBestDays;
                 cal.LiveDay = LiveNow() ? DateTime.Today : null;
-            }, calendarShare: 2.4, maxCell: 42, maxWeeks: 24, stackBelow: 1000);
+            }, calendarShare: 2.4, maxCell: 26, maxWeeks: 24, stackBelow: 1000);
 
             if (activityCard is Border activityBorder)
             {
-                activityBorder.Padding = new Thickness(8, 16, 8, 8);
+                activityBorder.Padding = new Thickness(8, 12, 8, 8);
                 var wrapper = new StackPanel();
                 var inner = activityBorder.Child;
                 activityBorder.Child = null;
-                wrapper.Children.Add(BuildPlayStats(runs, plays));
-                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 12, 16, 24) });
+                wrapper.Children.Add(BuildPlayStats(runs, plays, 24, 13, FontWeights.Medium));
+                wrapper.Children.Add(new Border { Height = 1, Background = Solid("#14FFFFFF"), Margin = new Thickness(16, 8, 16, 14) });
                 wrapper.Children.Add(inner ?? new Border());
                 activityBorder.Child = wrapper;
             }
@@ -1561,7 +1561,7 @@ public partial class StatsView
         diff.Opacity = 0.65;
         info.Children.Add(diff);
 
-        var chart = new ScoreChart { IsHitTestVisible = false, MiniLineDown = 12 };
+        var chart = new ScoreChart { IsHitTestVisible = false, EnglishOnly = L.Forced, MiniLineDown = 12 };
         // Not complete: the progress to the next tier as a whole number, truncated (never rounded up to 100).
         chart.SetMini(history.Select(h => (h.Day, h.Value)).ToList(), tier, watermark, complete, !complete && fraction is { } f ? $"{Math.Floor(Math.Clamp(f, 0, 1) * 100):0}" : null);
         if (cloudOf != null) _ = EnsureCloudAsync(cloudOf.Scenarios.Where(sc => sc.TierThresholds.Count > 0).Select(sc => sc.Scenario)); // a change redraws Home through the book

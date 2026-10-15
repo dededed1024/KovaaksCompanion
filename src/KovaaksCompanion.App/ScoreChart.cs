@@ -426,7 +426,15 @@ public sealed class ScoreChart : FrameworkElement
         return (left, Math.Max(1, w - left - Right - axesW), Math.Max(1, h - Top - Bottom), lo, hi, ticks, ScoreOn ? bands : new List<ChartBand>());
     }
 
+    /// <summary>Draws all text in English whatever the app language (the profile card).</summary>
+    public bool EnglishOnly { get; set; }
+
     protected override void OnRender(DrawingContext dc)
+    {
+        using (L.English(EnglishOnly)) RenderCore(dc);
+    }
+
+    void RenderCore(DrawingContext dc)
     {
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;

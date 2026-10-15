@@ -87,7 +87,7 @@ public partial class StatsView
             _profileCapturing = false;
             foreach (var c in charts) { c.EndManualDrift(); c.Marquee = _host.Ui.ProfileAnimated; }
             if (_profileAddBox != null) { _profileAddBox.Visibility = Visibility.Visible; RefitProfile(); }
-            if (!ok) { try { File.Delete(file); } catch { } }
+            if (!ok) { try { File.Delete(file); } catch (Exception e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("profile gif delete", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); } }
             _gifBusy = false;
         }
         if (ok)

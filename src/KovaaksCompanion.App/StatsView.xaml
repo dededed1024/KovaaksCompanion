@@ -28,7 +28,7 @@
         <!-- Home: the whole page -->
         <ScrollViewer x:Name="HomeScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" Padding="32,0,32,0" Margin="0,0,8,0">
             <StackPanel>
-                <!-- Profile card: laid out at one fixed design size (23:9); the Viewbox scales everything in it together like a single image. -->
+                <!-- Profile card: laid out at one fixed design size (1753:600); the Viewbox scales everything in it together like a single image. -->
                 <Viewbox x:Name="ProfileBox" Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center" Margin="0,60,0,0">
                     <Grid Width="1753">
                         <Grid.RowDefinitions>
@@ -37,7 +37,7 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
-                        <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="686" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="{DynamicResource Surface}"
+                        <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="600" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="{DynamicResource Surface}"
                                 BorderBrush="{DynamicResource Edge}" BorderThickness="0">
                             <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
                         </Border>

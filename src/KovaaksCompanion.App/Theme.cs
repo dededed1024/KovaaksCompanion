@@ -79,11 +79,11 @@ public static class Theme
         return d;
     }
 
-    /// <summary>The colored themes in palette order, then black, dark gray and white at the far end.</summary>
-    public static readonly string[] Names = [.. Presets, "Custom"];
-
     /// <summary>The themes with a chip of their own; Custom is the wheel.</summary>
     public static readonly string[] Presets = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light"];
+
+    /// <summary>The colored themes in palette order, then black, dark gray and white at the far end.</summary>
+    public static readonly string[] Names = [.. Presets, "Custom"];
 
     static readonly Dictionary<string, string> Dark = new()
     {

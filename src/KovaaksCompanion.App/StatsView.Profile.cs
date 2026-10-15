@@ -188,6 +188,7 @@ public partial class StatsView
             if (c == "#FFFFFF") Dot("");
             Dot(c);
         }
+        AddCustomAccent();
 
         // Motion toggle: on = drifting watermark, off = the static look a capture has.
         var anim = _host.Ui.ProfileAnimated;
@@ -269,7 +270,52 @@ public partial class StatsView
         ProfileTools.Children.Add(copy);
     }
 
+    /// <summary>A rainbow dot after the preset colors: opens the theme's color wheel and brightness slider to pick any accent.</summary>
+    void AddCustomAccent()
+    {
+        var cur = _host.Ui.ProfileAccent;
+        var custom = cur.Length > 0 && !ProfileColors.Contains(cur, StringComparer.OrdinalIgnoreCase);
+        var (h0, s0, v0) = custom && ProfileAccent is SolidColorBrush cb ? Theme.ToHsv(cb.Color) : (0.0, 0.0, 1.0);
+        var rainbow = new ColorWheel { Width = 16, Height = 16, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var ring = new Ellipse { Width = 22, Height = 22, Stroke = custom ? FgB : Brushes.Transparent, StrokeThickness = 2 };
+        var dot = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        dot.Children.Add(ring);
+        dot.Children.Add(rainbow);
+        dot.MouseEnter += (_, _) => { if (!custom) ring.Stroke = SolidFixed("#66FFFFFF"); };
+        dot.MouseLeave += (_, _) => { if (!custom) ring.Stroke = Brushes.Transparent; };
+
+        var wheel = new ColorWheel { Width = 140, Height = 140, Pick = (h0, s0), Brightness = v0, Active = custom };
+        var slider = new Slider { Minimum = 20, Maximum = 100, Value = v0 * 100, Height = 30, Width = 140, Margin = new Thickness(0, 10, 0, 0) };
+        void Apply(bool final)
+        {
+            var (h, sat) = wheel.Pick;
+            wheel.Brightness = slider.Value / 100;
+            var c = Theme.FromHsv(h, sat, slider.Value / 100);
+            _host.Ui.ProfileAccent = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+            ApplyProfileAccent();
+            if (final) { _host.SaveUi(); FillProfile(); }
+        }
+        wheel.Picking += () => Apply(false);
+        wheel.Picked += () => Apply(true);
+        slider.ValueChanged += (_, _) => { if (wheel.Active) Apply(false); };
+        slider.PreviewMouseLeftButtonUp += (_, _) => { if (wheel.Active) Apply(true); };
+        var pop = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = dot, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true,
+            Child = new Border { Background = (Brush)FindResource("Surface"), BorderBrush = SolidFixed("#1FFFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(12), Margin = new Thickness(0, 6, 0, 8), Child = new StackPanel { Children = { wheel, slider } } },
+        };
+        // Rebuilding the tools swaps the dot (and its ring) for the final color once the popup is closed.
+        pop.Closed += (_, _) => BuildProfileTools();
+        dot.MouseLeftButtonUp += (_, _) => pop.IsOpen = true;
+        ProfileTools.Children.Add(dot);
+    }
+
     void FillProfile()
+    {
+        using (L.English()) FillProfileCore();
+    }
+
+    void FillProfileCore()
     {
         ProfileHost.Children.Clear();
         ProfileHost.ColumnDefinitions.Clear();
@@ -301,7 +347,7 @@ public partial class StatsView
             var stats = BuildPlayStats(runs, plays, 26, 16, FontWeights.SemiBold, ProfileInk);
             ((FrameworkElement)stats).Margin = new Thickness(4, 12, 4, 12);
             body.Children.Add(stats);
-            var cal = new ActivityCalendar { MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 28) };
+            var cal = new ActivityCalendar { EnglishOnly = true, MaxCell = 42, MaxWeeks = 22, ShowLabels = false, Margin = new Thickness(4, 0, 4, 28) };
             cal.Light = ProfileLight;
             cal.Set(_book.PlaysPerDay, ProfileTone);
             cal.PbDays = _book.PersonalBestDays;
@@ -614,6 +660,6 @@ public partial class StatsView
     {
         var old = _host.Ui.ProfileImage;
         if (old.Length == 0) return;
-        try { if (Path.GetFileName(old).StartsWith("profile-", StringComparison.Ordinal)) File.Delete(old); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try { if (Path.GetFileName(old).StartsWith("profile-", StringComparison.Ordinal)) File.Delete(old); } catch (IOException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("profile image delete", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); } catch (UnauthorizedAccessException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("profile image delete", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
     }
 }

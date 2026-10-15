@@ -84,7 +84,7 @@ public partial class StatsView
                 ShowSync(0, 0);
                 var bests = await _api.GetBestScoresAsync(user, ct);
                 if (bests.Count == 0) return;
-                await Task.Run(() => { try { store.SaveCloudBests(bests); } catch (IOException) { } });
+                await Task.Run(() => { try { store.SaveCloudBests(bests); } catch (IOException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("cloud bests save", e); } });
                 foreach (var (n, v) in bests)
                 {
                     if (v > _archivedBest.GetValueOrDefault(n)) _archivedBest[n] = v;
@@ -109,7 +109,7 @@ public partial class StatsView
             if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         }
         catch (OperationCanceledException) { }
-        catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: the next reload tries again
+        catch (Exception e) when (!ct.IsCancellationRequested) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("cloud load", e); } // offline or rate limited: the next reload tries again
         finally { _syncing = false; HideSync(); UpdateTierMarks(false); } // server-side changes are no celebration
     }
 
@@ -198,13 +198,13 @@ public partial class StatsView
                     _everFetched.Add(n);
                     changed |= RememberCloud(n, store.WithCached(n, l));
                 }
-                catch (Exception) when (!ct.IsCancellationRequested) { } // offline or rate limited: keep what is cached
+                catch (Exception e) when (!ct.IsCancellationRequested) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("scores load", e); } // offline or rate limited: keep what is cached
                 finally { gate.Release(); progress?.Report(++finished); }
             }));
-            if (fresh.Count > 0) _ = Task.Run(() => { try { store.SaveScoresBatch(fresh); } catch (IOException) { } });
+            if (fresh.Count > 0) _ = Task.Run(() => { try { store.SaveScoresBatch(fresh); } catch (IOException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("scores save", e); } });
         }
         catch (OperationCanceledException) { }
-        catch (Exception) when (!ct.IsCancellationRequested) { }
+        catch (Exception e) when (!ct.IsCancellationRequested) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("scores reload", e); }
         finally { foreach (var n in stale) _cloudInflight.Remove(n); }
         return changed;
     }
