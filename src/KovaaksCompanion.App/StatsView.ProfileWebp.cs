@@ -36,7 +36,7 @@ public partial class StatsView
 
             var w = ProfileCard.ActualWidth; var h = ProfileCard.ActualHeight;
             var off = VisualTreeHelper.GetOffset(ProfileCard);
-            var k = Math.Min(1, 1200 / w);
+            var k = Math.Min(2, 1600 / w); // up to twice the screen size, 1600 px wide at most
             int ox = (int)Math.Round(off.X * k), oy = (int)Math.Round(off.Y * k);
             int cw = (int)Math.Round(w * k), ch = (int)Math.Round(h * k);
             var rect = new Int32Rect(ox, oy, cw, ch);

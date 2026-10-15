@@ -200,12 +200,13 @@ public partial class StatsView
                 if (_profileAddBox != null) { _profileAddBox.Visibility = Visibility.Collapsed; RefitProfile(); }
                 ProfileCard.UpdateLayout();
                 var dpi = VisualTreeHelper.GetDpi(ProfileCard);
+                const double sharp = 2; // the card is painted at twice the screen resolution, so the picture stays crisp when shared and zoomed
                 var w = ProfileCard.ActualWidth; var h = ProfileCard.ActualHeight;
                 // Render(visual) paints the card at its offset inside its parent (here below the tools row), so render with that offset and crop it away again.
                 var off = VisualTreeHelper.GetOffset(ProfileCard);
-                int ox = (int)Math.Round(off.X * dpi.DpiScaleX), oy = (int)Math.Round(off.Y * dpi.DpiScaleY);
-                int cw = (int)Math.Ceiling(w * dpi.DpiScaleX), ch = (int)Math.Ceiling(h * dpi.DpiScaleY);
-                var rtb = new RenderTargetBitmap(ox + cw, oy + ch, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                int ox = (int)Math.Round(off.X * dpi.DpiScaleX * sharp), oy = (int)Math.Round(off.Y * dpi.DpiScaleY * sharp);
+                int cw = (int)Math.Ceiling(w * dpi.DpiScaleX * sharp), ch = (int)Math.Ceiling(h * dpi.DpiScaleY * sharp);
+                var rtb = new RenderTargetBitmap(ox + cw, oy + ch, dpi.PixelsPerInchX * sharp, dpi.PixelsPerInchY * sharp, PixelFormats.Pbgra32);
                 // The open animation's scale and the drop shadow (a costly blur over the whole card) are switched off while painting.
                 var effect = ProfileCard.Effect;
                 var xform = ProfileCard.RenderTransform;
