@@ -2,6 +2,7 @@
 using System.IO;
 using System.Windows;
 using KovaaksCompanion.Core;
+using KovaaksCompanion.Core.Benchmarks;
 using KovaaksCompanion.Core.Diagnostics;
 using KovaaksCompanion.Core.Input;
 using KovaaksCompanion.Core.Library;
@@ -138,6 +139,26 @@ public sealed class AppHost : IDisposable
     }
 
     void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
+
+    /// <summary>The tier name the run's score reaches, from the bundled thresholds of a favorite playlist that has the scenario (else the first that does); null when none or below tier 1.</summary>
+    string? TierNameOf(KovaaksCompanion.Core.Stats.RunStats run)
+    {
+        try
+        {
+            var hits = BenchmarkCatalog.All.SelectMany(b => b.Difficulties).DistinctBy(d => d.KovaaksBenchmarkId)
+                .Select(d => (d.KovaaksBenchmarkId, Data: TierData.Get(d.KovaaksBenchmarkId)))
+                .Where(x => x.Data != null)
+                .Select(x => (x.KovaaksBenchmarkId, x.Data, Sc: x.Data!.Categories.SelectMany(c => c.Scenarios)
+                    .FirstOrDefault(s => s.TierThresholds.Count > 0 && s.Name.Equals(run.Scenario, StringComparison.OrdinalIgnoreCase))))
+                .Where(x => x.Sc != null)
+                .OrderByDescending(x => Ui.IsFavorite($"{x.KovaaksBenchmarkId}"))
+                .FirstOrDefault();
+            if (hits.Sc == null) return null;
+            var tier = TierLadder.TierOf(run.Score, hits.Sc.TierThresholds).Tier;
+            return tier > 0 && tier < hits.Data!.TierNames.Count ? hits.Data.TierNames[tier] : null;
+        }
+        catch (Exception e) { AppLog.Write("error", $"tier lookup failed: {e.Message}"); return null; }
+    }
 
     readonly object _cleanGate = new();
 
@@ -314,7 +335,7 @@ public sealed class AppHost : IDisposable
 
         _saver = new ReplaySaver(_settings.OpenReplays(), _buffer, ClockAnchor.Now,
             (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null),
-            IsPersonalBest, SessionOf, () => _settings.VideoPbOnly);
+            IsPersonalBest, SessionOf, () => _settings.VideoPbOnly, TierNameOf);
         _saver.Error += SetError;
         _saver.Saved += info =>
         {

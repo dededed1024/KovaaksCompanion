@@ -84,8 +84,8 @@ public sealed class ReplayArchive(string archiveFolder, string videoFolder)
     public void Update(ReplayInfo info) => _db.PutReplay(info.Id, info.Scenario, info.Start, info.End, info.ToJson());
 
     /// <summary>The relative path of a new video: <paramref name="sessionFolder"/> (empty = the videos folder itself), then the run's name. No file has it yet.</summary>
-    public string NewVideoFile(string sessionFolder, DateTime start, string scenario, double score, bool personalBest)
-        => FreeVideoFile(Path.Combine(sessionFolder, ReplayFolder.Name(start, scenario, score, personalBest)));
+    public string NewVideoFile(string sessionFolder, DateTime start, string scenario, double score, bool personalBest, string? tier = null)
+        => FreeVideoFile(Path.Combine(sessionFolder, ReplayFolder.Name(start, scenario, score, personalBest, tier)));
 
     /// <summary><paramref name="stem"/> (relative, no extension) plus the extension, numbered <c>_2</c>, <c>_3</c>... until no file has the name.</summary>
     string FreeVideoFile(string stem)

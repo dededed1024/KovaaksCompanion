@@ -19,6 +19,7 @@ public sealed class ReplaySaver
     readonly Func<RunStats, bool> _isPersonalBest;
     readonly Func<RunStats, (DateTime Since, Guid Id)> _session;
     readonly Func<bool>? _pbOnly;
+    readonly Func<RunStats, string?>? _tier;
 
     public event Action<ReplayInfo>? Saved;
     public event Action<string>? Error;
@@ -27,9 +28,10 @@ public sealed class ReplaySaver
     /// <param name="isPersonalBest">Whether the run beat every earlier run of its scenario; marks the video file name with PB.</param>
     /// <param name="session">The play session a run belongs to: when it began and its id. The video goes in that session's folder.</param>
     /// <param name="pbOnly">Read per run: when true, only a personal best keeps its video clip.</param>
-    public ReplaySaver(ReplayArchive archive, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest, Func<RunStats, (DateTime Since, Guid Id)> session, Func<bool>? pbOnly = null)
+    /// <param name="tier">The tier name the run's score reaches, or null; goes into the video file name.</param>
+    public ReplaySaver(ReplayArchive archive, MouseRingBuffer buffer, Func<ClockAnchor> anchor, ClipExtractor extract, Func<RunStats, bool> isPersonalBest, Func<RunStats, (DateTime Since, Guid Id)> session, Func<bool>? pbOnly = null, Func<RunStats, string?>? tier = null)
     {
-        _archive = archive; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest; _session = session; _pbOnly = pbOnly;
+        _archive = archive; _buffer = buffer; _anchor = anchor; _extract = extract; _isPersonalBest = isPersonalBest; _session = session; _pbOnly = pbOnly; _tier = tier;
     }
 
     /// <summary>Fire-and-forget save on a thread-pool thread; failures go to <see cref="Error"/>.</summary>
@@ -40,7 +42,7 @@ public sealed class ReplaySaver
     });
 
     /// <summary>The .perf is written a moment after the CSV; for a fresh CSV wait briefly, and skip it when it never shows up.</summary>
-    static async Task<byte[]?> ReadPerfAsync(string csvPath)
+    static async Task<PerfData?> ReadPerfAsync(string csvPath)
     {
         var perf = PerfParser.PathFor(csvPath);
         var attempts = DateTime.Now - File.GetLastWriteTime(csvPath) < TimeSpan.FromSeconds(10) ? 20 : 1;
@@ -50,7 +52,7 @@ public sealed class ReplaySaver
             {
                 if (File.Exists(perf)) return PerfParser.Parse(await File.ReadAllBytesAsync(perf));
             }
-            catch (IOException) { } // still being written
+            catch (Exception e) when (e is IOException or PerfFormatException) { } // still being written
             if (i < attempts - 1) await Task.Delay(250);
         }
         return null;
@@ -61,7 +63,7 @@ public sealed class ReplaySaver
         var pb = _isPersonalBest(run); // asked once: it also records the run as the new best
         var (since, sessionId) = _session(run);
         var folder = ReplayArchive.SessionFolder(since, sessionId);
-        var videoFile = _archive.NewVideoFile(folder, run.Start, run.Scenario, run.Score, pb);
+        var videoFile = _archive.NewVideoFile(folder, run.Start, run.Scenario, run.Score, pb, _tier?.Invoke(run));
         var videoPath = _archive.VideoPathOf(videoFile);
         _archive.EnsureVideoFolder(videoFile);
 
