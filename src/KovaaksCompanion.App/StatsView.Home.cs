@@ -1438,7 +1438,7 @@ public partial class StatsView
     {
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        foreach (var w in new double[] { 84, 100, 56, 76, 36 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
+        foreach (var w in new double[] { 84, 100, 56, 88, 36 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
         void Put(FrameworkElement e, int col, HorizontalAlignment h)
         {
             e.VerticalAlignment = VerticalAlignment.Center; e.HorizontalAlignment = h;
@@ -1463,7 +1463,7 @@ public partial class StatsView
         if (s.PersonalBests > 0)
         {
             var green = (Brush)FindResource("Green");
-            var badge = new Grid { Margin = new Thickness(0, 0, 12, 0) };
+            var badge = new Grid { Margin = new Thickness(12, 0, 0, 0) };
             badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.35 });
             badge.Children.Add(new TextBlock { Text = s.PersonalBests >= 2 ? L.F("PB ×{0}", s.PersonalBests) : L.T("PB"), Foreground = green, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 3, 10, 3) });
             Put(badge, 4, HorizontalAlignment.Left);
