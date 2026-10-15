@@ -241,19 +241,18 @@
   <data name="Flick" xml:space="preserve"><value>플릭</value></data>
   <data name="Average speed" xml:space="preserve"><value>평균 속도</value></data>
   <data name="Firing speed" xml:space="preserve"><value>발사 중 속도</value></data>
-  <data name="Peak speed" xml:space="preserve"><value>최고 속도</value></data>
   <data name="Direction changes" xml:space="preserve"><value>방향 전환</value></data>
-  <data name="Firing time" xml:space="preserve"><value>발사한 시간 비율</value></data>
-  <data name="Max speed" xml:space="preserve"><value>최대 속도</value></data>
-  <data name="Non-firing speed" xml:space="preserve"><value>비발사 시 속도</value></data>
+  <data name="Firing time" xml:space="preserve"><value>발사 시간 비율</value></data>
+  <data name="Max speed" xml:space="preserve"><value>최고 속도</value></data>
+  <data name="Non-firing speed" xml:space="preserve"><value>미발사 시 속도</value></data>
   <data name="Flick distance" xml:space="preserve"><value>플릭 거리</value></data>
   <data name="Peak flick speed" xml:space="preserve"><value>플릭 최고 속도</value></data>
   <data name="Flick time" xml:space="preserve"><value>플릭 시간</value></data>
   <data name="Reaction time" xml:space="preserve"><value>반응 시간</value></data>
   <data name="Path efficiency" xml:space="preserve"><value>경로 효율</value></data>
   <data name="Time between kills" xml:space="preserve"><value>킬 간격</value></data>
-  <data name="Speed variation" xml:space="preserve"><value>속도 일관성</value></data>
-  <data name="Jerk" xml:space="preserve"><value>부드러움</value></data>
+  <data name="Speed variation" xml:space="preserve"><value>속도 편차</value></data>
+  <data name="Jerk" xml:space="preserve"><value>급변도</value></data>
   <data name="Top 5%" xml:space="preserve"><value>상위 5%</value></data>
   <data name="Bottom 5%" xml:space="preserve"><value>하위 5%</value></data>
   <data name="The following information is sent together with this feedback." xml:space="preserve"><value>다음 정보가 이 피드백과 함께 전송됩니다.</value></data>
