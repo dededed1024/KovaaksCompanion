@@ -120,6 +120,7 @@ internal sealed class ArchiveDb(string file)
             CREATE TABLE IF NOT EXISTS sessions(key TEXT NOT NULL PRIMARY KEY, id TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bests(scenario TEXT NOT NULL COLLATE NOCASE PRIMARY KEY, score REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS meta(key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS favorites(kind TEXT NOT NULL, key TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(kind, key));
             CREATE TABLE IF NOT EXISTS replays(id TEXT NOT NULL PRIMARY KEY, scenario TEXT NOT NULL COLLATE NOCASE, started INTEGER NOT NULL, ended INTEGER NOT NULL, info TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS replays_run ON replays(scenario, ended);
             CREATE INDEX IF NOT EXISTS replays_ended ON replays(ended);
@@ -337,13 +338,13 @@ internal sealed class ArchiveDb(string file)
                 var old = Load(c, n).GetValueOrDefault(n);
                 var next = change(n, old);
                 // Only the rows that differ are written. Unreadable rows are not in <old>, so they are never deleted here.
-                var had = (old?.Runs ?? []).ToDictionary(r => (r.Time.Ticks, r.Score), r => r.Record != null);
+                var had = (old?.Runs ?? []).ToDictionary(r => (r.Time.Ticks, r.Score), r => r.Record);
                 var keep = new HashSet<(long, double)>();
                 foreach (var r in next.Runs)
                 {
                     var key = (r.Time.Ticks, r.Score);
                     keep.Add(key);
-                    if (had.TryGetValue(key, out var hadRecord) && hadRecord == (r.Record != null)) continue;
+                    if (had.TryGetValue(key, out var hadRecord) && Equals(hadRecord, r.Record)) continue;
                     var payload = JsonSerializer.SerializeToUtf8Bytes(new RowPayload(n, r.Time, r.Score, r.Record));
                     insert.Run(n, r.Time.Ticks, r.Score, r.Record != null ? 1 : 0, payload);
                 }
@@ -421,6 +422,48 @@ internal sealed class ArchiveDb(string file)
         m.CommandText = "SELECT 1 FROM meta WHERE key=$k";
         m.Parameters.AddWithValue("$k", BestsSyncedKey);
         return m.ExecuteScalar() != null;
+    });
+
+    // ---- favorites -------------------------------------------------------------------------------------------------------
+
+    const string FavoritesKey = "favorites-migrated";
+
+    /// <summary>Favorite keys per kind (see <see cref="UiState"/>), oldest first; null until the favorites were first stored here.</summary>
+    public Dictionary<string, List<string>>? ReadFavorites() => Run(() =>
+    {
+        using var c = Open();
+        using (var q = c.CreateCommand())
+        {
+            q.CommandText = "SELECT 1 FROM meta WHERE key=$k";
+            q.Parameters.AddWithValue("$k", FavoritesKey);
+            if (q.ExecuteScalar() == null) return null;
+        }
+        using var m = c.CreateCommand();
+        m.CommandText = "SELECT kind, key FROM favorites ORDER BY seq";
+        using var r = m.ExecuteReader();
+        var map = new Dictionary<string, List<string>>();
+        while (r.Read())
+        {
+            if (!map.TryGetValue(r.GetString(0), out var list)) map[r.GetString(0)] = list = [];
+            list.Add(r.GetString(1));
+        }
+        return map;
+    });
+
+    /// <summary>Replaces all favorites with <paramref name="favorites"/> (kind to keys, oldest first) in one transaction.</summary>
+    public void SaveFavorites(IReadOnlyDictionary<string, IReadOnlyList<string>> favorites) => Run(() =>
+    {
+        using var c = Open();
+        InTransaction(c, () =>
+        {
+            Exec(c, "DELETE FROM favorites");
+            using var insert = new Stmt(c, "INSERT OR IGNORE INTO favorites VALUES($kind, $key, $seq)", "$kind", "$key", "$seq");
+            var seq = 0;
+            foreach (var (kind, keys) in favorites)
+                foreach (var key in keys) insert.Run(kind, key, seq++);
+            Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", FavoritesKey));
+        });
+        return 0;
     });
 
     // ---- replays ---------------------------------------------------------------------------------------------------------

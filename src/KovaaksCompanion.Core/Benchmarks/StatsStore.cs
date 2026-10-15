@@ -83,6 +83,20 @@ public sealed partial class StatsStore(string archiveFolder)
         return fresh.Count;
     }
 
+    /// <summary>
+    /// Adds the reload and distance figures of <paramref name="fresh"/> to the archived runs of the same end time that lack them (runs archived before they were kept).
+    /// Nothing else of an archived run changes.
+    /// </summary>
+    public void AddRunFigures(IReadOnlyCollection<RunRecord> fresh)
+    {
+        if (fresh.Count == 0) return;
+        var byScenario = fresh.GroupBy(r => r.Scenario, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToDictionary(r => r.End), StringComparer.OrdinalIgnoreCase);
+        _db.Update(byScenario.Keys, (n, old) => new(
+            (old?.Runs ?? []).Select(c => c.Record is { Reloads: null } rec && byScenario[n].TryGetValue(c.Time, out var f)
+                ? c with { Record = rec with { Reloads = f.Reloads, Distance = f.Distance } } : c).ToList(),
+            old?.FetchedAt ?? DateTime.MinValue));
+    }
+
     public void Archive(RunRecord? record) { if (record != null) Archive([record]); }
 
     /// <summary>Runs with kept statistics.</summary>

@@ -1,7 +1,7 @@
 namespace KovaaksCompanion.Core.Library;
 
-/// <summary>One column of the summary table: the figures over a set of records (and, for accuracy, the local runs among them).</summary>
-public sealed record ScoreSummary(int Plays, double Best, double Average, double Median, double? Consistency, double? Accuracy, double? Drift, TimeSpan TimePlayed);
+/// <summary>One column of the summary table: the figures over a set of records (and, for accuracy, time played, TTK and overshots, the local runs among them). Overshots are the mean per run.</summary>
+public sealed record ScoreSummary(int Plays, double Best, double Average, double Median, double? Consistency, double? Accuracy, double? Drift, TimeSpan TimePlayed, double? AvgTtk = null, double? OverShots = null);
 
 /// <summary>A histogram bin: scores from <see cref="From"/> up to (excluding) <see cref="To"/>, except the last bin which includes its upper end.</summary>
 public sealed record ScoreBin(double From, double To, int Count);
@@ -47,7 +47,9 @@ public static class ScenarioInsights
         var runs = records.Select(r => r.Run).OfType<RunRecord>().ToList();
         return new ScoreSummary(records.Count, scores.Max(), scores.Average(), Median(scores), Consistency(scores),
             runs.Count == 0 ? null : runs.Average(r => r.Accuracy),
-            runs.Select(r => r.Drift?.Change).OfType<double>().ToList() is { Count: > 0 } d ? d.Average() : null, TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks)));
+            runs.Select(r => r.Drift?.Change).OfType<double>().ToList() is { Count: > 0 } d ? d.Average() : null, TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks)),
+            runs.Select(r => r.AvgTtk).OfType<double>().ToList() is { Count: > 0 } t ? t.Average() : null,
+            runs.Select(r => r.OverShots).OfType<int>().ToList() is { Count: > 0 } o ? o.Average() : null);
     }
 
     /// <summary>Scores bucketed into about <paramref name="bins"/> equal-width bins between the lowest and highest score (fewer when the range is tiny). Empty for fewer than 5 scores.</summary>

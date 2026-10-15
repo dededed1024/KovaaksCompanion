@@ -283,6 +283,11 @@ public sealed class AppHost : IDisposable
         }
         PreflightAccess();
         BufferCleaner.Clean(_settings.BufferFolder); // leftovers of a crash; nothing records yet
+            if (only != null) return;
+            // runs archived before pauses, reloads and distance were kept: fill those in from the replay's data
+            var lacking = store.ArchivedRuns().Where(r => r.Reloads is null).Select(r => (r.Scenario.ToLowerInvariant(), r.End)).ToHashSet();
+            if (lacking.Count > 0)
+                store.AddRunFigures(archive.List().Where(i => lacking.Contains((i.Scenario.ToLowerInvariant(), i.End))).Select(archive.ReadRecord).OfType<RunRecord>().Where(r => r.Reloads != null).ToList());
         _anchor = ClockAnchor.Now();
         _buffer = new MouseRingBuffer(new VideoOptions().BufferMinutes * 60.0, _anchor.Frequency, _anchor.Qpc);
         StartCapture();
