@@ -107,6 +107,39 @@ public sealed class KovaaksApi(HttpClient? http = null)
 {
     readonly HttpClient _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
+    /// <summary>
+    /// The player's webapp username, read from their own leaderboard entry: the benchmark progress of <paramref name="steamId"/> names a scenario's leaderboard and the
+    /// player's rank in it, and that entry carries the username. Tries the given benchmarks (most likely played first) until one works; null when none does.
+    /// </summary>
+    public async Task<string?> ResolveUsernameAsync(string steamId, IEnumerable<int> benchmarkIds, int maxTries = 6, CancellationToken ct = default)
+    {
+        foreach (var id in benchmarkIds.Take(maxTries))
+        {
+            try
+            {
+                using var progress = JsonDocument.Parse(await _http.GetStringAsync(
+                    $"https://kovaaks.com/webapp-backend/benchmarks/player-progress-rank-benchmark?benchmarkId={id}&steamId={Uri.EscapeDataString(steamId)}&page=0&max=100", ct));
+                if (!progress.RootElement.TryGetProperty("categories", out var cats) || cats.ValueKind != JsonValueKind.Object) continue;
+                var tried = 0;
+                foreach (var scenario in cats.EnumerateObject().SelectMany(c => c.Value.TryGetProperty("scenarios", out var s) && s.ValueKind == JsonValueKind.Object ? s.EnumerateObject() : []))
+                {
+                    var v = scenario.Value;
+                    if (!v.TryGetProperty("leaderboard_id", out var lb) || !lb.TryGetInt32(out var lbId) || lbId <= 0 ||
+                        !v.TryGetProperty("leaderboard_rank", out var rk) || !rk.TryGetInt32(out var rank) || rank <= 0) continue;
+                    using var board = JsonDocument.Parse(await _http.GetStringAsync(
+                        $"https://kovaaks.com/webapp-backend/leaderboard/scores/global?leaderboardId={lbId}&page={rank - 1}&max=1", ct));
+                    if (board.RootElement.ValueKind == JsonValueKind.Object && board.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                        foreach (var e in data.EnumerateArray())
+                            if (e.TryGetProperty("steamId", out var sid) && sid.ToString() == steamId && e.TryGetProperty("webappUsername", out var name) && name.GetString() is { Length: > 0 } user)
+                                return user;
+                    if (++tried == 3) break; // the entry moved (a rank changed meanwhile): another benchmark is a better bet than more scenarios of this one
+                }
+            }
+            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException or TaskCanceledException && !ct.IsCancellationRequested) { }
+        }
+        return null;
+    }
+
     /// <summary>The player's best score of every scenario they have played (a few paged requests).</summary>
     public async Task<Dictionary<string, double>> GetBestScoresAsync(string username, CancellationToken ct = default)
     {

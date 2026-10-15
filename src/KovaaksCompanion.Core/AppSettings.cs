@@ -12,8 +12,11 @@ public sealed record AppSettings
     public string DataFolder { get; init; } = "";
     /// <summary>SteamID64 used for cloud scores. Empty = detect from Steam's loginusers.vdf.</summary>
     public string SteamId { get; init; } = "";
-    /// <summary>The player's KovaaK's webapp username: the Steam display name of <paramref name="steamId"/> from Steam's loginusers.vdf. Null when unknown.</summary>
-    public string? UsernameFor(string steamId) => Benchmarks.SteamAccount.Profile(KovaaksPath, steamId).Name;
+    /// <summary>Webapp username of <see cref="WebUsernameSteamId"/>. It can differ from the Steam name and only the server knows it, so it is looked up once (several requests) and kept here.</summary>
+    public string WebUsername { get; init; } = "";
+    public string WebUsernameSteamId { get; init; } = "";
+    /// <summary>The resolved webapp username when it belongs to <paramref name="steamId"/>, else null.</summary>
+    public string? UsernameFor(string steamId) => WebUsername.Length > 0 && WebUsernameSteamId == steamId ? WebUsername : null;
     public bool StartWithWindows { get; init; } = true;
     /// <summary>UI language code ("en", "ko"); empty = follow Windows.</summary>
     public string Language { get; init; } = "";
