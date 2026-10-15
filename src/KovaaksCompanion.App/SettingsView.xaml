@@ -307,6 +307,14 @@
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" x:Name="ErrorReports" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
                                     </Grid>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{app:Loc 'Update automatically'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,0,0" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="OnAutoUpdateLabel"/>
+                                        <CheckBox Grid.Column="1" x:Name="AutoUpdate" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="OnCommit" Unchecked="OnCommit"/>
+                                    </Grid>
                                     <StackPanel Margin="0,16,0,0" HorizontalAlignment="Right">
                                         <Button x:Name="CheckBtn" Content="{app:Loc 'Check for updates'}" HorizontalAlignment="Right" Click="OnCheckUpdate"/>
                                         <StackPanel x:Name="ReportPanel" Margin="0,8,0,0" Visibility="Collapsed">

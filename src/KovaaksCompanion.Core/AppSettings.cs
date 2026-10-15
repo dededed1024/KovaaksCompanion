@@ -34,6 +34,10 @@ public sealed record AppSettings
     public const int MinUiScale = 75, MaxUiScale = 150;
     /// <summary>Posts unhandled errors (no personal data) to the developer.</summary>
     public bool SendErrorReports { get; init; } = true;
+    /// <summary>Downloads and installs a newer release at startup without asking.</summary>
+    public bool AutoUpdate { get; init; } = true;
+    /// <summary>Version that ran last; a lower value at startup means the app was just updated. Empty on a fresh install.</summary>
+    public string LastRunVersion { get; init; } = "";
     public Video.VideoQuality VideoQuality { get; init; } = Video.VideoQuality.High;
     /// <summary>Maximum recording frame rate.</summary>
     public int VideoFps { get; init; } = Video.VideoOptions.DefaultFps;

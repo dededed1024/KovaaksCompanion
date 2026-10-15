@@ -35,15 +35,18 @@ public partial class UpdateView : UserControl
 
     public bool IsOpen => _open;
 
-    /// <summary>Shows the popup for <paramref name="release"/>.</summary>
-    public void Open(ReleaseInfo release)
+    /// <summary>Shows the popup for <paramref name="release"/>; with <paramref name="whatsNew"/> it only shows the notes of the version that just got installed.</summary>
+    public void Open(ReleaseInfo release, bool whatsNew = false)
     {
         if (_open) return;
         _release = release;
         _busy = false;
         UpdateBtn.IsEnabled = LaterBtn.IsEnabled = true;
+        UpdateBtn.Visibility = whatsNew ? Visibility.Collapsed : Visibility.Visible;
+        LaterBtn.Content = L.T(whatsNew ? "Close" : "Later");
+        TitleText.Text = L.T(whatsNew ? "What's new" : "Update available");
         Status.Visibility = Visibility.Collapsed;
-        Versions.Text = $"v{App.CurrentVersion.ToString(3)} → v{release.Version.ToString(3)}";
+        Versions.Text = whatsNew ? $"v{release.Version.ToString(3)}" : $"v{App.CurrentVersion.ToString(3)} → v{release.Version.ToString(3)}";
         Notes.Text = release.Notes;
         NotesScroll.Visibility = release.Notes.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _open = true;

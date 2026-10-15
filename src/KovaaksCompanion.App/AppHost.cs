@@ -30,8 +30,9 @@ public sealed class AppHost : IDisposable
     static System.Drawing.Icon LoadTrayIcon() { using var s = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")).Stream; return new System.Drawing.Icon(s, WinForms.SystemInformation.SmallIconSize); }
     MainWindow? _main;
     string _lastError = "";
-    ReleaseInfo? _pendingUpdate;
+    ReleaseInfo? _pendingUpdate, _pendingWhatsNew;
     static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    static readonly System.Net.Http.HttpClient DownloadHttp = new() { Timeout = TimeSpan.FromMinutes(5) };
     sealed class Pending(string scenario, DateTime end) { public string Scenario = scenario; public DateTime End = end; public double Progress; }
     readonly List<Pending> _pending = [];
     /// <summary>The play session of the running game.</summary>
@@ -363,6 +364,7 @@ public sealed class AppHost : IDisposable
         _ = Task.Run(() => { var moved = MigrateReplays() | MoveVideosIntoSessions(); CacheReplays(); if (EnforceStorageLimits() | IngestStats() | moved) RunFinished?.Invoke(); });
         _ = Task.Run(() => { try { _settings.OpenStore().BackupArchive(); } catch (IOException e) { AppLog.Write("archive", "backup failed: " + e.Message); } });
         if (showMain) ShowMain("Stats");
+        _ = CheckWhatsNew();
         _ = CheckForUpdate();
     }
 
@@ -404,6 +406,16 @@ public sealed class AppHost : IDisposable
         {
             var latest = await UpdateCheck.Fetch(Http);
             if (!UpdateCheck.IsNewer(latest, App.CurrentVersion)) return;
+            if (_settings.AutoUpdate && latest != null && Environment.ProcessPath is { } exe && SelfUpdate.CanInstall(latest))
+            {
+                try
+                {
+                    var path = await SelfUpdate.Download(DownloadHttp, latest, exe);
+                    SelfUpdate.Install(exe, path);
+                    return;
+                }
+                catch (Exception e) { AppLog.Write("update", "auto update failed: " + e.Message); }
+            }
             _pendingUpdate = latest;
             UpdateAvailable = true;
             _app.Dispatcher.Invoke(OfferUpdate);
@@ -417,8 +429,33 @@ public sealed class AppHost : IDisposable
     /// <summary>A newer release than the running one was found this run.</summary>
     public bool UpdateAvailable { get; private set; }
 
+    /// <summary>After an update (or a newer exe taking over a running one) the first run shows that release's notes.</summary>
+    async Task CheckWhatsNew()
+    {
+        var current = App.CurrentVersion;
+        var last = UpdateCheck.ParseVersion(_settings.LastRunVersion);
+        if (_settings.LastRunVersion == current.ToString(3)) return;
+        _settings = _settings with { LastRunVersion = current.ToString(3) };
+        SaveSettings();
+        if (last == null || last >= current) return;
+        try
+        {
+            var release = await UpdateCheck.FetchVersion(Http, current);
+            if (release == null || release.Notes.Length == 0) return;
+            _pendingWhatsNew = release;
+            _app.Dispatcher.Invoke(OfferUpdate);
+        }
+        catch (Exception e) { AppLog.Write("update", "release notes failed: " + e.Message); }
+    }
+
     void OfferUpdate()
     {
+        if (_main != null && _pendingWhatsNew != null)
+        {
+            var n = _pendingWhatsNew; _pendingWhatsNew = null;
+            _main.ShowWhatsNew(n);
+            return;
+        }
         if (_main == null || _pendingUpdate == null) return;
         var r = _pendingUpdate; _pendingUpdate = null;
         _main.ShowUpdate(r);

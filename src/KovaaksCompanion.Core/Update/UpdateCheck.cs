@@ -66,11 +66,17 @@ public static class UpdateCheck
     public static bool ShouldReplace(Version mine, Version? running) => running != null && mine > running;
 
     /// <summary>Latest release, or null when offline, rate-limited or no release exists.</summary>
-    public static async Task<ReleaseInfo?> Fetch(HttpClient http, CancellationToken ct = default)
+    public static Task<ReleaseInfo?> Fetch(HttpClient http, CancellationToken ct = default) => Get(http, Api, ct);
+
+    /// <summary>The release published for <paramref name="version"/>, or null when it cannot be fetched.</summary>
+    public static Task<ReleaseInfo?> FetchVersion(HttpClient http, Version version, CancellationToken ct = default) =>
+        Get(http, "https://api.github.com/repos/" + Repo + "/releases/tags/v" + version.ToString(3), ct);
+
+    static async Task<ReleaseInfo?> Get(HttpClient http, string url, CancellationToken ct)
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, Api);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.UserAgent.ParseAdd("KovaaksCompanion");
             req.Headers.Accept.ParseAdd("application/vnd.github+json");
             using var res = await http.SendAsync(req, ct);

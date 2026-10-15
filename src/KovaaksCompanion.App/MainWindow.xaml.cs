@@ -118,6 +118,9 @@ public partial class MainWindow : Window
     /// <summary>Opens the update popup above everything else.</summary>
     public void ShowUpdate(KovaaksCompanion.Core.Update.ReleaseInfo release) { MarkUpdate(); _update.Open(release); }
 
+    /// <summary>Opens the popup with the notes of the release that was just installed.</summary>
+    public void ShowWhatsNew(KovaaksCompanion.Core.Update.ReleaseInfo release) => _update.Open(release, true);
+
     /// <summary>Tints the settings button red: a newer release exists.</summary>
     public void MarkUpdate() => GearBtn.SetResourceReference(Control.ForegroundProperty, "Red");
 

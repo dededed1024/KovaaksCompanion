@@ -44,6 +44,8 @@
   <data name="Browse…" xml:space="preserve"><value>찾아보기…</value></data>
   <data name="Output folder" xml:space="preserve"><value>저장 폴더</value></data>
   <data name="Steam ID" xml:space="preserve"><value>Steam ID</value></data>
+  <data name="Update automatically" xml:space="preserve"><value>자동 업데이트</value></data>
+  <data name="What's new" xml:space="preserve"><value>새로운 기능</value></data>
   <data name="Start with Windows" xml:space="preserve"><value>Windows 시작 시 실행</value></data>
   <data name="Send anonymous error reports automatically" xml:space="preserve"><value>익명 오류 보고서 자동 전송</value></data>
   <data name="Example of a sent report" xml:space="preserve"><value>전송 내용 예시</value></data>

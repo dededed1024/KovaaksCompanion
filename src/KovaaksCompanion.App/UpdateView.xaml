@@ -10,7 +10,7 @@
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
             <StackPanel Margin="32,28,32,28">
-                <TextBlock Style="{StaticResource Title}" FontSize="20" Text="{app:Loc 'Update available'}"/>
+                <TextBlock x:Name="TitleText" Style="{StaticResource Title}" FontSize="20" Text="{app:Loc 'Update available'}"/>
                 <TextBlock x:Name="Versions" Margin="0,8,0,0" Foreground="{DynamicResource Dim}"/>
                 <ScrollViewer x:Name="NotesScroll" MaxHeight="260" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
                     <TextBlock x:Name="Notes" TextWrapping="Wrap" Foreground="{DynamicResource Dim}"/>

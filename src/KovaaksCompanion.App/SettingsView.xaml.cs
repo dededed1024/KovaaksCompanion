@@ -63,6 +63,7 @@ public partial class SettingsView : UserControl
         foreach (RadioButton r in FolderBar.Children) r.IsChecked = (string)r.Tag == (s.VideoByRun ? "Run" : "Session");
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
+        AutoUpdate.IsChecked = s.AutoUpdate;
         SizeCamFrame(s);
         CamOn.IsChecked = s.WebcamEnabled;
         ShowCamPanels(s.WebcamEnabled);
@@ -258,6 +259,7 @@ public partial class SettingsView : UserControl
             KovaaksPath = Kovaaks.Text.Trim(), DataFolder = Data.Text.Trim() == cur.DataRoot ? cur.DataFolder : Data.Text.Trim(), SteamId = !SteamValid() || Steam.Text.Trim() == cur.EffectiveSteamId ? cur.SteamId : Steam.Text.Trim(),
             StartWithWindows = AutoStart.IsChecked == true,
             SendErrorReports = ErrorReports.IsChecked == true,
+            AutoUpdate = AutoUpdate.IsChecked == true,
             VideoQuality = QualityBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string t
                 && Enum.TryParse<VideoQuality>(t, out var q) ? q : cur.VideoQuality,
             VideoFps = FpsValid(out var fps) ? fps : cur.VideoFps,
@@ -661,6 +663,8 @@ public partial class SettingsView : UserControl
 
     void OnPbOnlyLabel(object sender, MouseButtonEventArgs e) => PbOnly.IsChecked = PbOnly.IsChecked != true;
     void OnKeepPbLabel(object sender, MouseButtonEventArgs e) => KeepPb.IsChecked = KeepPb.IsChecked != true;
+    void OnAutoUpdateLabel(object sender, MouseButtonEventArgs e) => AutoUpdate.IsChecked = AutoUpdate.IsChecked != true;
+
     void OnErrorReportsLabel(object sender, MouseButtonEventArgs e) => ErrorReports.IsChecked = ErrorReports.IsChecked != true;
 
     async void OnCheckUpdate(object sender, RoutedEventArgs e)
