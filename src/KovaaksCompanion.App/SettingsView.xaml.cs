@@ -41,7 +41,7 @@ public partial class SettingsView : UserControl
     void UpdateLock()
     {
         var free = !_host.GameActive;
-        GeneralSection.IsEnabled = RecordingSection.IsEnabled = StorageSection.IsEnabled = CamSection.IsEnabled = free;
+        GeneralSection.IsEnabled = RecordingSection.IsEnabled = CamSection.IsEnabled = free;
         LockNote.Visibility = free ? Visibility.Collapsed : Visibility.Visible;
     }
 
@@ -60,7 +60,7 @@ public partial class SettingsView : UserControl
         DeleteBeaten.IsChecked = s.DeleteBeatenRuns;
         KeepPb.IsChecked = s.KeepPersonalBests;
         PbOnly.IsChecked = s.VideoPbOnly;
-        ByRun.IsChecked = s.VideoByRun;
+        foreach (RadioButton r in FolderBar.Children) r.IsChecked = (string)r.Tag == (s.VideoByRun ? "Run" : "Session");
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
         SizeCamFrame(s);
@@ -258,7 +258,7 @@ public partial class SettingsView : UserControl
             DeleteBeatenRuns = DeleteBeaten.IsChecked == true,
             KeepPersonalBests = KeepPb.IsChecked == true,
             VideoPbOnly = PbOnly.IsChecked == true,
-            VideoByRun = ByRun.IsChecked == true,
+            VideoByRun = FolderBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is "Run",
             WebcamEnabled = CamOn.IsChecked == true,
             WebcamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
                 && Enum.TryParse<WebcamSave>(cs, out var hs) ? hs : cur.WebcamSave,
@@ -652,7 +652,6 @@ public partial class SettingsView : UserControl
     void OnBeatenLabel(object sender, MouseButtonEventArgs e) => DeleteBeaten.IsChecked = DeleteBeaten.IsChecked != true;
 
     void OnPbOnlyLabel(object sender, MouseButtonEventArgs e) => PbOnly.IsChecked = PbOnly.IsChecked != true;
-    void OnByRunLabel(object sender, MouseButtonEventArgs e) => ByRun.IsChecked = ByRun.IsChecked != true;
     void OnKeepPbLabel(object sender, MouseButtonEventArgs e) => KeepPb.IsChecked = KeepPb.IsChecked != true;
     void OnErrorReportsLabel(object sender, MouseButtonEventArgs e) => ErrorReports.IsChecked = ErrorReports.IsChecked != true;
 
