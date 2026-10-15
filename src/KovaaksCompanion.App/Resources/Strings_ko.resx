@@ -18,7 +18,15 @@
   <data name="No sessions" xml:space="preserve"><value>세션 없음</value></data>
   <data name="Favorite session" xml:space="preserve"><value>세션 즐겨찾기</value></data>
   <data name="Unfavorite session" xml:space="preserve"><value>세션 즐겨찾기 해제</value></data>
+  <data name="PBs only" xml:space="preserve"><value>PB만 보기</value></data>
   <data name="Favorites only" xml:space="preserve"><value>즐겨찾기만 보기</value></data>
+  <data name="Progress" xml:space="preserve"><value>진행도</value></data>
+  <data name="Name" xml:space="preserve"><value>이름</value></data>
+  <data name="Plays" xml:space="preserve"><value>플레이 횟수</value></data>
+  <data name="Newest" xml:space="preserve"><value>최신</value></data>
+  <data name="Oldest" xml:space="preserve"><value>오래됨</value></data>
+  <data name="Longest" xml:space="preserve"><value>플레이 시간</value></data>
+  <data name="Most runs" xml:space="preserve"><value>런 수</value></data>
   <data name="Favorite playlist" xml:space="preserve"><value>플레이리스트 즐겨찾기</value></data>
   <data name="Unfavorite playlist" xml:space="preserve"><value>플레이리스트 즐겨찾기 해제</value></data>
   <data name="Favorite scenario" xml:space="preserve"><value>시나리오 즐겨찾기</value></data>
