@@ -23,6 +23,7 @@ public partial class StatsView
     static readonly bool PinnedTiersEnabled = false;
 
     const int SessionRunsShown = 7;
+    const double HomeBottomGap = 24;
     Border? _heroSlot, _playlistsSlot;
 
     void ShowHome()
@@ -797,7 +798,8 @@ public partial class StatsView
             var g = new Grid { Margin = new Thickness(10, 0, 10, 0) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             if (pbCount >= 1) g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) }); // video mark; width kept when absent
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
             var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
             var rowTitle = new TextBlock();
             rowTitle.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}  ") { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = isLive ? Solid("#FF453A") : FgB });
@@ -821,14 +823,14 @@ public partial class StatsView
             chev.FontSize = 10;
             Grid.SetColumn(chev, pbCount >= 1 ? 3 : 2);
             if (s.RunCount > 0) g.Children.Add(chev);
-            var row = new Border { CornerRadius = new CornerRadius(10), Background = rest, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
-            if (isLive) { row.BorderBrush = Solid("#99FF453A"); row.BorderThickness = new Thickness(1); }
             if (SessionHasVideo(s))
             {
                 var video = VideoMark();
                 Grid.SetColumn(video, pbCount >= 1 ? 2 : 1);
                 g.Children.Add(video);
             }
+            var row = new Border { CornerRadius = new CornerRadius(10), Background = rest, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
+            if (isLive) { row.BorderBrush = Solid("#99FF453A"); row.BorderThickness = new Thickness(1); }
             var sess = s;
             if (s.RunCount == 0) { row.Cursor = Cursors.Arrow; host.Children.Add(row); continue; }
             RowClick.Attach(row, p => _host.ShowSession(sess, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : rest);
@@ -867,8 +869,6 @@ public partial class StatsView
         catch (Exception ex) { KovaaksCompanion.Core.Diagnostics.AppLog.Write("clipboard", ex.Message); }
     }
 
-    UIElement SessionCard(PlaySession s, IReadOnlySet<RunRecord> pbs, bool live, bool expanded = false, bool capture = false)
-    {
     bool SessionHasVideo(PlaySession s) => s.Runs.Any(r => ReplayStore.HasVideo(_replays, r.Scenario, r.End));
 
     TextBlock VideoMark() => new() { Text = "", FontFamily = new FontFamily(Icons), FontSize = 15, Foreground = (Brush)FindResource("Accent"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -884,6 +884,8 @@ public partial class StatsView
         return null;
     }
 
+    UIElement SessionCard(PlaySession s, IReadOnlySet<RunRecord> pbs, bool live, bool expanded = false, bool capture = false)
+    {
         var pbCount = s.Runs.Count(pbs.Contains);
         var head = new Grid { Margin = new Thickness(24, 3, 24, 3) };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -918,8 +920,6 @@ public partial class StatsView
         head.Children.Add(stats);
         if (!capture && s.RunCount > 0)
         {
-            var copy = new Button
-            {
             Button IconButton(string tip, int col)
             {
                 var b = new Button
@@ -952,6 +952,8 @@ public partial class StatsView
                 GlyphButton.Set(folder, "", DimB);
                 folder.Click += (_, _) => { if (SessionFolder(s) is { } dir) System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\""); };
             }
+            var copy = new Button
+            {
                 Content = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0),
                 Margin = new Thickness(6, 0, 0, 0), MinHeight = 36, MinWidth = 36, VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Copy session as image"),
             };
@@ -1060,6 +1062,21 @@ public partial class StatsView
         return new DrawingBrush(g) { Stretch = Stretch.Fill };
     }
 
+    /// <summary>A name with a fixed-width slot for the favorite star in front, empty when not a favorite, so names line up in every row.</summary>
+    Grid NameWithFavoriteSlot(string name, bool fav, double slot, double starPad)
+    {
+        var g = new Grid();
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(slot) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (fav) g.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A"), Padding = new Thickness(starPad, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var nm = Text(name, 13, FgB, FontWeights.SemiBold);
+        nm.TextTrimming = TextTrimming.CharacterEllipsis;
+        nm.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(nm, 1);
+        g.Children.Add(nm);
+        return g;
+    }
+
     Border RunRow(RunRecord r, bool pb, bool dated = false)
     {
         var name = r.Scenario;
@@ -1083,11 +1100,16 @@ public partial class StatsView
             g.Children.Add(e);
         }
         Put(Text(dated ? L.MonthDay(r.End) + " " + ClockFormat.Clock(r.Start) : ClockFormat.Clock(r.Start), 12, DimB), 0, new Thickness(12, 0, 0, 0));
-        var nm = Text("", 13, FgB, FontWeights.SemiBold);
-        if (_host.Ui.IsFavoriteRun(name, end)) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
-        nm.Inlines.Add(new System.Windows.Documents.Run(name));
-        nm.TextTrimming = TextTrimming.CharacterEllipsis;
-        Put(nm, 1, new Thickness(4, 0, 16, 0));
+        var favRun = _host.Ui.IsFavoriteRun(name, end);
+        if (dated) Put(NameWithFavoriteSlot(name, favRun, 36, 12), 1, new Thickness(0, 0, 16, 0));
+        else
+        {
+            var nm = Text("", 13, FgB, FontWeights.SemiBold);
+            if (favRun) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
+            nm.Inlines.Add(new System.Windows.Documents.Run(name));
+            nm.TextTrimming = TextTrimming.CharacterEllipsis;
+            Put(nm, 1, new Thickness(4, 0, 16, 0));
+        }
         var benchText = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         benchText.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(benchText, 2, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
@@ -1112,7 +1134,7 @@ public partial class StatsView
             playText.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
             playText.HorizontalAlignment = HorizontalAlignment.Center;
             playText.VerticalAlignment = VerticalAlignment.Center;
-            Put(playText, 6, new Thickness(0));
+            Put(playText, 6, new Thickness(0), HorizontalAlignment.Center);
             RowClick.Attach(row, p => _host.ShowRun(name, end), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
         }
         else if (_host.IsPending(name, end))
@@ -1134,6 +1156,9 @@ public partial class StatsView
     string _browseTab = "Playlists";
     Border? _browseHost;
     Border? _browseTabs;
+    Grid? _browseBar;
+    /// <summary>The lists on Home show only favorites.</summary>
+    bool _favOnly;
     int _browseCols;
 
     static IEnumerable<string> PlaylistScenarios(int id) =>
@@ -1148,7 +1173,7 @@ public partial class StatsView
         return m;
     }
 
-    /// <summary>Every playlist: favorites first, then most recently played, then highest tier progress.</summary>
+    /// <summary>Every playlist (only the favorites while the filter is on): most recently played first, then highest tier progress.</summary>
     List<(Benchmark B, Difficulty D, bool Fav)> SortedPlaylists() =>
         AllDifficulties()
             .Select(x =>
@@ -1156,9 +1181,6 @@ public partial class StatsView
                 _progress.TryGetValue(x.D.KovaaksBenchmarkId, out var p);
                 var ranked = p != null && p.OverallTierName.Length > 0;
                 return (x.B, x.D, Fav: _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}"), Last: LastPlayed(x.D.KovaaksBenchmarkId),
-    Grid? _browseBar;
-    /// <summary>The lists on Home show only favorites.</summary>
-    bool _favOnly;
                     Tier: ranked ? p!.OverallTier : -1, Frac: ranked ? p!.OverallFraction : 0.0);
             })
             .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Tier).ThenByDescending(i => i.Frac)
@@ -1198,28 +1220,6 @@ public partial class StatsView
             tabs.Children.Add(rb);
         }
         _browseTabs = new Border { Style = (Style)FindResource("SegmentTrack"), Child = tabs, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(TileGap / 2, 4, 0, 8) };
-        _browseHost = new Border();
-        FillBrowse();
-        return _browseHost;
-    }
-
-    /// <summary>Redraws the list of the chosen tab.</summary>
-    void FillBrowse()
-    {
-        if (_browseHost == null) return;
-        var tab = _browseTab;
-        var cols = BrowseColumns(tab, HomeHost.Width);
-        _browseCols = cols;
-        var items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
-            : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
-
-        var body = new StackPanel();
-        if (_browseBar != null)
-        {
-            (_browseBar.Parent as Panel)?.Children.Remove(_browseBar);
-            body.Children.Add(_browseBar);
-        }
-        if (items.Count == 0) body.Children.Add(Text(L.T(_favOnly ? "No favorites" : tab == "Scenarios" ? "No scenarios" : tab == "Sessions" ? "No sessions" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
         var filter = new Button
         {
             FontFamily = new FontFamily(Icons), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(0, 4, TileGap / 2, 8),
@@ -1234,13 +1234,13 @@ public partial class StatsView
         Grid.SetColumn(filter, 1);
         _browseBar.Children.Add(_browseTabs);
         _browseBar.Children.Add(filter);
-        var grid = new UniformGrid { Columns = cols };
-        _browseItems = items; _browseGrid = grid; _browseShown = 0;
-        AppendBrowse(BrowseBatch);
-        body.Children.Add(new Border { Padding = new Thickness(TileGap / 2 - 2, 0, TileGap / 2 - 2, 0), Child = grid });
-        _browseHost.Child = Card(body, new Thickness(8, 4, 8, 4), CardGap);
+        _browseHost = new Border();
+        FillBrowse();
+        return _browseHost;
     }
 
+    /// <summary>Redraws the list of the chosen tab.</summary>
+    void FillBrowse()
     {
         if (_browseHost == null) return;
         // Fit the page to the list, but pad only as much as needed to keep the scroll position: a shorter list must not pull the page up.
@@ -1276,6 +1276,28 @@ public partial class StatsView
     }
 
     void FillBrowseCore()
+    {
+        if (_browseHost == null) return;
+        var tab = _browseTab;
+        var cols = BrowseColumns(tab, HomeHost.Width);
+        _browseCols = cols;
+        var items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
+            : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
+
+        var body = new StackPanel();
+        if (_browseBar != null)
+        {
+            (_browseBar.Parent as Panel)?.Children.Remove(_browseBar);
+            body.Children.Add(_browseBar);
+        }
+        if (items.Count == 0) body.Children.Add(Text(L.T(_favOnly ? "No favorites" : tab == "Scenarios" ? "No scenarios" : tab == "Sessions" ? "No sessions" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
+        var grid = new UniformGrid { Columns = cols };
+        _browseItems = items; _browseGrid = grid; _browseShown = 0;
+        AppendBrowse(BrowseBatch);
+        body.Children.Add(new Border { Padding = new Thickness(TileGap / 2 - 2, 0, TileGap / 2 - 2, 0), Child = grid });
+        _browseHost.Child = Card(body, new Thickness(8, 4, 8, 4), CardGap);
+    }
+
     /// <summary>Rows built per step; the rest of a long list is built while the page scrolls towards its end.</summary>
     const int BrowseBatch = 40;
     List<Func<UIElement>> _browseItems = [];
@@ -1342,6 +1364,20 @@ public partial class StatsView
             .Select(i => (Func<UIElement>)(() => ScenarioRow(i.N, i.S, i.Fav))).ToList();
     }
 
+    HashSet<string>? _videoScenarios;
+    List<ReplayInfo>? _videoScenariosFor;
+
+    /// <summary>Scenarios that have a replay with a video; rebuilt when the replay list changes.</summary>
+    HashSet<string> ScenariosWithVideo()
+    {
+        if (_videoScenarios == null || !ReferenceEquals(_videoScenariosFor, _replays))
+        {
+            _videoScenarios = _replays.Where(i => i.HasVideo).Select(i => i.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _videoScenariosFor = _replays;
+        }
+        return _videoScenarios;
+    }
+
     /// <summary>One scenario as a list row, laid out like <see cref="RunRow"/>: favorite mark, name, playlist, tier, best score, plays.</summary>
     Border ScenarioRow(string name, ScenarioHistory stats, bool fav)
     {
@@ -1351,6 +1387,8 @@ public partial class StatsView
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         void Put(FrameworkElement e, int col, Thickness m, HorizontalAlignment h = HorizontalAlignment.Left)
         {
             e.VerticalAlignment = VerticalAlignment.Center; e.HorizontalAlignment = h; e.Margin = m;
@@ -1366,6 +1404,7 @@ public partial class StatsView
         var sc = Text(stats.Best > 0 ? stats.Best.ToString("0.#") : "-", 13, tier != null ? ChartPaths.TextTone(tier.Brush) : FgB, FontWeights.SemiBold);
         System.Windows.Documents.Typography.SetNumeralAlignment(sc, FontNumeralAlignment.Tabular);
         Put(sc, 3, new Thickness(0), HorizontalAlignment.Right);
+        Put(Text(stats.Plays == 1 ? L.F("{0} run", stats.Plays) : L.F("{0} runs", stats.Plays), 12, DimB), 4, new Thickness(0, 0, 12, 0), HorizontalAlignment.Right);
         var row = new Border { Height = ListRowHeight, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g };
         RowClick.Attach(row, p => _host.ShowScenario(name, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
         row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
@@ -1373,45 +1412,6 @@ public partial class StatsView
         return row;
     }
 
-    List<Func<UIElement>> RecordRows()
-    {
-        var ui = _host.Ui;
-        var data = TierData();
-        var pbs = PbSet();
-        return AllPlays()
-            .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
-            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
-            .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
-    }
-
-    UIElement PlaylistCard(Benchmark b, Difficulty d, bool fav)
-    {
-        var titleStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        titleStack.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = ParseBrush(b.Color), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
-        if (fav) titleStack.Children.Add(new TextBlock { Text = "\uE735", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-        var title = Text(b.BenchmarkName, 14, FgB, FontWeights.SemiBold);
-        title.TextTrimming = TextTrimming.CharacterEllipsis;
-        titleStack.Children.Add(title);
-
-        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        info.Children.Add(titleStack);
-        info.Children.Add(Text(d.DifficultyName, 12, DimB, null, new Thickness(0, 2, 0, 0)));
-
-        var ranked = _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0;
-        if (ranked)
-        {
-            var pct = p!.OverallTier >= p.TierNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
-            info.Children.Add(Text($"{TierText.Label(p.OverallTierName)} · {pct}", 12, ChartPaths.TextTone(TierBrush(d, p.OverallTierName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
-        }
-        else info.Children.Add(Text(L.T("UNRANKED"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
-
-        var card = new Border { CornerRadius = new CornerRadius(14), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(TileGap / 2), Cursor = Cursors.Hand };
-        if (ranked && TierBrush(d, p!.OverallTierName) is SolidColorBrush rankBrush)
-        {
-            var c = rankBrush.Color;
-            var grad = new LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
     List<Func<UIElement>> SessionRows()
     {
         var ui = _host.Ui;
@@ -1473,21 +1473,46 @@ public partial class StatsView
         return row;
     }
 
-                EndPoint = new Point(1, 0),
-    HashSet<string>? _videoScenarios;
-    List<ReplayInfo>? _videoScenariosFor;
-
-    /// <summary>Scenarios that have a replay with a video; rebuilt when the replay list changes.</summary>
-    HashSet<string> ScenariosWithVideo()
+    List<Func<UIElement>> RecordRows()
     {
-        if (_videoScenarios == null || !ReferenceEquals(_videoScenariosFor, _replays))
-        {
-            _videoScenarios = _replays.Where(i => i.HasVideo).Select(i => i.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            _videoScenariosFor = _replays;
-        }
-        return _videoScenarios;
+        var ui = _host.Ui;
+        var data = TierData();
+        var pbs = PbSet();
+        return AllPlays()
+            .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
+            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
+            .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
     }
 
+    UIElement PlaylistCard(Benchmark b, Difficulty d, bool fav)
+    {
+        var titleStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        titleStack.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = ParseBrush(b.Color), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+        if (fav) titleStack.Children.Add(new TextBlock { Text = "\uE735", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        var title = Text(b.BenchmarkName, 14, FgB, FontWeights.SemiBold);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        titleStack.Children.Add(title);
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        info.Children.Add(titleStack);
+        info.Children.Add(Text(d.DifficultyName, 12, DimB, null, new Thickness(0, 2, 0, 0)));
+
+        var ranked = _progress.TryGetValue(d.KovaaksBenchmarkId, out var p) && p.OverallTierName.Length > 0;
+        if (ranked)
+        {
+            var pct = p!.OverallTier >= p.TierNames.Count - 1 ? "100%" : $"{p.OverallFraction * 100:0}%";
+            info.Children.Add(Text($"{TierText.Label(p.OverallTierName)} · {pct}", 12, ChartPaths.TextTone(TierBrush(d, p.OverallTierName)), FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+        }
+        else info.Children.Add(Text(L.T("UNRANKED"), 12, FgB, FontWeights.Bold, new Thickness(0, 2, 0, 0)));
+
+        var card = new Border { CornerRadius = new CornerRadius(14), BorderBrush = Solid("#14FFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(TileGap / 2), Cursor = Cursors.Hand };
+        if (ranked && TierBrush(d, p!.OverallTierName) is SolidColorBrush rankBrush)
+        {
+            var c = rankBrush.Color;
+            var grad = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 0),
                 GradientStops = new GradientStopCollection { new GradientStop(Color.FromArgb(0x05, 255, 255, 255), 0), new GradientStop(Color.FromArgb(0x38, c.R, c.G, c.B), 1) }
             };
             grad.Freeze();
@@ -1497,8 +1522,6 @@ public partial class StatsView
             content.Children.Add(overlay);
             content.Children.Add(info);
             card.Child = content;
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
             var dur = TimeSpan.FromMilliseconds(120);
             card.MouseEnter += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Theme.Ink(Color.FromArgb(0x12, 255, 255, 255)), dur));
             card.MouseLeave += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, dur));
@@ -1517,7 +1540,6 @@ public partial class StatsView
     {
         _progress.TryGetValue(d.KovaaksBenchmarkId, out var p);
         var ranked = p != null && p.OverallTierName.Length > 0;
-        Put(Text(stats.Plays == 1 ? L.F("{0} run", stats.Plays) : L.F("{0} runs", stats.Plays), 12, DimB), 4, new Thickness(0, 0, 12, 0), HorizontalAlignment.Right);
         var tier = ranked ? TierBrush(d, p!.OverallTierName) : (Brush)FindResource("Dim");
         var history = p == null ? [] : TierLadder.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
         var watermark = ranked ? TierText.Label(p!.OverallTierName) : L.T("UNRANKED");
