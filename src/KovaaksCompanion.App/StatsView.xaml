@@ -36,7 +36,7 @@
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <StackPanel x:Name="ProfileTools" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
+                        <StackPanel x:Name="ProfileTools" Grid.Row="0" WindowChrome.IsHitTestVisibleInChrome="True" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8"/>
                         <Border x:Name="ProfileCard" Grid.Row="1" Width="1753" Height="600" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="0" Background="{DynamicResource Surface}"
                                 BorderBrush="{DynamicResource Edge}" BorderThickness="0">
                             <Grid x:Name="ProfileHost" Margin="14,14,14,12"/>
