@@ -480,7 +480,7 @@ public partial class StatsView
             // The same diagonal gradient as the card, laid over the card's own area, a touch lighter (darker on a light card): next to the line both sides are nearly the same color. Opaque, so the hidden edge never shows through.
             var (p1, p2) = ProfileBgColors();
             var tint = ProfileLight ? Colors.Black : Colors.White;
-            var pb = new LinearGradientBrush(new GradientStopCollection { new GradientStop(MixColor(p1, tint, 0.05), 0), new GradientStop(MixColor(p2, tint, 0.05), 1) }, new Point(0, 0), new Point(1, 1))
+            var pb = new LinearGradientBrush(new GradientStopCollection { new GradientStop(MixColor(p1, tint, 0.05), 0), new GradientStop(MixColor(p2, tint, 0.05), 1) }, new Point(0, 0), new Point(1, 0))
             {
                 MappingMode = BrushMappingMode.Absolute,
                 Transform = new MatrixTransform(hw + 28, 0, 0, hh + 26, -14, -14),
