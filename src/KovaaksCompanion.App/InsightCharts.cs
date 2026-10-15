@@ -37,10 +37,7 @@ static class InsightDraw
         if (bx + bw > w - 2) bx = x - 12 - bw;
         bx = Math.Max(2, bx);
         var by = Math.Clamp(y - bh / 2, 2, Math.Max(2, h - bh - 2));
-        var fill = new SolidColorBrush(Color.FromArgb(0xF0, 0x22, 0x22, 0x26));
-        fill.Freeze();
-        var stroke = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
-        stroke.Freeze();
+        Brush fill = Res("Surface"), stroke = Res("Edge");
         dc.DrawRoundedRectangle(fill, new Pen(stroke, 1), new Rect(bx, by, bw, bh), 8, 8);
         dc.DrawText(t1, new Point(bx + 8, by + 6));
         dc.DrawText(t2, new Point(bx + 8, by + 6 + t1.Height));
