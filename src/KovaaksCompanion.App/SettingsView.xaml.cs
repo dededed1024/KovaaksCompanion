@@ -390,7 +390,7 @@ public partial class SettingsView : UserControl
                 if (!g.IsMouseCaptured) return;
                 var p = ClampToFrame(e.GetPosition(CamCanvas)); // outside the preview the box stops at its edge
                 double fx = right ? sl : sl + sw, fy = bottom ? st : st + sh;
-                var shown = card.Rotation is 90 or 270 ? card.Cut.Height : card.Cut.Width; // part of the whole picture's width that is left
+                var shown = card.Rotation is 90 or 270 ? card.Cut.Height / SourceAspect(card) : card.Cut.Width; // shown width as a part of the picture's own width
                 card.Size = Math.Clamp((int)Math.Round(Math.Abs(p.X - fx) / (CamW * shown) * 100), 10, 40);
                 var (_, _, w, h) = CamBox(card);
                 card.X = Math.Clamp(((right ? fx : fx - w) + w / 2) / CamW * 100, 0, 100);
@@ -415,8 +415,9 @@ public partial class SettingsView : UserControl
                 if (!g.IsMouseCaptured) return;
                 var p = ClampToFrame(e.GetPosition(CamCanvas));
                 var turned = card.Rotation is 90 or 270;
-                var fullW = CamW * card.Size / 100;
-                var fullH = fullW / (turned ? 1 / SourceAspect(card) : SourceAspect(card));
+                var own = CamW * card.Size / 100; // the picture's own width
+                var fullW = turned ? own / SourceAspect(card) : own;
+                var fullH = turned ? own : own / SourceAspect(card);
                 var fixedAt = edge switch { 0 => sl + sw, 1 => st + sh, 2 => sl, _ => st };
                 var kept = Math.Abs((horizontal ? p.X : p.Y) - fixedAt) / (horizontal ? fullW : fullH); // part of the whole picture that stays visible
                 // the edge as shown is another side of the cam when it is turned

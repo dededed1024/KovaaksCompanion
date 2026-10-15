@@ -84,14 +84,14 @@ public static class WebcamGeometry
     /// <summary>Shape assumed until the cam has delivered its first frame (and in the settings preview).</summary>
     public const double DefaultAspect = 16.0 / 9;
 
-    /// <summary>Box the cam occupies in a frame, as shown (after the turn): the whole picture is <see cref="WebcamLayout.SizePercent"/> of the frame width wide with the cam's own shape, the cut trims it; never larger than the frame.</summary>
+    /// <summary>Box the cam occupies in a frame, as shown (after the turn): the picture's own width (before any turn) is <see cref="WebcamLayout.SizePercent"/> of the frame width, the cut trims it; never larger than the frame.</summary>
     public static (double Width, double Height) BoxSize(double gameWidth, double gameHeight, WebcamLayout l, double sourceAspect = DefaultAspect)
     {
         var src = sourceAspect > 0 ? sourceAspect : DefaultAspect;
         double cw = l.Cut?.Width ?? 1, ch = l.Cut?.Height ?? 1;
-        var shownAspect = l.Sideways ? 1 / src : src;
+        // the size sets the scale (the picture's own width), so turning the cam keeps its size
         var fullW = gameWidth * Math.Clamp(l.SizePercent, 10, 40) / 100;
-        double w = fullW * (l.Sideways ? ch : cw), h = fullW / shownAspect * (l.Sideways ? cw : ch);
+        double w = l.Sideways ? fullW / src * ch : fullW * cw, h = l.Sideways ? fullW * cw : fullW / src * ch;
         if (h > gameHeight) { w *= gameHeight / h; h = gameHeight; }
         if (w > gameWidth) { h *= gameWidth / w; w = gameWidth; }
         return (w, h);
