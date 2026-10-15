@@ -34,8 +34,34 @@ public static class Grain
         return brush;
     }
 
-    /// <summary>The grain tile as a brush; give the element that carries it an Opacity for the strength.</summary>
-    public static Brush Brush => Tile.Value;
+    /// <summary>
+    /// Paints <paramref name="layer"/> with grain that moves with the content scrolled inside <paramref name="scope"/>, so the grain reads as part of the background the content sits on.
+    /// The layer itself stays put; the tile is shifted by the scroll offset of the largest scroll viewer that <paramref name="accept"/> lets through.
+    /// </summary>
+    public static void Follow(Border layer, UIElement scope, Func<ScrollViewer, bool>? accept = null)
+    {
+        var move = new TranslateTransform();
+        var brush = (ImageBrush)Tile.Value.Clone(); // an own copy: each layer has its own shift
+        brush.Transform = move;
+        layer.Background = brush;
+        ScrollViewer? main = null;
+        static double Area(ScrollViewer s) => s.ViewportWidth * s.ViewportHeight;
+        scope.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, e) =>
+        {
+            if (e.OriginalSource is not ScrollViewer sv || accept?.Invoke(sv) == false) return;
+            if (main == null || !main.IsLoaded || sv == main || Area(sv) > Area(main)) main = sv;
+            if (sv != main) return;
+            move.X = -sv.HorizontalOffset; move.Y = -sv.VerticalOffset;
+        }));
+    }
+
+    /// <summary>True when <paramref name="e"/> lies inside a popup card (<see cref="CardProperty"/>).</summary>
+    public static bool InCard(DependencyObject e)
+    {
+        for (var p = VisualTreeHelper.GetParent(e); p != null; p = VisualTreeHelper.GetParent(p))
+            if (p is Border b && GetCard(b)) return true;
+        return false;
+    }
 
     /// <summary>Opacity of the grain layer for a strength of 0-100: a faint speckle at the top.</summary>
     public static double Opacity(int strength) => Math.Clamp(strength, 0, 100) / 100.0 * 0.05;
@@ -64,7 +90,8 @@ public static class Grain
             if (card.Child is not { } child || card.Tag is "grain") return;
             card.Tag = "grain";
             var inner = new CornerRadius(Math.Max(0, card.CornerRadius.TopLeft - card.BorderThickness.Left));
-            var layer = new Border { IsHitTestVisible = false, CornerRadius = inner, Background = Brush };
+            var layer = new Border { IsHitTestVisible = false, CornerRadius = inner };
+            Follow(layer, card);
             void Sync()
             {
                 layer.Visibility = _strength > 0 ? Visibility.Visible : Visibility.Collapsed;

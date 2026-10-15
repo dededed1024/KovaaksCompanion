@@ -23,6 +23,7 @@ public partial class MainWindow : Window
         Popups.Reset();
         Backdrop.Apply(this);
         ApplyScale(host.Settings.UiScale);
+        Grain.Follow(GrainLayer, Pages, sv => !Grain.InCard(sv)); // the page scrolls its grain; the popups inside the page do their own
         ApplyGrain(host.Settings.Grain);
         _stats = new StatsView(host);
         _replay = new ReplayView(host);
@@ -73,7 +74,6 @@ public partial class MainWindow : Window
         Grain.Set(strength);
         GrainLayer.Visibility = strength > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (strength <= 0) return;
-        GrainLayer.Background = Grain.Brush;
         GrainLayer.Opacity = Grain.Opacity(strength);
     }
 
