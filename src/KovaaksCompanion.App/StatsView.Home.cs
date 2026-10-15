@@ -804,7 +804,7 @@ public partial class StatsView
             rowTitle.Inlines.Add(new System.Windows.Documents.Run(ClockFormat.Range(s.Start, s.End)) { FontSize = 12.5, FontWeight = FontWeights.Normal, Foreground = DimB });
             rowTitle.TextTrimming = TextTrimming.CharacterEllipsis;
             info.Children.Add(rowTitle);
-            var counts = Text((s.RunCount == 1 ? L.F("{0} run", s.RunCount) : L.F("{0} runs", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)) + (s.AverageAccuracy is { } acc ? $" · {acc:P0}" : ""), 12, DimB, null, new Thickness(0, 2, 0, 0));
+            var counts = Text((s.RunCount == 1 ? L.F("{0} run", s.RunCount) : L.F("{0} runs", s.RunCount)) + " · " + (s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount)), 12, DimB, null, new Thickness(0, 2, 0, 0));
             counts.TextWrapping = TextWrapping.Wrap;
             info.Children.Add(counts);
             g.Children.Add(info);
