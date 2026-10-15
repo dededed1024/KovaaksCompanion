@@ -1136,9 +1136,8 @@ public partial class ReplayView : UserControl
     void NoRecording()
     {
         UnloadMedia();
-        ShowEmptyChart();
-        Notice.Text = L.T("No video for this run");
-        Notice.Visibility = Visibility.Visible;
+        SetRecorded(false);
+        Stage.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>Stops playback and releases the loaded replay and its video.</summary>
@@ -1173,7 +1172,7 @@ public partial class ReplayView : UserControl
         UnloadMedia();
         SetRecorded(true);
         try { _replay = _host.Replays.Load(item.Info); }
-        catch (Exception ex) { _replay = null; ShowEmptyChart(); Notice.Text = ex.Message; Notice.Visibility = Visibility.Visible; return; }
+        catch (Exception ex) { _replay = null; ShowEmptyChart(); Notice.Text = L.T(ex.Message); Notice.Visibility = Visibility.Visible; return; }
 
         _runLength = (_replay.Info.End - _replay.Info.Start).TotalSeconds;
         _killTimes = _replay.Stats is { } st
@@ -1190,9 +1189,9 @@ public partial class ReplayView : UserControl
         else
         {
             Media.Close();
-            Notice.Text = L.T("No video for this run");
-            Notice.Visibility = Visibility.Visible;
-            // the archive keeps perf and CSV without the video: the chart still shows, on the run-time axis (empty without stats)
+            // the archive keeps perf and CSV without the video: no viewer (player, chart, transport), only the run's figures
+            Stage.Visibility = Visibility.Collapsed;
+            SetRecorded(false);
             _duration = _runLength;
             ChartCard.Visibility = Visibility.Visible; TransportBar.Visibility = Visibility.Visible;
             BuildChart();
@@ -1242,6 +1241,7 @@ public partial class ReplayView : UserControl
     /// Fullscreen bar: the scrim fades into the theme background and the controls take black or white by the background's luminance,
     /// so they read on every theme however the video behind them looks.
     /// </summary>
+        Stage.Visibility = Visibility.Visible;
     void StyleBar(Color bg)
     {
         _scrimDefault ??= BarScrim.Background;
