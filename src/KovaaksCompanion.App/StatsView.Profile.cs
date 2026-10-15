@@ -31,7 +31,7 @@ public partial class StatsView
     bool ProfileGold => string.Equals(_host.Ui.ProfileAccent, Theme.ColoredAccents[2], StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A near-white accent (or gold) makes the card background light, so text and the calendar switch to dark ink.</summary>
-    bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && (ProfileGold || ProfileAccent is SolidColorBrush sb && sb.Color.R + sb.Color.G + sb.Color.B > 720);
+    bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && (ProfileGold || ProfileAccent is SolidColorBrush sb && ChartPaths.Lum(sb.Color) > 0.25);
     Brush ProfileInk => ProfileLight ? SolidFixed("#FF1C1C1E") : SolidFixed("#FFFFFFFF");
     Brush ProfileDim => ProfileLight ? SolidFixed("#FF5A5A60") : SolidFixed("#FFA1A1A8");
     /// <summary>Text tone of the profile theme: the calendar's tone on a dark card, dark ink on a light one.</summary>
