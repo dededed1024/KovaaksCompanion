@@ -27,8 +27,11 @@ public partial class StatsView
     /// <summary>The app's colored themes, then black and white; the app theme colors and the profile colors are one palette.</summary>
     static readonly string[] ProfileColors = [.. Theme.ColoredAccents, "#000000", "#FFFFFF"];
 
-    /// <summary>A near-white accent makes the card background light, so text and the calendar switch to dark ink.</summary>
-    bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && ProfileAccent is SolidColorBrush sb && sb.Color.R + sb.Color.G + sb.Color.B > 720;
+    /// <summary>The gold profile color, like the gold app theme, is a light card.</summary>
+    bool ProfileGold => string.Equals(_host.Ui.ProfileAccent, Theme.ColoredAccents[2], StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A near-white accent (or gold) makes the card background light, so text and the calendar switch to dark ink.</summary>
+    bool ProfileLight => _host.Ui.ProfileAccent.Length > 0 && (ProfileGold || ProfileAccent is SolidColorBrush sb && sb.Color.R + sb.Color.G + sb.Color.B > 720);
     Brush ProfileInk => ProfileLight ? SolidFixed("#FF1C1C1E") : SolidFixed("#FFFFFFFF");
     Brush ProfileDim => ProfileLight ? SolidFixed("#FF5A5A60") : SolidFixed("#FFA1A1A8");
     /// <summary>Text tone of the profile theme: the calendar's tone on a dark card, dark ink on a light one.</summary>
@@ -67,6 +70,7 @@ public partial class StatsView
             c1 = light ? sb.Color : MixColor(b, sb.Color, black ? 1 : 0.6);
             c2 = MixColor(Color.FromRgb(0x10, 0x10, 0x12), sb.Color, light ? 0.4 : black ? 1 : 0.0);
             if (!light && !black) { c1 = Saturate(c1, 1.6); c2 = Saturate(c2, 1.6); }
+            if (ProfileGold) { c1 = Color.FromRgb(0xFF, 0xE8, 0x73); c2 = Color.FromRgb(0xFF, 0xF3, 0xB0); }
         }
         return (c1, c2);
     }
@@ -336,18 +340,14 @@ public partial class StatsView
         var gap = Math.Max(1, 7 - favs.Count);
         foreach (var (card, tint) in favs)
         {
-            // Opaque underlay with its own tier tint: the card's own wash is faint and translucent, and would otherwise pick up the popup tint.
+            // A stronger tier wash than the card's own faint one.
+            if (tint is { } tc && card is Border wash)
+                wash.Background = new LinearGradientBrush(new GradientStopCollection { new GradientStop(Color.FromArgb(0x82, tc.R, tc.G, tc.B), 0), new GradientStop(Color.FromArgb(0xF2, tc.R, tc.G, tc.B), 1) }, new Point(0, 0), new Point(1, 1));
             ((FrameworkElement)card).Margin = new Thickness(0);
             ((FrameworkElement)card).LayoutTransform = new ScaleTransform(1.875, 1.875);
             favCards.Add((FrameworkElement)card);
             if (card is Border cb) { cb.BorderThickness = new Thickness(0); cb.CornerRadius = new CornerRadius(0); }
-            Brush under = SolidFixed("#CC34343A"), edge = Brushes.Transparent;
-            if (tint is { } c)
-            {
-                var baseC = Color.FromRgb(0x2A, 0x2A, 0x2F);
-                under = new LinearGradientBrush(new GradientStopCollection { new GradientStop(WithAlpha(MixColor(baseC, c, 0.42), 0xCC), 0), new GradientStop(WithAlpha(MixColor(baseC, c, 0.12), 0xCC), 1) }, new Point(0, 0), new Point(1, 1));
-            }
-            right.Children.Add(new Border { Background = under, BorderBrush = edge, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0), Margin = new Thickness(0, 0, 0, Math.Min(4, gap)), Child = card });
+            right.Children.Add(new Border { Background = Brushes.Transparent, BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(0), Margin = new Thickness(0, 0, 0, Math.Min(4, gap)), Child = card });
         }
         // No gap to the line and none to the card edge: the column reaches out over the host's right margin.
         // The cards share the column height equally, whatever their number. Only the text scale is capped (1.875); the card height stretches to fill.
@@ -364,7 +364,8 @@ public partial class StatsView
                 if (c is Border { Child: Grid g } && g.Children.OfType<ScoreChart>().FirstOrDefault() is { } sch)
                 {
                     sch.MiniTextCap = ProfileHost.ActualHeight / 3.7 / s;
-                    sch.MiniStackAbove = favCards.Count <= 3 ? 0 : double.PositiveInfinity;
+                    sch.DarkMark = ProfileLight;
+                    sch.MiniStackAbove =favCards.Count <= 3 ? 0 : double.PositiveInfinity;
                     if (!_profileCapturing) sch.Marquee = _host.Ui.ProfileAnimated;
                     _profileCharts.Add(sch);
                 }
