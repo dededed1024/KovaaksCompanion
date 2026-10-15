@@ -133,7 +133,13 @@
                             <StackPanel x:Name="OverviewHost"/>
                         </ScrollViewer>
 
-                        <Grid x:Name="RunPanel" Visibility="Collapsed">
+                        <ScrollViewer x:Name="RunScroll" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="Collapsed">
+                        <Grid x:Name="RunHost">
+                        <Grid.RowDefinitions>
+                            <RowDefinition x:Name="RunHostRow" Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid x:Name="RunPanel">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
@@ -164,7 +170,7 @@
                             </Border>
 
                             <!-- Run chart: stats as series; shares its x axis with the seek bar below -->
-                            <Border x:Name="ChartCard" Grid.Row="2" Margin="0,12,0,0" Style="{StaticResource SheetCard}" Padding="16,8,16,10">
+                            <Border x:Name="ChartCard" Grid.Row="3" Margin="0,12,0,0" Style="{StaticResource SheetCard}" Padding="16,8,16,10">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="22"/>
@@ -231,6 +237,9 @@
                                 </StackPanel>
                             </Grid>
                         </Grid>
+                        <StackPanel x:Name="RunStats" Grid.Row="1" Margin="0,12,0,0"/>
+                        </Grid>
+                        </ScrollViewer>
                     </Grid>
                     </Grid>
 
@@ -244,7 +253,11 @@
                                 </Grid.RowDefinitions>
                                 <Border x:Name="OverviewRow" Height="34" Margin="6,6,6,0" CornerRadius="8" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnOverviewRow"
                                         MouseEnter="OnOverviewRowHover" MouseLeave="OnOverviewRowHover">
-                                    <TextBlock Text="{app:Loc 'Overview'}" FontSize="13" VerticalAlignment="Center" Margin="10,0" Foreground="{DynamicResource Fg}" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                        <TextBlock Text="&#xE72B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Width="16" TextAlignment="Center" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource Dim}"
+                                                   TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"/>
+                                        <TextBlock Text="{app:Loc 'Overview'}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource Fg}" FontWeight="SemiBold"/>
+                                    </StackPanel>
                                 </Border>
                                 <ScrollViewer x:Name="RunsScroll" Grid.Row="1" Focusable="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <StackPanel Margin="6,2,6,6">

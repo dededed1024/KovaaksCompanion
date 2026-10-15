@@ -131,7 +131,7 @@
   <data name="Accuracy" xml:space="preserve"><value>정확도</value></data>
   <data name="Time" xml:space="preserve"><value>시간</value></data>
   <data name="Trend" xml:space="preserve"><value>추세</value></data>
-  <data name="Score per run" xml:space="preserve"><value>런별 점수</value></data>
+  <data name="Run stats" xml:space="preserve"><value>런 통계</value></data>
   <data name="Top tier reached" xml:space="preserve"><value>최고 티어 달성</value></data>
   <data name="{0} to {1} ({2})" xml:space="preserve"><value>{1}까지 {0} ({2})</value></data>
   <data name="TIER THRESHOLDS" xml:space="preserve"><value>티어 기준</value></data>
@@ -206,6 +206,16 @@
   <data name="Kills" xml:space="preserve"><value>킬</value></data>
   <data name="Shots" xml:space="preserve"><value>발사</value></data>
   <data name="Hits" xml:space="preserve"><value>명중</value></data>
+  <data name="TTK" xml:space="preserve"><value>처치 시간</value></data>
+  <data name="Overshots / run" xml:space="preserve"><value>오버슈팅 / 런</value></data>
+  <data name="Overshots" xml:space="preserve"><value>오버슈팅</value></data>
+  <data name="Reloads" xml:space="preserve"><value>재장전</value></data>
+  <data name="Distance moved" xml:space="preserve"><value>이동 거리</value></data>
+  <data name="Compared with average" xml:space="preserve"><value>평균과 비교</value></data>
+  <data name="Played" xml:space="preserve"><value>플레이 일시</value></data>
+  <data name="Rank" xml:space="preserve"><value>순위</value></data>
+  <data name="Sensitivity" xml:space="preserve"><value>감도</value></data>
+  <data name="This run" xml:space="preserve"><value>이번 런</value></data>
   <data name="Categories" xml:space="preserve"><value>카테고리</value></data>
   <data name="Subcategories" xml:space="preserve"><value>하위 카테고리</value></data>
   <data name="Scenarios" xml:space="preserve"><value>시나리오</value></data>
