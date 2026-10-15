@@ -98,7 +98,14 @@ public partial class StatsView
                 ShowSync(0, first.Count);
                 await EnsureCloudAsync(first, new Progress<int>(done => ShowSync(done, first.Count)));
             }
-            ScheduleRefresh();
+            if (!synced || first.Count > 0)
+            {
+                // Reload ran before any server data was here: redo what it derived from it. The cards built then still show the empty progress, and RefreshHome only redraws the hero and the lists.
+                ReapplyLocal();
+                AssignSessionIds();
+                ShowHome();
+            }
+            else ScheduleRefresh();
             if (_popupOpen && _popupItem is { } open) ShowBenchmark(open, true);
         }
         catch (OperationCanceledException) { }
