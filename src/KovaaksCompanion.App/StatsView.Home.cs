@@ -1069,6 +1069,20 @@ public partial class StatsView
         return g;
     }
 
+    /// <summary>The tier of a score and, in dim type after it, how far the score has come through that tier (0-99%, 100% at the top tier).</summary>
+    TextBlock TierCell(List<ChartBand>? bands, ChartBand? tier, double score, bool played)
+    {
+        var t = new TextBlock { FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+        t.Inlines.Add(new System.Windows.Documents.Run(tier?.Label ?? (played && bands != null ? L.T("UNRANKED") : "-"))
+            { FontWeight = FontWeights.SemiBold, Foreground = tier != null ? ChartPaths.TextTone(tier.Brush) : DimB });
+        if (played && bands is { Count: > 0 })
+        {
+            var pct = (int)Math.Floor(TierProgress(bands.Select(b => b.Value).ToList(), score) * 100);
+            t.Inlines.Add(new System.Windows.Documents.Run($" {pct}%") { Foreground = DimB });
+        }
+        return t;
+    }
+
     Border RunRow(RunRecord r, bool pb, bool dated = false)
     {
         var name = r.Scenario;
@@ -1081,7 +1095,7 @@ public partial class StatsView
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(dated ? 176 : 120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
@@ -1108,7 +1122,7 @@ public partial class StatsView
         var benchText = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         benchText.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(benchText, 2, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        var ac = Text(tier?.Label ?? (bands != null ? L.T("UNRANKED") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold);
+        var ac = TierCell(bands, tier, r.Score, true);
         Put(ac, 3, new Thickness(0), HorizontalAlignment.Center);
         var scoreFg = tier != null ? ChartPaths.TextTone(tier.Brush) : FgB;
         var sc = Text(r.Score.ToString("0.#"), 13, scoreFg, FontWeights.SemiBold);
@@ -1409,6 +1423,20 @@ public partial class StatsView
         var span = maxes[rank] - lower;
         return span > 0 ? Math.Clamp((score - lower) / span, 0, 1) : 0;
     }
+    /// <summary>
+    /// Sort key for the tier order: tiers reached out of all tiers, then progress through the current one. Read from the same bands as the tier shown in the row (<see cref="TierBands"/>),
+    /// so the order always matches what the rows say; -1 when the scenario has no tiers. The bands are kept in <paramref name="cache"/>.
+    /// </summary>
+    static readonly (double Ratio, double Progress) NoTier = (0, 0);
+
+    (double Ratio, double Progress) TierKey(Dictionary<string, List<ChartBand>?> cache, string scenario, double score)
+    {
+        if (!cache.TryGetValue(scenario, out var bands)) cache[scenario] = bands = TierBands(scenario);
+        if (bands is not { Count: > 0 }) return (-1, 0);
+        var maxes = bands.Select(b => b.Value).ToList();
+        return ((double)maxes.Count(m => score >= m) / maxes.Count, TierProgress(maxes, score));
+    }
+
     /// <summary>Sort key: scenarios below 100% first, highest percent first; 100% and unranked scenarios last.</summary>
     static double PercentKey(double? pct) => pct is { } v && v < 1 ? v : -1;
 
@@ -1419,20 +1447,20 @@ public partial class StatsView
     {
         var ui = _host.Ui;
         var data = TierData();
+        var bandCache = new Dictionary<string, List<ChartBand>?>(StringComparer.OrdinalIgnoreCase);
         var q = _book.AllScenarios.Concat(KovaaksCompanion.Core.Benchmarks.TierData.ScenarioNames).Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(n =>
             {
                 var s = _book.For(n);
                 double? pct = data.TryGetValue(n, out var t) ? TierProgress(t.Maxes, Math.Max(s.Best, t.Score)) : null;
-                // tiers reached out of all tiers of the scenario; -1 when it has none
-                var ratio = data.TryGetValue(n, out var td) && td.Maxes.Count > 0 ? (double)td.Maxes.Count(m => Math.Max(s.Best, td.Score) >= m) / td.Maxes.Count : -1;
-                return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: s.LastPlayed ?? DateTime.MinValue, Pct: pct, Ratio: ratio);
+                var tier = BrowseSort == 2 ? TierKey(bandCache, n, s.Best) : NoTier;
+                return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: s.LastPlayed ?? DateTime.MinValue, Pct: pct, Tier: tier);
             })
             .Where(i => !_favOnly || i.Fav);
         var o = BrowseSort switch
         {
             1 => q.OrderByDescending(i => PercentKey(i.Pct)).ThenByDescending(i => i.Last),
-            2 => q.OrderByDescending(i => i.Ratio).ThenByDescending(i => PercentKey(i.Pct)),
+            2 => q.OrderByDescending(i => i.Tier.Ratio).ThenByDescending(i => i.Tier.Progress),
             3 => q.OrderByDescending(i => i.S.Plays),
             4 => q.OrderBy(i => i.N, StringComparer.OrdinalIgnoreCase),
             _ => q.OrderByDescending(i => i.Last).ThenByDescending(i => PercentKey(i.Pct)),
@@ -1461,7 +1489,7 @@ public partial class StatsView
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
@@ -1476,7 +1504,7 @@ public partial class StatsView
         var bench = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         bench.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(bench, 1, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
-        Put(Text(tier?.Label ?? (stats.Best > 0 && TierBands(name) != null ? L.T("UNRANKED") : "-"), 12, tier != null ? ChartPaths.TextTone(tier.Brush) : DimB, FontWeights.SemiBold), 2, new Thickness(0), HorizontalAlignment.Center);
+        Put(TierCell(TierBands(name), tier, stats.Best, stats.Best > 0), 2, new Thickness(0), HorizontalAlignment.Center);
         var sc = Text(stats.Best > 0 ? stats.Best.ToString("0.#") : "-", 13, tier != null ? ChartPaths.TextTone(tier.Brush) : FgB, FontWeights.SemiBold);
         System.Windows.Documents.Typography.SetNumeralAlignment(sc, FontNumeralAlignment.Tabular);
         Put(sc, 3, new Thickness(0), HorizontalAlignment.Right);
@@ -1560,14 +1588,15 @@ public partial class StatsView
         var ui = _host.Ui;
         var data = TierData();
         var pbs = PbSet();
+        var bandCache = new Dictionary<string, List<ChartBand>?>(StringComparer.OrdinalIgnoreCase);
         var q = AllPlays()
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null,
-                Ratio: data.TryGetValue(r.Scenario, out var td) && td.Maxes.Count > 0 ? (double)td.Maxes.Count(m => r.Score >= m) / td.Maxes.Count : -1))
+                Tier: BrowseSort == 2 ? TierKey(bandCache, r.Scenario, r.Score) : NoTier))
             .Where(i => (!_favOnly || i.Fav) && (!_pbOnly || pbs.Contains(i.R)));
         var o = BrowseSort switch
         {
             1 => q.OrderBy(i => i.R.End),
-            2 => q.OrderByDescending(i => i.Ratio).ThenByDescending(i => PercentKey(i.Pct)),
+            2 => q.OrderByDescending(i => i.Tier.Ratio).ThenByDescending(i => i.Tier.Progress),
             3 => q.OrderByDescending(i => PercentKey(i.Pct)).ThenByDescending(i => i.R.End),
             _ => q.OrderByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct)),
         };
