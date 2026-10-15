@@ -170,26 +170,12 @@ public partial class ReplayView : UserControl
         if (Media.NaturalVideoHeight > 0) _videoAspect = (double)Media.NaturalVideoWidth / Media.NaturalVideoHeight;
         // The overview and runs without a video get the height of a 16:9 video.
         var aspect = _runMode && !NoVideo && _videoAspect > 0 ? _videoAspect : 16.0 / 9;
-        // The video fills the stage width; the card is as tall as its content, so only a too tall card narrows.
-        var w = Math.Max(0, Math.Min(1500, size.Width - 160));
-        var limit = Math.Max(0, size.Height - 80);
-        for (var i = 0; i < 6; i++)
-        {
-            ApplyWidth(w);
-            var sw = StageWidth(w);
-            Stage.Height = sw / aspect;
-            // Header and run panel are measured on their own: the overview and the run list beside the stage scroll, so their full height must not size the card.
-            var vis = RunPanel.Visibility;
-            RunPanel.Visibility = Visibility.Hidden; // a collapsed panel measures 0
-            Header.Measure(new Size(sw, double.PositiveInfinity));
-            RunPanel.Measure(new Size(sw, double.PositiveInfinity));
-            var h = Header.DesiredSize.Height + RunPanel.DesiredSize.Height + 2 + 32;
-            RunPanel.Visibility = vis;
-            Card.Height = h;
-            var over = h + 48 - limit;
-            if (over <= 0.5 || w <= 400) break;
-            w = Math.Max(400, w - over * aspect / (1 - SideShare));
-        }
+        // Like the playlist popup: as wide and tall as the window allows; what does not fit scrolls.
+        var w = Math.Max(0, size.Width - 160);
+        ApplyWidth(w);
+        Stage.Height = StageWidth(w) / aspect;
+        Card.Height = Math.Max(0, size.Height - 96);
+        FitScreen();
     }
 
     void ApplyWidth(double w)
@@ -203,7 +189,7 @@ public partial class ReplayView : UserControl
             _compactRows = compact;
             if (IsLoaded && _rows.Count > 0) BuildRuns(); // rows drop or regain the tier column
         }
-        RunChartRow.Height = new GridLength(Math.Clamp(nominal * 0.16, 90, 220));
+        RunChartRow.Height = new GridLength(Math.Clamp(nominal * 0.13, 76, 190));
         _bigChart.Height = Math.Clamp(nominal * 0.4, 120, 460);
     }
 
@@ -1436,7 +1422,7 @@ public partial class ReplayView : UserControl
     void FitScreen()
     {
         double W = Stage.ActualWidth, H = Stage.ActualHeight;
-        if (Media.NaturalVideoHeight <= 0 || W <= 0 || H <= 0 || _fs is null)
+        if (Media.NaturalVideoHeight <= 0 || W <= 0 || H <= 0)
         {
             Screen.Margin = new Thickness(0);
             return;

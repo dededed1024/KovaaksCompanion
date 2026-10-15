@@ -98,7 +98,7 @@
         <!-- Playlist popup: scrim + card below the title bar -->
         <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
             <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1300" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="56,64,56,32" CornerRadius="18" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
