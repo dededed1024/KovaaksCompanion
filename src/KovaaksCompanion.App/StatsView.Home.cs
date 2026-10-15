@@ -1077,8 +1077,8 @@ public partial class StatsView
             { FontWeight = FontWeights.SemiBold, Foreground = tier != null ? ChartPaths.TextTone(tier.Brush) : DimB });
         if (played && bands is { Count: > 0 })
         {
-            var pct = (int)Math.Floor(TierProgress(bands.Select(b => b.Value).ToList(), score) * 100);
-            t.Inlines.Add(new System.Windows.Documents.Run($" {pct}%") { Foreground = DimB });
+            var pct = Math.Floor(TierProgress(bands.Select(b => b.Value).ToList(), score) * 10000 + 1e-6) / 100;
+            t.Inlines.Add(new System.Windows.Documents.Run($" {pct:0.00}%") { Foreground = DimB });
         }
         return t;
     }
