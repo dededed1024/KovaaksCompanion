@@ -1156,9 +1156,12 @@ public partial class StatsView
                 _progress.TryGetValue(x.D.KovaaksBenchmarkId, out var p);
                 var ranked = p != null && p.OverallTierName.Length > 0;
                 return (x.B, x.D, Fav: _host.Ui.IsFavorite($"{x.D.KovaaksBenchmarkId}"), Last: LastPlayed(x.D.KovaaksBenchmarkId),
+    Grid? _browseBar;
+    /// <summary>The lists on Home show only favorites.</summary>
+    bool _favOnly;
                     Tier: ranked ? p!.OverallTier : -1, Frac: ranked ? p!.OverallFraction : 0.0);
             })
-            .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Tier).ThenByDescending(i => i.Frac)
+            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.Last ?? DateTime.MinValue).ThenByDescending(i => i.Tier).ThenByDescending(i => i.Frac)
             .Select(i => (i.B, i.D, i.Fav)).ToList();
 
     /// <summary>Columns of a tab's list at this width: 3 playlist cards, fewer when narrow; scenarios and replays are one column of rows.</summary>
@@ -1211,12 +1214,26 @@ public partial class StatsView
             : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
 
         var body = new StackPanel();
-        if (_browseTabs != null)
+        if (_browseBar != null)
         {
-            (_browseTabs.Parent as Panel)?.Children.Remove(_browseTabs);
-            body.Children.Add(_browseTabs);
+            (_browseBar.Parent as Panel)?.Children.Remove(_browseBar);
+            body.Children.Add(_browseBar);
         }
         if (items.Count == 0) body.Children.Add(Text(L.T(_favOnly ? "No favorites" : tab == "Scenarios" ? "No scenarios" : tab == "Sessions" ? "No sessions" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
+        var filter = new Button
+        {
+            FontFamily = new FontFamily(Icons), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(0, 4, TileGap / 2, 8),
+            MinHeight = 36, MinWidth = 36, VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Favorites only"),
+        };
+        void ShowFilter() => GlyphButton.Set(filter, "", (Brush)FindResource(_favOnly ? "Yellow" : "Dim"));
+        ShowFilter();
+        filter.Click += (_, _) => { _favOnly = !_favOnly; ShowFilter(); FillBrowse(); };
+        _browseBar = new Grid();
+        _browseBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _browseBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(filter, 1);
+        _browseBar.Children.Add(_browseTabs);
+        _browseBar.Children.Add(filter);
         var grid = new UniformGrid { Columns = cols };
         _browseItems = items; _browseGrid = grid; _browseShown = 0;
         AppendBrowse(BrowseBatch);
@@ -1224,6 +1241,41 @@ public partial class StatsView
         _browseHost.Child = Card(body, new Thickness(8, 4, 8, 4), CardGap);
     }
 
+    {
+        if (_browseHost == null) return;
+        // Fit the page to the list, but pad only as much as needed to keep the scroll position: a shorter list must not pull the page up.
+        var keep = HomeScroll.VerticalOffset;
+        SetHomePad(0);
+        FillBrowseCore();
+        HomeScroll.UpdateLayout();
+        var deficit = keep - HomeScroll.ScrollableHeight;
+        if (deficit > 0)
+        {
+            // The card fits its list; the missing height goes into the empty space below it.
+            SetHomePad(deficit);
+            HomeScroll.UpdateLayout();
+        }
+        HomeScroll.ScrollToVerticalOffset(keep);
+    }
+
+    double _homePad;
+
+    void SetHomePad(double pad)
+    {
+        _homePad = pad;
+        HomeHost.Margin = new Thickness(0, 24, 0, HomeBottomGap + pad);
+    }
+
+    /// <summary>Drops the extra space below the list once the page is scrolled up away from it, so it cannot be scrolled back down to.</summary>
+    void TrimHomePad()
+    {
+        if (_homePad <= 0) return;
+        var need = Math.Max(0, HomeScroll.VerticalOffset - (HomeScroll.ScrollableHeight - _homePad));
+        if (need >= _homePad - 0.5) return;
+        SetHomePad(need);
+    }
+
+    void FillBrowseCore()
     /// <summary>Rows built per step; the rest of a long list is built while the page scrolls towards its end.</summary>
     const int BrowseBatch = 40;
     List<Func<UIElement>> _browseItems = [];
@@ -1286,7 +1338,7 @@ public partial class StatsView
                 double? pct = data.TryGetValue(n, out var t) ? TierProgress(t.Maxes, Math.Max(s.Best, t.Score)) : null;
                 return (N: n, S: s, Fav: ui.IsFavoriteScenario(n), Last: s.LastPlayed ?? DateTime.MinValue, Pct: pct);
             })
-            .OrderByDescending(i => i.Fav).ThenByDescending(i => i.Last).ThenByDescending(i => PercentKey(i.Pct))
+            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.Last).ThenByDescending(i => PercentKey(i.Pct))
             .Select(i => (Func<UIElement>)(() => ScenarioRow(i.N, i.S, i.Fav))).ToList();
     }
 
@@ -1328,7 +1380,7 @@ public partial class StatsView
         var pbs = PbSet();
         return AllPlays()
             .Select(r => (R: r, Fav: ui.IsFavoriteRun(r.Scenario, r.End), Pct: data.TryGetValue(r.Scenario, out var t) ? (double?)TierProgress(t.Maxes, r.Score) : null))
-            .OrderByDescending(i => i.Fav).ThenByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
+            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.R.End).ThenByDescending(i => PercentKey(i.Pct))
             .Select(i => (Func<UIElement>)(() => RunRow(i.R, pbs.Contains(i.R), true))).ToList();
     }
 
@@ -1360,58 +1412,6 @@ public partial class StatsView
             var grad = new LinearGradientBrush
             {
                 StartPoint = new Point(0, 0),
-                EndPoint = new Point(1, 0),
-    HashSet<string>? _videoScenarios;
-    List<ReplayInfo>? _videoScenariosFor;
-
-    /// <summary>Scenarios that have a replay with a video; rebuilt when the replay list changes.</summary>
-    HashSet<string> ScenariosWithVideo()
-    {
-        if (_videoScenarios == null || !ReferenceEquals(_videoScenariosFor, _replays))
-        {
-            _videoScenarios = _replays.Where(i => i.HasVideo).Select(i => i.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            _videoScenariosFor = _replays;
-        }
-        return _videoScenarios;
-    }
-
-                GradientStops = new GradientStopCollection { new GradientStop(Color.FromArgb(0x05, 255, 255, 255), 0), new GradientStop(Color.FromArgb(0x38, c.R, c.G, c.B), 1) }
-            };
-            grad.Freeze();
-            card.Background = grad;
-            var overlay = new Border { CornerRadius = new CornerRadius(13), IsHitTestVisible = false, Background = new SolidColorBrush(Colors.Transparent) };
-            var content = new Grid();
-            content.Children.Add(overlay);
-            content.Children.Add(info);
-            card.Child = content;
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
-            var dur = TimeSpan.FromMilliseconds(120);
-            card.MouseEnter += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Theme.Ink(Color.FromArgb(0x12, 255, 255, 255)), dur));
-            card.MouseLeave += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, dur));
-        }
-        else
-        {
-            card.Child = info;
-            HoverFade(card, "#05FFFFFF", "#0FFFFFFF");
-        }
-        Clickable(card, () => OpenPlaylist(b, d));
-        return card;
-    }
-
-    /// <summary>Favorite playlist card, sized like the playlist popup's activity card: name and difficulty on the left, the tier progress line on the right over a card-high tier-name watermark.</summary>
-    UIElement FavoriteCard(Benchmark b, Difficulty d)
-    {
-        _progress.TryGetValue(d.KovaaksBenchmarkId, out var p);
-        var ranked = p != null && p.OverallTierName.Length > 0;
-        Put(Text(stats.Plays == 1 ? L.F("{0} run", stats.Plays) : L.F("{0} runs", stats.Plays), 12, DimB), 4, new Thickness(0, 0, 12, 0), HorizontalAlignment.Right);
-        var tier = ranked ? TierBrush(d, p!.OverallTierName) : (Brush)FindResource("Dim");
-        var history = p == null ? [] : TierLadder.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
-        var watermark = ranked ? TierText.Label(p!.OverallTierName) : L.T("UNRANKED");
-        var complete = p != null && p.IsTierComplete(p.OverallTier);
-        return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
-    }
-
     List<Func<UIElement>> SessionRows()
     {
         var ui = _host.Ui;
@@ -1471,6 +1471,58 @@ public partial class StatsView
         row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
         row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
         return row;
+    }
+
+                EndPoint = new Point(1, 0),
+    HashSet<string>? _videoScenarios;
+    List<ReplayInfo>? _videoScenariosFor;
+
+    /// <summary>Scenarios that have a replay with a video; rebuilt when the replay list changes.</summary>
+    HashSet<string> ScenariosWithVideo()
+    {
+        if (_videoScenarios == null || !ReferenceEquals(_videoScenariosFor, _replays))
+        {
+            _videoScenarios = _replays.Where(i => i.HasVideo).Select(i => i.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _videoScenariosFor = _replays;
+        }
+        return _videoScenarios;
+    }
+
+                GradientStops = new GradientStopCollection { new GradientStop(Color.FromArgb(0x05, 255, 255, 255), 0), new GradientStop(Color.FromArgb(0x38, c.R, c.G, c.B), 1) }
+            };
+            grad.Freeze();
+            card.Background = grad;
+            var overlay = new Border { CornerRadius = new CornerRadius(13), IsHitTestVisible = false, Background = new SolidColorBrush(Colors.Transparent) };
+            var content = new Grid();
+            content.Children.Add(overlay);
+            content.Children.Add(info);
+            card.Child = content;
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+            var dur = TimeSpan.FromMilliseconds(120);
+            card.MouseEnter += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Theme.Ink(Color.FromArgb(0x12, 255, 255, 255)), dur));
+            card.MouseLeave += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, dur));
+        }
+        else
+        {
+            card.Child = info;
+            HoverFade(card, "#05FFFFFF", "#0FFFFFFF");
+        }
+        Clickable(card, () => OpenPlaylist(b, d));
+        return card;
+    }
+
+    /// <summary>Favorite playlist card, sized like the playlist popup's activity card: name and difficulty on the left, the tier progress line on the right over a card-high tier-name watermark.</summary>
+    UIElement FavoriteCard(Benchmark b, Difficulty d)
+    {
+        _progress.TryGetValue(d.KovaaksBenchmarkId, out var p);
+        var ranked = p != null && p.OverallTierName.Length > 0;
+        Put(Text(stats.Plays == 1 ? L.F("{0} run", stats.Plays) : L.F("{0} runs", stats.Plays), 12, DimB), 4, new Thickness(0, 0, 12, 0), HorizontalAlignment.Right);
+        var tier = ranked ? TierBrush(d, p!.OverallTierName) : (Brush)FindResource("Dim");
+        var history = p == null ? [] : TierLadder.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
+        var watermark = ranked ? TierText.Label(p!.OverallTierName) : L.T("UNRANKED");
+        var complete = p != null && p.IsTierComplete(p.OverallTier);
+        return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
     }
 
     /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="fraction"/> is the progress to the next tier (shown while not <paramref name="complete"/>); <paramref name="cloudOf"/> supplies the scenarios whose cloud scores fill in a line with no local runs.</summary>
