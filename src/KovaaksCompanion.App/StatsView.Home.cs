@@ -1086,7 +1086,7 @@ public partial class StatsView
         var tier = bands?.LastOrDefault(b => r.Score >= b.Value);
 
         var g = new Grid();
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(dated ? 140 : 84) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(dated ? 176 : 120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
@@ -1099,17 +1099,20 @@ public partial class StatsView
             Grid.SetColumn(e, col);
             g.Children.Add(e);
         }
-        Put(Text(dated ? L.MonthDay(r.End) + " " + ClockFormat.Clock(r.Start) : ClockFormat.Clock(r.Start), 12, DimB), 0, new Thickness(12, 0, 0, 0));
         var favRun = _host.Ui.IsFavoriteRun(name, end);
-        if (dated) Put(NameWithFavoriteSlot(name, favRun, 36, 12), 1, new Thickness(0, 0, 16, 0));
-        else
-        {
-            var nm = Text("", 13, FgB, FontWeights.SemiBold);
-            if (favRun) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
-            nm.Inlines.Add(new System.Windows.Documents.Run(name));
-            nm.TextTrimming = TextTrimming.CharacterEllipsis;
-            Put(nm, 1, new Thickness(4, 0, 16, 0));
-        }
+        // favorite star in a fixed slot at the far left, then the time
+        var lead = new Grid();
+        lead.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+        lead.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (favRun) lead.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A"), Padding = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        var when = Text(dated ? L.MonthDay(r.End) + " " + ClockFormat.Clock(r.Start) : ClockFormat.Clock(r.Start), 12, DimB);
+        when.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(when, 1);
+        lead.Children.Add(when);
+        Put(lead, 0, new Thickness(0), HorizontalAlignment.Stretch);
+        var nm = Text(name, 13, FgB, FontWeights.SemiBold);
+        nm.TextTrimming = TextTrimming.CharacterEllipsis;
+        Put(nm, 1, new Thickness(dated ? 0 : 4, 0, 16, 0));
         var benchText = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         benchText.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(benchText, 2, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
