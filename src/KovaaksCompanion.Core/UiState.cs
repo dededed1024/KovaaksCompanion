@@ -87,6 +87,35 @@ public sealed class UiState
         return i > 0 && long.TryParse(key.AsSpan(i + 1), out var t) && t > 0 && t <= DateTime.MaxValue.Ticks ? (key[..i], new DateTime(t)) : null;
     }
 
+    readonly List<string> _favSessions = [];
+
+    /// <summary>Identity of a session: the <see cref="RunKey"/> of its first run; empty for a session without runs.</summary>
+    public static string SessionKey(Library.PlaySession s) => s.Runs.Count > 0 ? RunKey(s.Runs[0].Scenario, s.Runs[0].End) : "";
+
+    public bool IsFavoriteSession(Library.PlaySession s) => _favSessions.Contains(SessionKey(s));
+
+    /// <summary>Flips the session favorite and returns the new state.</summary>
+    public bool ToggleFavoriteSession(Library.PlaySession s)
+    {
+        var key = SessionKey(s);
+        if (key.Length == 0) return false;
+        if (_favSessions.Remove(key)) return false;
+        _favSessions.Add(key);
+        return true;
+    }
+
+    /// <summary>Run keys of the favorite runs plus every run of a favorite session (found through <see cref="Library.PlaySession.RunSessionIds"/>).</summary>
+    public HashSet<string> FavoriteRunKeys()
+    {
+        var keys = _favRuns.ToHashSet();
+        var ids = Library.PlaySession.RunSessionIds;
+        var favIds = _favSessions.Where(ids.ContainsKey).Select(k => ids[k]).ToHashSet();
+        if (favIds.Count > 0)
+            foreach (var kv in ids)
+                if (favIds.Contains(kv.Value)) keys.Add(kv.Key);
+        return keys;
+    }
+
     public bool IsFavoriteScenario(string scenario) => _favScenarios.Contains(scenario, StringComparer.OrdinalIgnoreCase);
     public bool IsFavoriteRun(string scenario, DateTime end) => _favRuns.Contains(RunKey(scenario, end));
 
@@ -154,7 +183,7 @@ public sealed class UiState
         }
     }
 
-    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null, string? ProfileName = null, string? ProfileImage = null, string? ProfileAccent = null, string[]? FavoriteScenarios = null, string[]? FavoriteRuns = null, bool? ComparePrev = null, bool? ProfileAnimated = null, string[]? ProfileItems = null, Dictionary<string, int>? DpiFixes = null);
+    sealed record Dto(string[]? FavoritePlaylists, string[]? VisibleSeries, bool? ShowTrail = null, string? StatsChart = null, string? RadarAxes = null, bool? RadarCompare = null, string? TierPlaylist = null, string[]? TierPlaylists = null, string? ProfileName = null, string? ProfileImage = null, string? ProfileAccent = null, string[]? FavoriteScenarios = null, string[]? FavoriteRuns = null, bool? ComparePrev = null, bool? ProfileAnimated = null, string[]? ProfileItems = null, Dictionary<string, int>? DpiFixes = null, string[]? FavoriteSessions = null);
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
@@ -186,6 +215,7 @@ public sealed class UiState
             if (d?.ProfileAnimated is { } pm) s.ProfileAnimated = pm;
             if (d?.FavoriteScenarios is { } fs) s._favScenarios.AddRange(fs.Distinct(StringComparer.OrdinalIgnoreCase));
             if (d?.FavoriteRuns is { } fr) s._favRuns.AddRange(fr.Distinct());
+            if (d?.FavoriteSessions is { } fss) s._favSessions.AddRange(fss.Distinct());
             if (d?.TierPlaylists is { } tl) s._tiers = tl.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             else if (d?.TierPlaylist is { Length: > 0 } tp && !s.IsPinned(tp)) s._tiers.Add(tp);
             if (d?.DpiFixes is { } df) foreach (var (k, dv) in df) if (dv > 0) s._dpiFixes[k] = dv;
@@ -203,10 +233,62 @@ public sealed class UiState
         return s;
     }
 
+    const string KindScenario = "scenario", KindRun = "run", KindSession = "session";
+
+    string? _archiveFile;
+
+    /// <summary>
+    /// Moves the favorite scenarios, runs and sessions into the archive database (they decide which replay videos the cleanup keeps, and the database is the file
+    /// that is backed up). The first time, the favorites of ui.json are copied there; afterwards the database is the only place that holds them and
+    /// <see cref="Save"/> leaves them out of ui.json. Call on the thread that owns this state. Returns false when the database cannot be used; the favorites then stay in ui.json.
+    /// </summary>
+    public bool UseArchive(string archiveFile, string? uiPath = null)
+    {
+        try
+        {
+            var db = ArchiveDb.At(archiveFile);
+            if (db.ReadFavorites() is { } stored)
+            {
+                Replace(_favScenarios, stored.GetValueOrDefault(KindScenario));
+                Replace(_favRuns, stored.GetValueOrDefault(KindRun));
+                Replace(_favSessions, stored.GetValueOrDefault(KindSession));
+            }
+            else db.SaveFavorites(FavoritesByKind());
+            _archiveFile = archiveFile;
+            Save(uiPath);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Diagnostics.ErrorReporter.Report("favorites " + archiveFile, e);
+            return false;
+        }
+
+        static void Replace(List<string> list, List<string>? keys)
+        {
+            list.Clear();
+            if (keys != null) list.AddRange(keys.Distinct());
+        }
+    }
+
+    IReadOnlyDictionary<string, IReadOnlyList<string>> FavoritesByKind() => new Dictionary<string, IReadOnlyList<string>>
+    {
+        [KindScenario] = _favScenarios.ToArray(),
+        [KindRun] = _favRuns.ToArray(),
+        [KindSession] = _favSessions.ToArray(),
+    };
+
     public void Save(string? path = null)
     {
         path ??= DefaultFile;
+        var inArchive = false;
+        if (_archiveFile != null)
+        {
+            // ui.json drops the favorites only after the database holds them
+            try { ArchiveDb.At(_archiveFile).SaveFavorites(FavoritesByKind()); inArchive = true; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("favorites save " + _archiveFile, e); }
+        }
         var dir = Path.GetDirectoryName(path)!;
-        AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, _favScenarios.ToArray(), _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray(), _dpiFixes.Count > 0 ? new Dictionary<string, int>(_dpiFixes) : null), Options)); });
+        AccessGuard.Run(dir, true, () => { Directory.CreateDirectory(dir); File.WriteAllText(path, JsonSerializer.Serialize(new Dto(_favs.ToArray(), VisibleSeries.ToArray(), ShowTrail, StatsChart, RadarAxes, RadarCompare, null, _tiers.ToArray(), ProfileName, ProfileImage, ProfileAccent, inArchive ? null : _favScenarios.ToArray(), inArchive ? null : _favRuns.ToArray(), ComparePrev, ProfileAnimated, _profile.ToArray(), _dpiFixes.Count > 0 ? new Dictionary<string, int>(_dpiFixes) : null, inArchive ? null : _favSessions.ToArray()), Options)); });
     }
 }
