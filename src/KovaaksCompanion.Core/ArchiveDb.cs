@@ -513,7 +513,7 @@ internal sealed class ArchiveDb(string file)
         }
         catch
         {
-            try { Exec(c, "ROLLBACK"); } catch (SqliteException) { }
+            try { Exec(c, "ROLLBACK"); } catch (SqliteException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("archive rollback", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
             throw;
         }
     }

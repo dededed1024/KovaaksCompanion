@@ -573,7 +573,7 @@ public partial class StatsView : UserControl
         if (!string.IsNullOrWhiteSpace(hex))
         {
             try { var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); b.Freeze(); return b; }
-            catch (FormatException) { }
+            catch (FormatException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("stats view", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
         }
         return (Brush)FindResource("Dim");
     }

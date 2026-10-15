@@ -54,7 +54,7 @@ public sealed class ReplaySaver
             {
                 if (File.Exists(perf)) return PerfParser.Parse(await File.ReadAllBytesAsync(perf));
             }
-            catch (Exception e) when (e is IOException or PerfFormatException) { } // still being written
+            catch (Exception e) when (e is IOException or PerfFormatException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("replay perf read", e); } // still being written
             if (i < attempts - 1) await Task.Delay(250);
         }
         return null;
@@ -84,7 +84,7 @@ public sealed class ReplaySaver
         var clipEndQpc = clip == null ? 0 : clip.ClipStartQpc + (long)(clip.Duration.TotalSeconds * anchor.Frequency);
         var videoCovers = skipVideo || clip != null && clip.ClipStartQpc <= startQpc && clipEndQpc >= endQpc;
 
-        if (clip == null && File.Exists(videoPath)) { try { File.Delete(videoPath); } catch (IOException) { } } // a failed cut leaves no half file behind
+        if (clip == null && File.Exists(videoPath)) { try { File.Delete(videoPath); } catch (IOException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("replay video delete", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); } } // a failed cut leaves no half file behind
 
         var built = TrajectoryBuilder.Build(run, _buffer, anchor);
         var parts = new RepParts(built.Trajectory is { } t ? TrajectorySerializer.Serialize(t) : null, await ReadPerfAsync(csvPath), RepStats.From(run));

@@ -158,10 +158,11 @@ public sealed class AppHost : IDisposable
             var tier = TierLadder.TierOf(run.Score, hits.Sc.TierThresholds).Tier;
             return tier > 0 && tier < hits.Data!.TierNames.Count ? hits.Data.TierNames[tier] : null;
         }
-        catch (Exception e) { AppLog.Write("error", $"tier lookup failed: {e.Message}"); return null; }
+        catch (Exception e) { ErrorReporter.Report("tier lookup", e); return null; }
     }
 
-    void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
+    // Every app error goes through ErrorReporter (log + automatic report), so none is filtered out.
+    void SetError(string m, Exception? e = null, ErrorSeverity severity = ErrorSeverity.Medium) { _lastError = m; ErrorReporter.Report(m, e ?? new VideoProblem(m), severity); }
 
     readonly object _cleanGate = new();
 
@@ -336,13 +337,13 @@ public sealed class AppHost : IDisposable
         {
             var libobs = ResolveLibobs();
             if (libobs != null) StartVideo(libobs);
-            else SetError("libobs missing (video disabled)");
+            else SetError("libobs missing (video disabled)", severity: ErrorSeverity.High);
         });
 
         _saver = new ReplaySaver(_settings.OpenReplays(), _buffer, ClockAnchor.Now,
             (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null),
             IsPersonalBest, SessionOf, () => _settings.VideoPbOnly, TierNameOf, () => _settings.VideoByRun);
-        _saver.Error += SetError;
+        _saver.Error += m => SetError(m);
         _saver.Saved += info =>
         {
             lock (_pending)
@@ -389,11 +390,11 @@ public sealed class AppHost : IDisposable
         };
         _watcher.AccessDenied += folder =>
         {
-            if (!AccessGuard.Grant(folder, false)) { SetError("stats folder: access denied: " + folder); return; }
+            if (!AccessGuard.Grant(folder, false)) { SetError("stats folder: access denied: " + folder, severity: ErrorSeverity.Low); return; }
             AppLog.Write("stats", "read access granted: " + folder);
             _app.Dispatcher.Invoke(() => { _watcher?.Dispose(); StartWatcher(); });
         };
-        try { _watcher.Start(); } catch (Exception e) { SetError("stats folder: " + e.Message); }
+        try { _watcher.Start(); } catch (Exception e) { SetError("stats folder: " + e.Message, e); }
     }
 
     /// <summary>One background release check per run; a newer release is offered in the main window, now or when it next opens.</summary>
@@ -432,18 +433,18 @@ public sealed class AppHost : IDisposable
             ObsRoot = obsRoot, BufferDir = _settings.BufferFolder, Quality = _settings.VideoQuality.ToCq(), MaxHeight = _settings.VideoQuality.MaxHeight(),
             Fps = _settings.VideoFps,
         }, () => WebcamConfig.From(_settings));
-        _video.Error += m => { SetError("video: " + m); ErrorReporter.Report("video", new VideoProblem(m)); };
+        _video.Error += m => SetError("video: " + m, severity: ErrorSeverity.High);
         _video.GameLaunched += Live.Launch;
         _video.GameExited += () => _ = Live.Exit();
         _video.StateChanged += () => GameStateChanged?.Invoke();
         _video.GameSized += (w, h) => { if (w != _settings.GameWidth || h != _settings.GameHeight) ApplySettings(_settings with { GameWidth = w, GameHeight = h }); };
-        try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message); }
+        try { _video.Start(); } catch (Exception e) { SetError("video: " + e.Message, e, ErrorSeverity.High); }
     }
 
     void StartCapture()
     {
         try { _capture = new RawInputCapture(_buffer.Add); _capture.Start(); }
-        catch (Exception e) { _capture = null; SetError("mouse: " + e.Message); }
+        catch (Exception e) { _capture = null; SetError("mouse: " + e.Message, e, ErrorSeverity.High); }
     }
 
     void BuildTray()
@@ -522,13 +523,13 @@ public sealed class AppHost : IDisposable
 
     public void SaveUi()
     {
-        try { Ui.Save(_uiFile); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { SetError("ui state: " + e.Message); }
+        try { Ui.Save(_uiFile); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { SetError("ui state: " + e.Message, e); }
         UiChanged?.Invoke();
     }
 
     void SaveSettings()
     {
-        try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message); }
+        try { _settings.Save(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { SetError("settings not saved: " + AppSettings.DefaultFile + ": " + e.Message, e); }
     }
 
     /// <summary>Checks every folder the app uses and fixes all blocked ones with one UAC prompt.</summary>
@@ -540,7 +541,7 @@ public sealed class AppHost : IDisposable
             (AppSettings.DefaultDataFolder, true),
             (_settings.KovaaksPath.Trim().Length > 0 ? _settings.StatsFolder : "", false),
         ]);
-        foreach (var b in blocked) SetError("access denied: " + b);
+        foreach (var b in blocked) SetError("access denied: " + b, severity: ErrorSeverity.Low);
     }
 
     public void ApplySettings(AppSettings s)

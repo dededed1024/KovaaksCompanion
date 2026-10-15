@@ -123,7 +123,7 @@ public sealed class PacketRing : IDisposable
             var c = _chunks[0];
             _chunks.RemoveAt(0);
             _entries.RemoveAll(e => e.Chunk == c.Id);
-            try { File.Delete(c.Path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("ring chunk delete", e); }
+            try { File.Delete(c.Path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("ring chunk delete", e, Diagnostics.ErrorSeverity.Low); }
         }
     }
 
@@ -208,8 +208,8 @@ public sealed class PacketRing : IDisposable
         {
             foreach (var c in _chunks)
             {
-                try { c.Writer?.Dispose(); } catch (IOException e) { Diagnostics.ErrorReporter.Report("ring writer dispose", e); }
-                try { File.Delete(c.Path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("ring chunk delete", e); }
+                try { c.Writer?.Dispose(); } catch (IOException e) { Diagnostics.ErrorReporter.Report("ring writer dispose", e, Diagnostics.ErrorSeverity.Low); }
+                try { File.Delete(c.Path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("ring chunk delete", e, Diagnostics.ErrorSeverity.Low); }
             }
             _chunks.Clear(); _entries.Clear(); _open = null;
         }

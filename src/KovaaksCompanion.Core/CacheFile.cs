@@ -48,7 +48,7 @@ public static class CacheFile
                 return new(items, StringComparer.OrdinalIgnoreCase);
             }
         }
-        catch (Exception e) when (e is JsonException or NotSupportedException or InvalidOperationException or IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is JsonException or NotSupportedException or InvalidOperationException or IOException or UnauthorizedAccessException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("cache read", e); }
         return new(StringComparer.OrdinalIgnoreCase);
     }
 

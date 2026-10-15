@@ -55,7 +55,7 @@ public sealed class RecordingService : IAsyncDisposable
             }
             GameLaunched?.Invoke(start ?? DateTime.Now);
         }
-        catch (Exception e) { ErrorReporter.Report("video launch time", e); }
+        catch (Exception e) { ErrorReporter.Report("video launch time", e, ErrorSeverity.High); }
     }
 
     private async Task StartRecordingAsync()
@@ -88,7 +88,7 @@ public sealed class RecordingService : IAsyncDisposable
             }
             else if (!cts.IsCancellationRequested) Error?.Invoke(rec.LastError);
         }
-        catch (Exception e) { ErrorReporter.Report("video start", e); Error?.Invoke(e.Message); }
+        catch (Exception e) { ErrorReporter.Report("video start", e, ErrorSeverity.High); Error?.Invoke(e.Message); }
         finally { _gate.Release(); }
         StateChanged?.Invoke();
     }
@@ -112,7 +112,7 @@ public sealed class RecordingService : IAsyncDisposable
                 if (await cam.StartAsync(id, encoder, config.Rotation, config.Cut)) _cams.Add((slot, cam));
                 else { Error?.Invoke($"webcam {slot + 1} off: " + cam.LastError); await cam.DisposeAsync(); }
             }
-            catch (Exception e) { ErrorReporter.Report("webcam start", e); Error?.Invoke($"webcam {slot + 1} off: " + e.Message); }
+            catch (Exception e) { ErrorReporter.Report("webcam start", e, ErrorSeverity.High); Error?.Invoke($"webcam {slot + 1} off: " + e.Message); }
         }
     }
 
@@ -156,7 +156,7 @@ public sealed class RecordingService : IAsyncDisposable
                     if (!await cam.ExtractAsync(clip, Path.Combine(dir, $"handcam{slot + 1}.mp4")))
                         AppLog.Write("webcam", $"no footage from cam {slot + 1} for this clip");
                 }
-                catch (Exception e) { ErrorReporter.Report("webcam clip", e); Error?.Invoke("webcam not saved: " + e.Message); }
+                catch (Exception e) { ErrorReporter.Report("webcam clip", e, ErrorSeverity.High); Error?.Invoke("webcam not saved: " + e.Message); }
             }
         }
         progress?.Invoke(1);

@@ -312,7 +312,7 @@ public sealed unsafe class FfmpegPlayer : IDisposable
     void DecodeLoop()
     {
         try { Decode(); }
-        catch (Exception e) { Error = e.ToString(); KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("ffmpeg decode", e); }
+        catch (Exception e) { Error = e.ToString(); KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("ffmpeg decode", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.High); }
     }
 
     void Decode()

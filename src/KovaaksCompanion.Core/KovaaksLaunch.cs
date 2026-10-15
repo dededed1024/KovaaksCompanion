@@ -22,7 +22,7 @@ public static class KovaaksLaunch
         }
         catch (Exception e)
         {
-            ErrorReporter.Report($"launch {url}", e);
+            ErrorReporter.Report($"launch {url}", e, ErrorSeverity.High);
             return false;
         }
     }

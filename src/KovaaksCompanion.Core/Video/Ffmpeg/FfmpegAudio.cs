@@ -116,7 +116,7 @@ internal sealed unsafe class FfmpegAudio : IDisposable
                 Thread.Sleep(3);
             }
         }
-        catch (Exception e) { Diagnostics.ErrorReporter.Report("ffmpeg audio", e); } // best effort: the video keeps playing
+        catch (Exception e) { Diagnostics.ErrorReporter.Report("ffmpeg audio", e, Diagnostics.ErrorSeverity.High); } // best effort: the video keeps playing
     }
 
     bool Drifted(ClockState c)

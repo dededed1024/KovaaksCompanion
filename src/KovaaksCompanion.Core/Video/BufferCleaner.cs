@@ -20,11 +20,11 @@ public static partial class BufferCleaner
             foreach (var d in Directory.GetDirectories(bufferDir).Where(d => CamFolder().IsMatch(Path.GetFileName(d))))
             {
                 n += DeleteMatching(d, CamSegment());
-                try { if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer dir delete", e); }
+                try { if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer dir delete", e, Diagnostics.ErrorSeverity.Low); }
             }
             if (!Directory.EnumerateFileSystemEntries(bufferDir).Any()) Directory.Delete(bufferDir);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer cleanup", e); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer cleanup", e, Diagnostics.ErrorSeverity.Low); }
         return n;
     }
 
@@ -33,7 +33,7 @@ public static partial class BufferCleaner
         var n = 0;
         foreach (var f in Directory.GetFiles(dir).Where(f => name.IsMatch(Path.GetFileName(f))))
         {
-            try { File.Delete(f); n++; } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer file delete", e); }
+            try { File.Delete(f); n++; } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Diagnostics.ErrorReporter.Report("buffer file delete", e, Diagnostics.ErrorSeverity.Low); }
         }
         return n;
     }

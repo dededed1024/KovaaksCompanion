@@ -26,7 +26,7 @@ public static class Autostart
             if (!on) { File.Delete(LinkPath); return; }
             CreateLink();
         }
-        catch (Exception e) when (e is UnauthorizedAccessException or SecurityException or IOException or System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException) { }
+        catch (Exception e) when (e is UnauthorizedAccessException or SecurityException or IOException or System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("autostart", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
     }
 
     /// <summary>Rewrites the shortcut when the setting is on but the exe moved or the shortcut is missing.</summary>

@@ -31,7 +31,7 @@ public static class StatsIngest
                 using (var sr = new StreamReader(fs)) text = sr.ReadToEnd();
                 fresh.Add(RunRecord.From(StatsCsvParser.Parse(file, text), ReadDrift(file)));
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // maybe still being written
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("stats ingest", e); } // maybe still being written
             catch (Exception e) when (e is FormatException or ArgumentException or IndexOutOfRangeException or OverflowException) { AppLog.Write("stats", $"skipped {Path.GetFileName(file)}: {e.Message}"); }
         }
         return store.ArchiveNew(fresh);

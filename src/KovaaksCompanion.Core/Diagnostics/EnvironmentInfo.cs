@@ -68,7 +68,7 @@ public static class EnvironmentInfo
                 if (k?.GetValue("DriverDesc")?.ToString() is { Length: > 0 } d && !names.Contains(d)) names.Add(d);
             }
         }
-        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
+        catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("environment info", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
         return names;
     }
 }

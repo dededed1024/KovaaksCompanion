@@ -1541,7 +1541,7 @@ public partial class ReplayView : UserControl
     void OnMediaFailed(Exception ex)
     {
         AppLog.Write("replay", "media failed: " + ex);
-        ErrorReporter.Report("replay media", ex);
+        ErrorReporter.Report("replay media", ex, ErrorSeverity.High);
         SetTransport(false);
         Notice.Text = L.T("Video failed to load: ") + ex.Message;
         Notice.Visibility = Visibility.Visible;
@@ -1763,7 +1763,7 @@ public partial class ReplayView : UserControl
                 _prev = (it.Info.Id, perf);
                 return (it.Info.Id, perf, it.Info);
             }
-            catch (Exception e) when (e is IOException or ReplayFormatException) { }
+            catch (Exception e) when (e is IOException or ReplayFormatException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("replay view", e); }
         }
         return null;
     }

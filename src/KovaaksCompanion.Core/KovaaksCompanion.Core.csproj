@@ -12,15 +12,27 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
-  <!-- Falls back to KOVAAKS_WEBHOOK_URL=... in the git-ignored repo-root .env when the variable is not set. -->
-  <PropertyGroup Condition="'$(KOVAAKS_WEBHOOK_URL)' == '' And Exists('$(MSBuildThisFileDirectory)../../.env')">
-    <KOVAAKS_WEBHOOK_URL>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../.env')), 'KOVAAKS_WEBHOOK_URL=(\S+)').Groups[1].Value)</KOVAAKS_WEBHOOK_URL>
+  <!-- Falls back to KOVAAKS_FEEDBACK_WEBHOOK_URL=... in the git-ignored repo-root .env when the variable is not set. -->
+  <PropertyGroup Condition="'$(KOVAAKS_FEEDBACK_WEBHOOK_URL)' == '' And Exists('$(MSBuildThisFileDirectory)../../.env')">
+    <KOVAAKS_FEEDBACK_WEBHOOK_URL>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../.env')), 'KOVAAKS_FEEDBACK_WEBHOOK_URL=(\S+)').Groups[1].Value)</KOVAAKS_FEEDBACK_WEBHOOK_URL>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(KOVAAKS_WEBHOOK_URL)' != ''">
+  <!-- Same fallback for the automatic error reports, which go to their own webhook. -->
+  <PropertyGroup Condition="'$(KOVAAKS_ERROR_WEBHOOK_URL)' == '' And Exists('$(MSBuildThisFileDirectory)../../.env')">
+    <KOVAAKS_ERROR_WEBHOOK_URL>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../.env')), 'KOVAAKS_ERROR_WEBHOOK_URL=(\S+)').Groups[1].Value)</KOVAAKS_ERROR_WEBHOOK_URL>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(KOVAAKS_FEEDBACK_WEBHOOK_URL)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>WebhookUrl</_Parameter1>
-      <_Parameter2>$(KOVAAKS_WEBHOOK_URL)</_Parameter2>
+      <_Parameter2>$(KOVAAKS_FEEDBACK_WEBHOOK_URL)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(KOVAAKS_ERROR_WEBHOOK_URL)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ErrorWebhookUrl</_Parameter1>
+      <_Parameter2>$(KOVAAKS_ERROR_WEBHOOK_URL)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

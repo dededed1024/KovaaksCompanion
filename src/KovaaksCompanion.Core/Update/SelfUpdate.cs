@@ -83,6 +83,6 @@ public static class SelfUpdate
 
     static void TryDelete(string path)
     {
-        try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try { File.Delete(path); } catch (IOException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("update cleanup", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); } catch (UnauthorizedAccessException e) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("update cleanup", e, KovaaksCompanion.Core.Diagnostics.ErrorSeverity.Low); }
     }
 }

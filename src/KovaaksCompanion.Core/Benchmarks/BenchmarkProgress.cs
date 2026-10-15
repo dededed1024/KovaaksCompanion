@@ -135,7 +135,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
                     if (++tried == 3) break; // the entry moved (a rank changed meanwhile): another benchmark is a better bet than more scenarios of this one
                 }
             }
-            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException or TaskCanceledException && !ct.IsCancellationRequested) { }
+            catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException or TaskCanceledException && !ct.IsCancellationRequested) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("benchmark progress", e); }
         }
         return null;
     }

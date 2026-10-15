@@ -163,7 +163,7 @@ public static unsafe class FfmpegNative
             catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
             {
                 LastError = e.Message;
-                Diagnostics.ErrorReporter.Report("ffmpeg load", e);
+                Diagnostics.ErrorReporter.Report("ffmpeg load", e, Diagnostics.ErrorSeverity.High);
                 return false;
             }
         }

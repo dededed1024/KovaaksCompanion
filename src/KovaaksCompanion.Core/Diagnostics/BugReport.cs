@@ -6,14 +6,21 @@ namespace KovaaksCompanion.Core.Diagnostics;
 /// <summary>Posts a user-written bug report plus the scrubbed log tail to a Discord webhook.</summary>
 public static class BugReport
 {
-    /// <summary>Discord webhook URL, baked in at build time from the KOVAAKS_WEBHOOK_URL environment variable (see the Core csproj). Empty hides the report UI.</summary>
+    /// <summary>Discord webhook URL, baked in at build time from the KOVAAKS_FEEDBACK_WEBHOOK_URL environment variable (see the Core csproj). Empty hides the report UI.</summary>
     public static readonly string WebhookUrl =
         typeof(BugReport).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "WebhookUrl")?.Value ?? "";
 
+    /// <summary>Webhook for automatic error reports, baked in from KOVAAKS_ERROR_WEBHOOK_URL. Empty turns automatic reports off.</summary>
+    public static readonly string ErrorWebhookUrl =
+        typeof(BugReport).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "ErrorWebhookUrl")?.Value ?? "";
+
     const int MaxContent = 1900;
 
     public static bool Enabled => WebhookUrl.Length > 0;
+
+    public static bool ErrorEnabled => ErrorWebhookUrl.Length > 0;
 
     /// <summary>Hides the profile path and the Windows user name so a report does not identify the sender.</summary>
     public static string Scrub(string text)
@@ -34,12 +41,22 @@ public static class BugReport
         return JsonSerializer.Serialize(new { content });
     }
 
-    /// <summary>Discord <c>payload_json</c> for an automatic error report: exception details only, no OS or environment.</summary>
-    public static string BuildErrorPayloadJson(string title, Exception ex, string version)
+    /// <summary>Embed color per severity: red, orange, yellow, gray.</summary>
+    public static int SeverityColor(ErrorSeverity severity) => severity switch
     {
-        var content = Scrub($"**Error** v{version} · {title}\n{ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
-        if (content.Length > MaxContent) content = content[..MaxContent];
-        return JsonSerializer.Serialize(new { content });
+        ErrorSeverity.Critical => 0xE74C3C,
+        ErrorSeverity.High => 0xE67E22,
+        ErrorSeverity.Medium => 0xF1C40F,
+        _ => 0x95A5A6,
+    };
+
+    /// <summary>Discord <c>payload_json</c> for an automatic error report: a colored embed titled with the severity number, exception details only, no OS or environment.</summary>
+    public static string BuildErrorPayloadJson(string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium)
+    {
+        var description = Scrub($"{ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
+        if (description.Length > MaxContent) description = description[..MaxContent];
+        var embed = new { title = Scrub($"[{(int)severity}] {title}"), description, color = SeverityColor(severity), footer = new { text = $"v{version} · severity {(int)severity} ({severity})" } };
+        return JsonSerializer.Serialize(new { embeds = new[] { embed } });
     }
 
     /// <summary>Posts the message (user text and environment), then the scrubbed log tail as a second message. True when the first post succeeded.</summary>
@@ -79,12 +96,12 @@ public static class BugReport
     }
 
     /// <summary>Posts one automatic error message; no OS, environment or log.</summary>
-    public static async Task<bool> SendError(HttpClient http, string title, Exception ex, string version, CancellationToken ct = default)
+    public static async Task<bool> SendError(HttpClient http, string title, Exception ex, string version, ErrorSeverity severity = ErrorSeverity.Medium, CancellationToken ct = default)
     {
         try
         {
-            using var content = new StringContent(BuildErrorPayloadJson(title, ex, version), System.Text.Encoding.UTF8, "application/json");
-            using var res = await http.PostAsync(WebhookUrl, content, ct);
+            using var content = new StringContent(BuildErrorPayloadJson(title, ex, version, severity), System.Text.Encoding.UTF8, "application/json");
+            using var res = await http.PostAsync(ErrorWebhookUrl, content, ct);
             return res.IsSuccessStatusCode;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return false; }

@@ -18,7 +18,7 @@ public sealed partial class ReplayArchive
         foreach (var dir in LegacyDirs(roots))
         {
             try { list.Add(LegacyReplays.ReadInfo(dir)); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ReplayFormatException or JsonException) { }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ReplayFormatException or JsonException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("legacy replay import", e); }
         }
         return list;
     }

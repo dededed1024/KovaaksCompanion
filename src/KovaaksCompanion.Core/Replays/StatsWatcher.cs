@@ -68,7 +68,7 @@ public sealed class StatsWatcher : IDisposable
                 if (text != null && text == last)
                 {
                     RunStats? run = null;
-                    try { run = StatsCsvParser.Parse(path, text); } catch (Exception e) when (e is FormatException or IndexOutOfRangeException or OverflowException) { }
+                    try { run = StatsCsvParser.Parse(path, text); } catch (Exception e) when (e is FormatException or IndexOutOfRangeException or OverflowException) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("stats csv parse", e); }
                     if (run != null) { RunFinished?.Invoke(run, path); return; }
                 }
                 last = text;

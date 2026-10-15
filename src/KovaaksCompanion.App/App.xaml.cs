@@ -50,7 +50,7 @@ public partial class App : Application
                     AllowSetForegroundWindow(-1);
                     ev.Set();
                 }
-                catch (Exception ex) { ErrorReporter.Report("signal show", ex); }
+                catch (Exception ex) { ErrorReporter.Report("signal show", ex, ErrorSeverity.Low); }
                 Shutdown();
                 return;
             }
@@ -69,7 +69,7 @@ public partial class App : Application
     static void Unhandled(string title, Exception? ex)
     {
         if (ex == null) return;
-        ErrorReporter.Report(title, ex);
+        ErrorReporter.Report(title, ex, ErrorSeverity.Critical);
     }
 
     /// <summary>Waits for the previous instance to release the mutex; abandoned counts as acquired.</summary>
@@ -81,7 +81,7 @@ public partial class App : Application
 
     static void SignalQuit()
     {
-        try { using var q = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName); q.Set(); } catch (Exception e) { ErrorReporter.Report("signal quit", e); }
+        try { using var q = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName); q.Set(); } catch (Exception e) { ErrorReporter.Report("signal quit", e, ErrorSeverity.Low); }
     }
 
     /// <summary>The running instance's published version; null when unreadable.</summary>

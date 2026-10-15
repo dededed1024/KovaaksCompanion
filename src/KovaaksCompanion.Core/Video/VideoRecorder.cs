@@ -37,7 +37,7 @@ public sealed class VideoRecorder : IAsyncDisposable
     public async Task<bool> StartAsync(IReadOnlyList<ObsCamSpec> cams, CancellationToken ct = default)
     {
         AccessGuard.Run(_o.BufferDir, true, () => Directory.CreateDirectory(_o.BufferDir));
-        try { File.SetAttributes(_o.BufferDir, File.GetAttributes(_o.BufferDir) | FileAttributes.Hidden); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        try { File.SetAttributes(_o.BufferDir, File.GetAttributes(_o.BufferDir) | FileAttributes.Hidden); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { ErrorReporter.Report("buffer hide", e, ErrorSeverity.Low); }
         foreach (var f in Directory.GetFiles(_o.BufferDir, PacketRing.ChunkPrefix + "*" + PacketRing.ChunkExt)) TryDelete(f);
 
         Target = await GameWindow.WaitAsync(() => GameWindow.Find(_o.GameProcessName), () => GameWindow.IsProcessAlive(_o.GameProcessName), TimeSpan.FromMilliseconds(500), ct);
@@ -128,13 +128,13 @@ public sealed class VideoRecorder : IAsyncDisposable
                 var sw = Stopwatch.StartNew();
                 while (cap.Output.IsActive && sw.Elapsed < TimeSpan.FromSeconds(5)) Thread.Sleep(50);
             }
-            catch (Exception e) { ErrorReporter.Report("video stop", e); }
+            catch (Exception e) { ErrorReporter.Report("video stop", e, ErrorSeverity.High); }
             _capture = null;
             cap.Dispose();
         });
     }
 
-    private static void TryDelete(string f) { try { File.Delete(f); } catch (Exception e) { ErrorReporter.Report("delete " + Path.GetFileName(f), e); } }
+    private static void TryDelete(string f) { try { File.Delete(f); } catch (Exception e) { ErrorReporter.Report("delete " + Path.GetFileName(f), e, ErrorSeverity.Low); } }
 
     public async ValueTask DisposeAsync()
     {
