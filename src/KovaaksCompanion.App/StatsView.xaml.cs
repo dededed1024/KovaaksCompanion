@@ -293,14 +293,12 @@ public partial class StatsView : UserControl
 
     async void Reload()
     {
-        var folder = _host.Settings.StatsFolder;
         var replayArchive = _host.Replays;
         var store = Store;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var scanCache = _host.Settings.ScanCacheFile;
         var (lib, replays, archivedBest, scores) = await Task.Run(() => {
             var infos = replayArchive.List();
-            var (library, archive) = RunLibrary.Load(folder, scanCache, infos, store, dpiFixes, archiveNew: true);
+            var (library, archive) = RunLibrary.Load(store, dpiFixes);
             return (library, infos, archive.ArchivedBests(), archive.Scores());
         });
         _book = _book.WithLibrary(lib);

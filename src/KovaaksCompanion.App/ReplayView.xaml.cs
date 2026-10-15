@@ -344,11 +344,9 @@ public partial class ReplayView : UserControl
         while (i < _items.Count && _items[i].Info.Start > info.Start) i++;
         _items.Insert(i, new ReplayItem(info));
         if (!_open || _d is null) return;
-        var statsFolder = _host.Settings.StatsFolder;
         var tok = _tok;
-        var infos = Infos();
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var lib = await Task.Run(() => RunLibrary.Load(statsFolder, _host.Settings.ScanCacheFile, infos, _host.Settings.OpenStore(), dpiFixes, archiveNew: false).Library);
+        var lib = await Task.Run(() => RunLibrary.Load(_host.Settings.OpenStore(), dpiFixes).Library);
         if (!_open || tok != _tok || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         BuildAll();
@@ -615,10 +613,8 @@ public partial class ReplayView : UserControl
         }
         if (!_open || _d is null) return;
         RefreshItems();
-        var infos = Infos();
-        var statsFolder = _host.Settings.StatsFolder;
         var dpiFixes = new Dictionary<string, int>(_host.Ui.DpiFixes);
-        var lib = await Task.Run(() => RunLibrary.Load(statsFolder, _host.Settings.ScanCacheFile, infos, _host.Settings.OpenStore(), dpiFixes, archiveNew: false).Library);
+        var lib = await Task.Run(() => RunLibrary.Load(_host.Settings.OpenStore(), dpiFixes).Library);
         if (!_open || _d is null) return;
         _d = _d with { Book = _d.Book.WithLibrary(lib) };
         _scenario = scenario;

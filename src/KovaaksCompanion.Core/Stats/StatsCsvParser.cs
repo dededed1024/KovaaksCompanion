@@ -15,6 +15,15 @@ public static partial class StatsCsvParser
     [GeneratedRegex(@"^(?<scenario>.+) - Challenge - (?<end>\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}) Stats\.csv$")]
     private static partial Regex FileNamePattern();
 
+    /// <summary>The scenario and the end (to the second) a stats file name states, without reading the file.</summary>
+    public static bool TryParseName(string fileName, out string scenario, out DateTime end)
+    {
+        var m = FileNamePattern().Match(Path.GetFileName(fileName));
+        scenario = m.Groups["scenario"].Value;
+        end = default;
+        return m.Success && DateTime.TryParseExact(m.Groups["end"].Value, "yyyy.MM.dd-HH.mm.ss", Inv, DateTimeStyles.None, out end);
+    }
+
     public static RunStats Parse(string fileName, string text)
     {
         var m = FileNamePattern().Match(Path.GetFileName(fileName));

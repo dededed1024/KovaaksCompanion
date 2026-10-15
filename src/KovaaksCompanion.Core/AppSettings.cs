@@ -86,7 +86,6 @@ public sealed record AppSettings
     /// Cache: data the server gives again (server bests). Deleting it loses nothing. Lives in LocalAppData, not in the user-chosen data root.
     /// </summary>
     [JsonIgnore] public string CacheFolder => Path.Combine(DefaultDataFolder, "cache");
-    [JsonIgnore] public string ScanCacheFile => Path.Combine(CacheFolder, "scan" + CacheFile.Extension);
     /// <summary>
     /// Archive: what only this PC knows (run statistics, session ids, the kept data of deleted replays). Deleting it loses runs for good. Lives in LocalAppData next to <see cref="CacheFolder"/>.
     /// </summary>

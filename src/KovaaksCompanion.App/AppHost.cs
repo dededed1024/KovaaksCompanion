@@ -118,7 +118,7 @@ public sealed class AppHost : IDisposable
     ScoreBook LoadPbBook()
     {
         var store = _settings.OpenStore();
-        var (library, archive) = RunLibrary.Load(_settings.StatsFolder, _settings.ScanCacheFile, Replays.List(), store, new Dictionary<string, int>(Ui.DpiFixes), archiveNew: false);
+        var (library, archive) = RunLibrary.Load(store, new Dictionary<string, int>(Ui.DpiFixes));
         var book = new ScoreBook(library);
         foreach (var (scenario, cached) in archive.Scores()) book.SetCloud(scenario, cached.Scores);
         return book;
@@ -292,6 +292,18 @@ public sealed class AppHost : IDisposable
         _buffer = new MouseRingBuffer(new VideoOptions().BufferMinutes * 60.0, _anchor.Frequency, _anchor.Qpc);
         StartCapture();
 
+    /// <summary>Moves runs played while the app was not running from the stats folder into the archive. True when it added any.</summary>
+    bool IngestStats()
+    {
+        try
+        {
+            var n = StatsIngest.Run(_settings.StatsFolder, _settings.OpenStore());
+            if (n > 0) AppLog.Write("archive", $"took in {n} run(s) from the stats folder");
+            return n > 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "reading the stats folder failed: " + e.Message); return false; }
+    }
+
         // ResolveLibobs hashes the whole embedded libobs zip (and unpacks it on first run): off the UI thread, the window must not wait for it
         _ = Task.Run(() =>
         {
@@ -320,7 +332,7 @@ public sealed class AppHost : IDisposable
 
         BuildTray();
         Autostart.Refresh(_settings.StartWithWindows);
-        _ = Task.Run(() => { var moved = MigrateReplays() | MoveVideosIntoSessions(); CacheReplays(); if (EnforceStorageLimits() | moved) RunFinished?.Invoke(); });
+        _ = Task.Run(() => { var moved = MigrateReplays() | MoveVideosIntoSessions(); CacheReplays(); if (EnforceStorageLimits() | IngestStats() | moved) RunFinished?.Invoke(); });
         _ = Task.Run(() => { try { _settings.OpenStore().BackupArchive(); } catch (IOException e) { AppLog.Write("archive", "backup failed: " + e.Message); } });
         if (showMain) ShowMain("Stats");
         _ = CheckForUpdate();
