@@ -56,7 +56,7 @@ public static class Theme
     static Look CustomLook(double hue, double saturation, double brightness)
     {
         var bg = FromHsv(Math.Clamp(hue, 0, 359.9), Math.Clamp(saturation, 0, 1), Math.Clamp(brightness, 0.1, 0.95));
-        if (ChartPaths.Lum(bg) > 0.4)
+        if (ChartPaths.Lum(bg) > 0.25)
             return new(Hex(bg), "#F2" + Hex(Mix(bg, Colors.White, 0.5))[1..], Hex(Mix(bg, Colors.White, 0.72)), Hex(FromHsv(hue % 360, 0.85, 0.5)), true);
         return new(Hex(bg), "#F2" + Hex(Mix(bg, Colors.White, 0.04))[1..], Hex(Mix(bg, Colors.White, 0.08)), Hex(FromHsv(hue % 360, 0.6, 1)));
     }
