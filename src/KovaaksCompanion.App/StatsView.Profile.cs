@@ -157,37 +157,10 @@ public partial class StatsView
         return host;
     }
 
-    /// <summary>Accent circles (first = app default) and the copy-as-image button, top right of the card.</summary>
+    /// <summary>The accent picker button and the copy-as-image button, top right of the card.</summary>
     void BuildProfileTools()
     {
         ProfileTools.Children.Clear();
-        void Dot(string hex)
-        {
-            var on = _host.Ui.ProfileAccent.Equals(hex, StringComparison.OrdinalIgnoreCase);
-            var fill = hex.Length > 0 ? SolidFixed(hex) : (Brush)FindResource("Accent");
-            var inner = new Ellipse { Width = 16, Height = 16, Fill = fill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            if (hex.Length == 0) inner.Fill = SolidFixed("#8E8E93");
-            var ring = new Ellipse { Width = 22, Height = 22, Stroke = on ? FgB : Brushes.Transparent, StrokeThickness = 2 };
-            var g = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
-            g.Children.Add(ring);
-            g.Children.Add(inner);
-            g.MouseEnter += (_, _) => { if (!on) ring.Stroke = SolidFixed("#66FFFFFF"); };
-            g.MouseLeave += (_, _) => { if (!on) ring.Stroke = Brushes.Transparent; };
-            g.MouseLeftButtonUp += (_, _) =>
-            {
-                _host.Ui.ProfileAccent = hex;
-                _host.SaveUi();
-                ApplyProfileAccent();
-                BuildProfileTools();
-                FillProfile();
-            };
-            ProfileTools.Children.Add(g);
-        }
-        foreach (var c in ProfileColors)
-        {
-            if (c == "#FFFFFF") Dot("");
-            Dot(c);
-        }
         AddCustomAccent();
 
         // Motion toggle: on = drifting watermark, off = the static look a capture has.
@@ -270,11 +243,11 @@ public partial class StatsView
         ProfileTools.Children.Add(copy);
     }
 
-    /// <summary>A rainbow dot after the preset colors: opens the theme's color wheel and brightness slider to pick any accent.</summary>
+    /// <summary>A rainbow dot: opens the color wheel, the brightness slider and the preset colors below them.</summary>
     void AddCustomAccent()
     {
         var cur = _host.Ui.ProfileAccent;
-        var custom = cur.Length > 0 && !ProfileColors.Contains(cur, StringComparer.OrdinalIgnoreCase);
+        var custom = cur.Length > 0;
         var picked = cur.Length > 0 && ProfileAccent is SolidColorBrush;
         var (h0, s0, v0) = picked ? Theme.ToHsv(((SolidColorBrush)ProfileAccent).Color) : (0.0, 0.0, 1.0);
         var rainbow = new ColorWheel { Width = 16, Height = 16, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -306,17 +279,55 @@ public partial class StatsView
         }
         wheel.Picking += () => Apply(false);
         wheel.Picked += () => Apply(true);
-        slider.ValueChanged += (_, _) => { if (wheel.Active) Apply(false); };
+        var syncing = false;
+        slider.ValueChanged += (_, _) => { if (wheel.Active && !syncing) Apply(false); };
         slider.PreviewMouseLeftButtonUp += (_, _) => { if (wheel.Active) Apply(true); };
-        var pop = new System.Windows.Controls.Primitives.Popup
+        // Preset colors under the wheel (first = app default); a click moves the wheel and slider to that color.
+        var palette = new WrapPanel { Width = 140, Margin = new Thickness(0, 12, 0, 0) };
+        void BuildPalette()
         {
-            PlacementTarget = dot, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true,
-            Child = new Border
+            palette.Children.Clear();
+            foreach (var hex in ProfileColors.Select(c => c == "#FFFFFF" ? new[] { "", c } : [c]).SelectMany(x => x))
+            {
+                var on = _host.Ui.ProfileAccent.Equals(hex, StringComparison.OrdinalIgnoreCase);
+                var inner = new Ellipse { Width = 16, Height = 16, Fill = hex.Length > 0 ? SolidFixed(hex) : SolidFixed("#8E8E93"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                var pr = new Ellipse { Width = 22, Height = 22, Stroke = on ? FgB : Brushes.Transparent, StrokeThickness = 2 };
+                var g = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+                g.Children.Add(pr);
+                g.Children.Add(inner);
+                g.MouseEnter += (_, _) => { if (!on) pr.Stroke = SolidFixed("#66FFFFFF"); };
+                g.MouseLeave += (_, _) => { if (!on) pr.Stroke = Brushes.Transparent; };
+                g.MouseLeftButtonUp += (_, _) =>
+                {
+                    _host.Ui.ProfileAccent = hex;
+                    _host.SaveUi();
+                    ApplyProfileAccent();
+                    if (ProfileAccent is SolidColorBrush b)
+                    {
+                        var (ph, ps, pv) = Theme.ToHsv(b.Color);
+                        syncing = true;
+                        wheel.Pick = (ph, ps); wheel.Brightness = pv; wheel.Active = hex.Length > 0;
+                        slider.Value = Math.Clamp(pv, 0.2, 1) * 100;
+                        syncing = false;
+                        Track();
+                    }
+                    BuildPalette();
+                    FillProfile();
+                };
+                palette.Children.Add(g);
+            }
+        }
+        BuildPalette();
+        var card = new Border
             {
                 Background = (Brush)FindResource("Surface"), BorderBrush = (Brush)FindResource("Edge"), BorderThickness = new Thickness(1), CornerRadius = (CornerRadius)FindResource("RadiusL"),
-                Padding = new Thickness(16), Margin = new Thickness(24, 6, 24, 36), Child = new StackPanel { Children = { wheel, slider } },
+                Padding = new Thickness(16), Margin = new Thickness(24, 6, 24, 36), Child = new StackPanel { Children = { wheel, slider, palette } },
                 Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 40, ShadowDepth = 0, Opacity = 0.5, Color = Colors.Black },
-            },
+            };
+        Grain.SetCard(card, true);
+        var pop = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = dot, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true, Child = card,
         };
         // Rebuilding the tools swaps the dot (and its ring) for the final color once the popup is closed.
         pop.Closed += (_, _) => BuildProfileTools();
