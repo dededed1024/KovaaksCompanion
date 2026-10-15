@@ -178,7 +178,7 @@
     <data name="Copied" xml:space="preserve"><value>복사됨</value></data>
   <data name="{0} of {1} scenarios played · {2} runs · {3}" xml:space="preserve"><value>시나리오 {1}개 중 {0}개 플레이 · 런 {2}회 · {3}</value></data>
   <data name="{0}% to {1}" xml:space="preserve"><value>{1}까지 {0}%</value></data>
-  <data name="{0} of {1} ranked" xml:space="preserve"><value>{1}개 중 {0}개 랭크</value></data>
+  <data name="{0} of {1} ranked" xml:space="preserve"><value>{1}개 중 {0}개 티어 달성</value></data>
   <data name="{0} of {1} at {2}+" xml:space="preserve"><value>{1}개 중 {0}개가 {2} 이상</value></data>
   <data name="No runs" xml:space="preserve"><value>런 없음</value></data>
   <data name="30 days ago" xml:space="preserve"><value>30일 전</value></data>
@@ -224,9 +224,9 @@
   <data name="Sessions" xml:space="preserve"><value>세션</value></data>
   <data name="Charts" xml:space="preserve"><value>차트</value></data>
   <data name="Skill balance" xml:space="preserve"><value>스킬 밸런스</value></data>
-  <data name="Scenarios by rank" xml:space="preserve"><value>랭크별 시나리오</value></data>
+  <data name="Scenarios by rank" xml:space="preserve"><value>티어별 시나리오</value></data>
   <data name="Open Settings" xml:space="preserve"><value>설정 열기</value></data>
-  <data name="No ranked playlist" xml:space="preserve"><value>랭크 플레이리스트 없음</value></data>
+  <data name="No ranked playlist" xml:space="preserve"><value>티어 플레이리스트 없음</value></data>
   <data name="Favorite scenarios" xml:space="preserve"><value>즐겨찾는 시나리오</value></data>
   <data name="Favorite runs" xml:space="preserve"><value>즐겨찾는 런</value></data>
   <data name="Pin" xml:space="preserve"><value>고정</value></data>
