@@ -234,7 +234,7 @@ internal sealed class ArchiveDb(string file)
             if (m.ExecuteScalar() != null) return;
         }
         // After a restore from .bak the first import marker is already in the backup; a database made anew re-imports from the renamed file.
-        var source = File.Exists(legacy) ? legacy : File.Exists(legacy + ".migrated") ? legacy + ".migrated" : null;
+        var source = File.Exists(legacy) ? legacy : File.Exists(legacy + Migrated.Suffix) ? legacy + Migrated.Suffix : null;
         if (source == null) { Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", key)); return; }
         try
         {
@@ -244,15 +244,8 @@ internal sealed class ArchiveDb(string file)
         Exec(c, "INSERT OR REPLACE INTO meta VALUES($k, '1')", ("$k", key));
         if (source == legacy)
         {
-            File.Move(legacy, MigratedName(legacy));
+            File.Move(legacy, Migrated.Name(legacy));
         }
-    }
-
-    /// <summary>Where an imported file or folder is moved to: its name plus <c>.migrated</c>, with a time stamp when that name is taken.</summary>
-    internal static string MigratedName(string path)
-    {
-        var to = path + ".migrated";
-        return File.Exists(to) || Directory.Exists(to) ? $"{path}.{DateTime.Now:yyyyMMdd-HHmmss}.migrated" : to;
     }
 
     // ---- runs ------------------------------------------------------------------------------------------------------------
