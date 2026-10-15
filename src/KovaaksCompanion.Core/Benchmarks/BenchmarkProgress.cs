@@ -124,8 +124,9 @@ public sealed class KovaaksApi(HttpClient? http = null)
                 foreach (var scenario in cats.EnumerateObject().SelectMany(c => c.Value.TryGetProperty("scenarios", out var s) && s.ValueKind == JsonValueKind.Object ? s.EnumerateObject() : []))
                 {
                     var v = scenario.Value;
-                    if (!v.TryGetProperty("leaderboard_id", out var lb) || !lb.TryGetInt32(out var lbId) || lbId <= 0 ||
-                        !v.TryGetProperty("leaderboard_rank", out var rk) || !rk.TryGetInt32(out var rank) || rank <= 0) continue;
+                    // TryGetInt32 throws on a JSON null (unranked scenario), so check the kind first.
+                    if (!v.TryGetProperty("leaderboard_id", out var lb) || lb.ValueKind != JsonValueKind.Number || !lb.TryGetInt32(out var lbId) || lbId <= 0 ||
+                        !v.TryGetProperty("leaderboard_rank", out var rk) || rk.ValueKind != JsonValueKind.Number || !rk.TryGetInt32(out var rank) || rank <= 0) continue;
                     using var board = JsonDocument.Parse(await _http.GetStringAsync(
                         $"https://kovaaks.com/webapp-backend/leaderboard/scores/global?leaderboardId={lbId}&page={rank - 1}&max=1", ct));
                     if (board.RootElement.ValueKind == JsonValueKind.Object && board.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
