@@ -36,4 +36,13 @@
     </ItemGroup>
   </Target>
 
+  <!-- Bundled img2webp (libwebp's animated WebP writer) for the profile card: fetched (pinned, hash-checked) by scripts/fetch-libwebp.ps1, embedded, unpacked at runtime by WebpEncoder. -->
+  <Target Name="EmbedLibwebp" BeforeTargets="AssignTargetPaths;CreateManifestResourceNames">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\fetch-libwebp.ps1&quot;" ContinueOnError="true" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\libwebp\img2webp.exe')" Text="libwebp\img2webp.exe is missing and scripts/fetch-libwebp.ps1 could not fetch it; the app must embed it." />
+    <ItemGroup>
+      <EmbeddedResource Include="libwebp\img2webp.exe" LogicalName="img2webp.exe" />
+    </ItemGroup>
+  </Target>
+
 </Project>

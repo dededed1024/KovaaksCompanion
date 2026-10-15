@@ -487,6 +487,8 @@ samples/
 
 # fetched libobs pack (embedded at build)
 src/KovaaksCompanion.App/libobs/
+# fetched img2webp (embedded at build)
+src/KovaaksCompanion.App/libwebp/
 dist-release/
 
 # demo build output

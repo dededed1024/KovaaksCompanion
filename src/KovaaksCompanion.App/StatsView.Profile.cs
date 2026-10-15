@@ -183,12 +183,12 @@ public partial class StatsView
         var copy = new Button { Style = (Style)FindResource("PopupClose"), Width = 34, Height = 34, Margin = new Thickness(10, 0, 0, 0), Content = new TextBlock { Text = "", FontFamily = new FontFamily(Icons), FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         copy.Click += async (_, _) =>
         {
-            if (ProfileCard.ActualWidth <= 0 || _gifBusy) return;
-            // Motion on: the card is saved as a looping GIF (and copied as a file); motion off: a still image.
+            if (ProfileCard.ActualWidth <= 0 || _webpBusy) return;
+            // Motion on: the card is saved as a looping WebP (and copied as a file); motion off: a still image.
             if (_host.Ui.ProfileAnimated)
             {
                 var label = (TextBlock)copy.Content;
-                await SaveProfileGifAsync(label, label.Text);
+                await SaveProfileWebpAsync(label, label.Text);
                 return;
             }
             try
