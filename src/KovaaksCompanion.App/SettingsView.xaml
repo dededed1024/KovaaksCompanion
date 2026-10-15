@@ -54,7 +54,7 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" MaxWidth="1200" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="48,48,48,0" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
+        <Border x:Name="Card" MaxWidth="1200" HorizontalAlignment="Stretch" VerticalAlignment="Center" Margin="48,48,48,0" CornerRadius="{StaticResource RadiusXL}" app:Grain.Card="True" Background="{DynamicResource Surface}"
                 BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -378,7 +378,7 @@
 
         <Grid x:Name="ReportOverlay" Visibility="Collapsed" SizeChanged="OnReportOverlaySized">
             <Border Background="{DynamicResource Scrim}" MouseLeftButtonDown="OnReportCancel"/>
-            <Border x:Name="ReportCard" MaxWidth="480" Margin="48" HorizontalAlignment="Stretch" VerticalAlignment="Center" CornerRadius="18" Padding="20"
+            <Border x:Name="ReportCard" MaxWidth="480" Margin="48" HorizontalAlignment="Stretch" VerticalAlignment="Center" CornerRadius="{StaticResource RadiusXL}" Padding="20"
                     app:Grain.Card="True" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Edge}" BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="{app:Loc 'Send feedback'}" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"/>
@@ -386,7 +386,7 @@
                              VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" TextChanged="OnReportText"/>
                     <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,14,0,6"
                                Text="{app:Loc 'The following information is sent together with this feedback.'}"/>
-                    <Border CornerRadius="12" Background="{DynamicResource Panel}" Padding="12,10">
+                    <Border CornerRadius="{StaticResource RadiusM}" Background="{DynamicResource Panel}" Padding="12,10">
                         <StackPanel>
                             <TextBlock x:Name="ReportInfo" FontSize="12" Foreground="{DynamicResource Dim}" TextWrapping="Wrap"/>
                             <StackPanel x:Name="ReportLogPanel" Margin="0,10,0,0">

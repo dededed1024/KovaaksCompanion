@@ -34,7 +34,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusS}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -58,7 +58,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusS}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -88,7 +88,7 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,32" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
+        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,32" CornerRadius="{StaticResource RadiusXL}" app:Grain.Card="True" Background="{DynamicResource Surface}"
                 BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -149,7 +149,7 @@
                             </Grid.RowDefinitions>
 
                             <Grid x:Name="Stage" Grid.Row="1" Margin="0" SizeChanged="OnStageSized">
-                                <Border x:Name="Screen" CornerRadius="14" Background="Black" ClipToBounds="True" MouseLeftButtonDown="OnScreenDown">
+                                <Border x:Name="Screen" CornerRadius="{StaticResource RadiusL}" Background="Black" ClipToBounds="True" MouseLeftButtonDown="OnScreenDown">
                                     <Grid>
                                         <app:VideoSurface x:Name="Media"/>
                                         <app:TrailOverlay x:Name="Overlay" IsHitTestVisible="False"/>
@@ -187,10 +187,10 @@
                                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="0,0,4,0" CornerRadius="8" Opacity="{Binding Opacity}" MouseLeftButtonUp="OnMetricClick">
+                                                    <Border Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="0,0,4,0" CornerRadius="{StaticResource RadiusS}" Opacity="{Binding Opacity}" MouseLeftButtonUp="OnMetricClick">
                                                         <StackPanel Orientation="Horizontal">
                                                             <Ellipse Width="9" Height="9" Fill="{Binding Brush}" VerticalAlignment="Center"/>
-                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Dim}" FontSize="12.5" Margin="8,0,8,0"/>
+                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Dim}" FontSize="12" Margin="8,0,8,0"/>
                                                             <TextBlock Text="{Binding Value}" FontWeight="SemiBold" FontSize="13" MinWidth="30"/>                                                        </StackPanel>
                                                     </Border>
                                                 </DataTemplate>
@@ -198,9 +198,9 @@
                                         </ItemsControl>
                                         </Viewbox>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="12,0,0,0" CornerRadius="8" Visibility="Collapsed"
+                                            <Border x:Name="PrevChip" Style="{StaticResource Chip}" Cursor="Hand" Padding="8,1" Margin="12,0,0,0" CornerRadius="{StaticResource RadiusS}" Visibility="Collapsed"
                                                     ToolTip="{app:Loc 'Overlay the previous local run'}" MouseLeftButtonUp="OnPrevClick">
-                                                <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev run'}" Foreground="{DynamicResource Dim}" FontSize="12.5"/>
+                                                <TextBlock x:Name="PrevText" Text="{app:Loc 'Prev run'}" Foreground="{DynamicResource Dim}" FontSize="12"/>
                                             </Border>                                        </StackPanel>
                                     </Grid>
                                     <app:RunChart x:Name="Chart" Grid.Row="1" Margin="0,6,0,0" Cursor="Hand" MouseLeftButtonDown="OnChartDown" MouseMove="OnChartMove" MouseLeftButtonUp="OnChartUp"/>
@@ -251,7 +251,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
-                                <Border x:Name="OverviewRow" Height="34" Margin="6,6,6,0" CornerRadius="8" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnOverviewRow"
+                                <Border x:Name="OverviewRow" Height="34" Margin="6,6,6,0" CornerRadius="{StaticResource RadiusS}" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="OnOverviewRow"
                                         MouseEnter="OnOverviewRowHover" MouseLeave="OnOverviewRowHover">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
                                         <TextBlock Text="&#xE72B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Width="16" TextAlignment="Center" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{DynamicResource Dim}"

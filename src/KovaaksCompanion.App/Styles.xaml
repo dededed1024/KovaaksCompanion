@@ -43,6 +43,7 @@
         <CornerRadius x:Key="RadiusS">8</CornerRadius>
         <CornerRadius x:Key="RadiusM">12</CornerRadius>
         <CornerRadius x:Key="RadiusL">14</CornerRadius>
+        <CornerRadius x:Key="RadiusXL">18</CornerRadius>
 
         <Style x:Key="FocusRing">
             <Setter Property="Control.Template">
