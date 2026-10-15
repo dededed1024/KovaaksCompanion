@@ -32,7 +32,7 @@ public sealed class ColorWheel : FrameworkElement
         return bmp;
     }
 
-    double _hue, _saturation;
+    double _hue, _saturation, _brightness = 1;
     bool _active, _dragging;
 
     /// <summary>The pick: hue in degrees (0-360) and saturation (0-1).</summary>
@@ -40,6 +40,13 @@ public sealed class ColorWheel : FrameworkElement
     {
         get => (_hue, _saturation);
         set { (_hue, _saturation) = value; InvalidateVisual(); }
+    }
+
+    /// <summary>Brightness (0-1) of the background the pick makes; the dot shows that color, the disc stays at full brightness.</summary>
+    public double Brightness
+    {
+        get => _brightness;
+        set { _brightness = value; InvalidateVisual(); }
     }
 
     /// <summary>True when the pick is the theme in use; the dot is drawn only then.</summary>
@@ -63,7 +70,7 @@ public sealed class ColorWheel : FrameworkElement
         var a = _hue * Math.PI / 180;
         var p = new Point(r + Math.Cos(a) * _saturation * (r - 1), r + Math.Sin(a) * _saturation * (r - 1));
         dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)), null, new Point(p.X, p.Y + 1), 10, 10);
-        dc.DrawEllipse(new SolidColorBrush(Theme.FromHsv(_hue, _saturation, 1)), new Pen(Brushes.White, 3), p, 9, 9);
+        dc.DrawEllipse(new SolidColorBrush(Theme.FromHsv(_hue, _saturation, _brightness)), new Pen(Brushes.White, 3), p, 9, 9);
     }
 
     void PickAt(Point p)

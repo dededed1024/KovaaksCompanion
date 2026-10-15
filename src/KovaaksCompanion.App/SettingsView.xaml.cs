@@ -104,6 +104,7 @@ public partial class SettingsView : UserControl
         Wheel.Pick = (s.CustomHue, s.CustomSaturation);
         Wheel.Active = theme == "Custom";
         BrightnessSlider.Value = s.CustomBrightness * 100;
+        Wheel.Brightness = s.CustomBrightness;
         GrainSlider.Value = s.Grain;
     }
 
@@ -143,6 +144,7 @@ public partial class SettingsView : UserControl
     {
         if (_loading) return;
         PreviewCustom();
+        Wheel.Brightness = BrightnessSlider.Value / 100;
         Wheel.Active = true;
         _commit.Stop(); _commit.Start(); // saved once the slider rests
     }
