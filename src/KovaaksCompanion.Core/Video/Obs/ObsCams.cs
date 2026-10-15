@@ -20,6 +20,8 @@ internal static class ObsCamSource
             ObsNative.obs_data_set_string(d, "video_device_id", deviceId);
             ObsNative.obs_data_set_int(d, "res_type", 0);
             ObsNative.obs_data_set_bool(d, "deactivate_when_not_showing", false);
+            // Cams with a tilt sensor (Logitech StreamCam) send rotation data; a shaking desk would turn the picture.
+            ObsNative.obs_data_set_bool(d, "autorotation", false);
             return ObsNative.obs_source_create("dshow_input", name, d, 0);
         }
         finally { ObsNative.obs_data_release(d); }
