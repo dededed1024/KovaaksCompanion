@@ -285,8 +285,7 @@ public sealed class ActivityCalendar : FrameworkElement
             var bx = Math.Clamp(cr.X + Cell / 2 - bw / 2, 2, Math.Max(2, w - bw - 2));
             var by = cr.Y - bh - 6;
             if (by < 2) by = cr.Bottom + 6;
-            var fill = Argb(0xF0, 0x22, 0x22, 0x26);
-            dc.DrawRoundedRectangle(fill, new Pen(Argb(0x33, 255, 255, 255), 1), new Rect(bx, by, bw, bh), 8, 8);
+            dc.DrawRoundedRectangle(Res("Surface"), new Pen(Res("Edge"), 1), new Rect(bx, by, bw, bh), 8, 8);
             dc.DrawText(t1, new Point(bx + 8, by + 6));
             dc.DrawText(t2, new Point(bx + 8, by + 6 + t1.Height));
         }
