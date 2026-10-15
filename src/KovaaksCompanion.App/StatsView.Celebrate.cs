@@ -125,14 +125,17 @@ public partial class StatsView
         label.VerticalAlignment = VerticalAlignment.Center;
         label.HorizontalAlignment = HorizontalAlignment.Center;
         // Same size as the profile card's edit button (44, icon 24), with a party popper.
-        var replay = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Fanfare!"), HorizontalAlignment = HorizontalAlignment.Right, Content = new TextBlock { Text = "🎉", FontFamily = new FontFamily("Segoe UI Emoji"), FontSize = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var replay = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, ToolTip = L.T("Fanfare!"), Content = new TextBlock { Text = "🎉", FontFamily = new FontFamily("Segoe UI Emoji"), FontSize = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         replay.Click += (_, _) => { _confettiPending = true; FireConfetti(); };
-        var dismiss = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(0, 0, 10, 0), ToolTip = L.T("Close"), HorizontalAlignment = HorizontalAlignment.Left, Content = new TextBlock { Text = "✕", FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var dismiss = new Button { Style = (Style)FindResource("PopupClose"), Width = 44, Height = 44, Margin = new Thickness(10, 0, 0, 0), ToolTip = L.T("Close"), Content = new TextBlock { Text = "✕", FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         dismiss.Click += (_, _) => ClearCelebration();
         var header = new Grid { Margin = new Thickness(56, 0, 56, 12) };
         header.Children.Add(label);
-        header.Children.Add(dismiss);
-        header.Children.Add(replay);
+        // fanfare, then close, at the right edge
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        tools.Children.Add(replay);
+        tools.Children.Add(dismiss);
+        header.Children.Add(tools);
 
         var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
         stack.Children.Add(header);
