@@ -95,8 +95,43 @@ public sealed class ReplayArchive(string archiveFolder, string videoFolder)
         return name;
     }
 
-    /// <summary>Folder name of a play session: <c>yyMMdd_HH-mm-ss_&lt;session id&gt;</c>, the time it began and its id (32 hex digits).</summary>
-    public static string SessionFolder(DateTime since, Guid sessionId) => $"{since:yyMMdd_HH-mm-ss}_{sessionId:N}";
+    /// <summary>Folder name of a play session: <c>yyyyMMdd-HHmmss &lt;session id&gt;</c>, the time it began and its id (32 hex digits).</summary>
+    public static string SessionFolder(DateTime since, Guid sessionId) => $"{since:yyyyMMdd-HHmmss} {sessionId:N}";
+
+    static readonly System.Text.RegularExpressions.Regex OldSessionFolder = new(@"^(\d{8})-(\d{2})-?(\d{2})-?(\d{2})[- ]([0-9a-f]{32})$");
+
+    /// <summary>
+    /// Renames the session folders named <c>yyyyMMdd-HH-mm-ss-&lt;id&gt;</c> (earlier versions) or with a hyphen before the id to the current name and points the videos in them at it.
+    /// A folder that cannot be renamed stays and is tried again next time. Returns how many were renamed.
+    /// </summary>
+    public int RenameOldSessionFolders()
+    {
+        if (!Directory.Exists(videoFolder)) return 0;
+        var n = 0;
+        var infos = List();
+        foreach (var dir in Directory.GetDirectories(videoFolder))
+        {
+            var old = Path.GetFileName(dir);
+            if (OldSessionFolder.Match(old) is not { Success: true } m) continue;
+            var name = $"{m.Groups[1]}-{m.Groups[2]}{m.Groups[3]}{m.Groups[4]} {m.Groups[5]}";
+            if (name == old) continue;
+            try
+            {
+                var to = Path.Combine(videoFolder, name);
+                if (Directory.Exists(to)) continue;
+                Directory.Move(dir, to);
+                foreach (var info in infos)
+                    if (info.VideoFile is { } f && Path.GetDirectoryName(f) == old)
+                        Update(info with { VideoFile = Path.Combine(name, Path.GetFileName(f)) });
+                n++;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Diagnostics.AppLog.Write("archive", $"renaming session folder {old} failed: {e.Message}");
+            }
+        }
+        return n;
+    }
 
     /// <summary>Full path of a video's relative path in the videos folder.</summary>
     public string VideoPathOf(string videoFile) => Path.Combine(videoFolder, videoFile);

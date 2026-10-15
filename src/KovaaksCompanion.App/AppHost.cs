@@ -55,6 +55,8 @@ public sealed class AppHost : IDisposable
         {
             var ids = RunSessionIds.Load(archiveDb);
             if (PlaySession.RunSessionIds.Count == 0) PlaySession.RunSessionIds = ids;
+            // the favorites move into the archive database; the views redraw once they are loaded
+            _app.Dispatcher.BeginInvoke(() => { if (Ui.UseArchive(archiveDb, _uiFile)) UiChanged?.Invoke(); });
         });
         ErrorReporter.Configure(Http, App.CurrentVersion.ToString(3), () => _settings.SendErrorReports);
     }
@@ -138,8 +140,6 @@ public sealed class AppHost : IDisposable
         }
     }
 
-    void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
-
     /// <summary>The tier name the run's score reaches, from the bundled thresholds of a favorite playlist that has the scenario (else the first that does); null when none or below tier 1.</summary>
     string? TierNameOf(KovaaksCompanion.Core.Stats.RunStats run)
     {
@@ -160,10 +160,12 @@ public sealed class AppHost : IDisposable
         catch (Exception e) { AppLog.Write("error", $"tier lookup failed: {e.Message}"); return null; }
     }
 
+    void SetError(string m) { _lastError = m; AppLog.Write("error", m); }
+
     readonly object _cleanGate = new();
 
     /// <summary>
-    /// Deletes the videos of the replays <paramref name="pick"/> chooses (never favorite runs, nor personal bests when kept); the rest of each replay stays.
+    /// Deletes the videos of the replays <paramref name="pick"/> chooses (never favorite runs or runs of favorite sessions, nor personal bests when kept); the rest of each replay stays.
     /// Right after a save it runs before the views reload, so they never list a video that is about to go. Returns true when something was deleted.
     /// </summary>
     bool DeleteVideos(Func<List<StoredReplay>, Func<ReplayInfo, bool>, List<StoredReplay>> pick)
@@ -173,7 +175,7 @@ public sealed class AppHost : IDisposable
             lock (_cleanGate)
             {
                 var s = _settings;
-                var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet());
+                var favs = _app.Dispatcher.Invoke(() => Ui.FavoriteRunKeys());
                 var archive = s.OpenReplays();
                 var all = StorageCleaner.Scan(archive);
                 var pbs = s.KeepPersonalBests ? StorageCleaner.PersonalBests(all, s.OpenStore().LoadAllScores().ToDictionary(kv => kv.Key, kv => kv.Value.Scores)).Select(p => UiState.RunKey(p.Info.Scenario, p.Info.End)).ToHashSet() : [];
@@ -197,7 +199,7 @@ public sealed class AppHost : IDisposable
             lock (_cleanGate)
             {
                 var s = _settings;
-                var favs = s.DeleteBeatenRuns ? _app.Dispatcher.Invoke(() => Ui.FavoriteRuns.ToHashSet()) : [];
+                var favs = s.DeleteBeatenRuns ? _app.Dispatcher.Invoke(() => Ui.FavoriteRunKeys()) : [];
                 var victims = Live.Saved(saved, s.DeleteBeatenRuns, i => favs.Contains(UiState.RunKey(i.Scenario, i.End)), s.KeepPersonalBests);
                 if (victims.Count == 0) return;
                 var n = StorageCleaner.Delete(victims, s.OpenReplays());
@@ -259,9 +261,11 @@ public sealed class AppHost : IDisposable
         try
         {
             var archive = _settings.OpenReplays();
+            var renamed = archive.RenameOldSessionFolders();
+            if (renamed > 0) AppLog.Write("archive", $"renamed {renamed} session folder(s)");
             var n = archive.MoveVideosIntoSessions(ReplaySessions.FolderOf(archive.List(), RunSessionIds.Load(_settings.ArchiveDbFile)));
             if (n > 0) AppLog.Write("archive", $"moved {n} video(s) into session folders");
-            return n > 0;
+            return n > 0 || renamed > 0;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "sorting videos into sessions failed: " + e.Message); return false; }
     }
@@ -279,8 +283,25 @@ public sealed class AppHost : IDisposable
             var have = only == null ? store.ArchivedKeys() : new HashSet<(string, DateTime)>();
             var replays = only != null ? [only] : archive.List().Where(i => !have.Contains((i.Scenario.ToLowerInvariant(), i.End))).ToList();
             store.Archive(replays.Select(archive.ReadRecord).OfType<RunRecord>().ToList());
+            if (only != null) return;
+            // runs archived before pauses, reloads and distance were kept: fill those in from the replay's data
+            var lacking = store.ArchivedRuns().Where(r => r.Reloads is null).Select(r => (r.Scenario.ToLowerInvariant(), r.End)).ToHashSet();
+            if (lacking.Count > 0)
+                store.AddRunFigures(archive.List().Where(i => lacking.Contains((i.Scenario.ToLowerInvariant(), i.End))).Select(archive.ReadRecord).OfType<RunRecord>().Where(r => r.Reloads != null).ToList());
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "keeping replays failed: " + e.Message); }
+    }
+
+    /// <summary>Moves runs played while the app was not running from the stats folder into the archive. True when it added any.</summary>
+    bool IngestStats()
+    {
+        try
+        {
+            var n = StatsIngest.Run(_settings.StatsFolder, _settings.OpenStore());
+            if (n > 0) AppLog.Write("archive", $"took in {n} run(s) from the stats folder");
+            return n > 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "reading the stats folder failed: " + e.Message); return false; }
     }
 
     /// <summary>Deletes the run's video and keeps the rest of its replay and its statistics.</summary>
@@ -304,26 +325,9 @@ public sealed class AppHost : IDisposable
         }
         PreflightAccess();
         BufferCleaner.Clean(_settings.BufferFolder); // leftovers of a crash; nothing records yet
-            if (only != null) return;
-            // runs archived before pauses, reloads and distance were kept: fill those in from the replay's data
-            var lacking = store.ArchivedRuns().Where(r => r.Reloads is null).Select(r => (r.Scenario.ToLowerInvariant(), r.End)).ToHashSet();
-            if (lacking.Count > 0)
-                store.AddRunFigures(archive.List().Where(i => lacking.Contains((i.Scenario.ToLowerInvariant(), i.End))).Select(archive.ReadRecord).OfType<RunRecord>().Where(r => r.Reloads != null).ToList());
         _anchor = ClockAnchor.Now();
         _buffer = new MouseRingBuffer(new VideoOptions().BufferMinutes * 60.0, _anchor.Frequency, _anchor.Qpc);
         StartCapture();
-
-    /// <summary>Moves runs played while the app was not running from the stats folder into the archive. True when it added any.</summary>
-    bool IngestStats()
-    {
-        try
-        {
-            var n = StatsIngest.Run(_settings.StatsFolder, _settings.OpenStore());
-            if (n > 0) AppLog.Write("archive", $"took in {n} run(s) from the stats folder");
-            return n > 0;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { AppLog.Write("archive", "reading the stats folder failed: " + e.Message); return false; }
-    }
 
         // ResolveLibobs hashes the whole embedded libobs zip (and unpacks it on first run): off the UI thread, the window must not wait for it
         _ = Task.Run(() =>
