@@ -253,7 +253,7 @@ public sealed class ScoreChart : FrameworkElement
         // Dark mark: each row runs from a darkened tier color at its top to almost the plain tier color at its bottom.
         Brush mark = _darkMark
             ? new LinearGradientBrush(Color.FromArgb(0xA0, (byte)(c.R * 0.55), (byte)(c.G * 0.55), (byte)(c.B * 0.55)), Color.FromArgb(0xC0, (byte)(c.R * 0.95), (byte)(c.G * 0.95), (byte)(c.B * 0.95)), new Point(0, 0), new Point(0, 1))
-            : new SolidColorBrush(Color.FromArgb(0x80, c.R, c.G, c.B));
+            : new LinearGradientBrush(Color.FromArgb(0x8C, c.R, c.G, c.B), Color.FromArgb(0xA6, (byte)(c.R + (255 - c.R) * 0.14), (byte)(c.G + (255 - c.G) * 0.14), (byte)(c.B + (255 - c.B) * 0.14)), new Point(0, 0), new Point(0, 1));
         mark.Freeze();
         var ft = new FormattedText(_watermark, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, MarkFace, size, mark, dpi);
         var x = w - ft.Width + size * 0.15;

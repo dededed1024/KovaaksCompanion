@@ -202,7 +202,7 @@ public partial class StatsView
     }
 
     /// <summary>One row above the calendar: days played, total scenario time, run count, total personal bests and playlists with every scenario at its top tier (one unplayed scenario makes it incomplete).</summary>
-    UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays, double valueSize = 32, double labelSize = 16, FontWeight? valueWeight = null, Brush? ink = null)
+    UIElement BuildPlayStats(IReadOnlyList<RunRecord> runs, IReadOnlyDictionary<DateTime, int> plays, double valueSize = 32, double labelSize = 16, FontWeight? valueWeight = null, Brush? ink = null, FontWeight? labelWeight = null)
     {
         var days = plays.Keys.Order().ToList();
         var time = TimeSpan.FromTicks(runs.Sum(r => r.Duration.Ticks));
@@ -234,7 +234,7 @@ public partial class StatsView
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             cell.Children.Add(Text(cells[i].Value, valueSize, ink ?? FgB, valueWeight ?? FontWeights.SemiBold));
-            cell.Children.Add(Text(cells[i].Label, labelSize, ink ?? FgB, null, new Thickness(0, 2, 0, 0)));
+            cell.Children.Add(Text(cells[i].Label, labelSize, ink ?? FgB, labelWeight, new Thickness(0, 2, 0, 0)));
             ((TextBlock)cell.Children[0]).HorizontalAlignment = HorizontalAlignment.Center;
             ((TextBlock)cell.Children[1]).HorizontalAlignment = HorizontalAlignment.Center;
             Grid.SetColumn(cell, grid.ColumnDefinitions.Count - 1);
