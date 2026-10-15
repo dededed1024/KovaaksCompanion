@@ -81,7 +81,7 @@
         <!-- Profile card editor popup: below the playlist detail popup so a clicked card opens on top -->
         <Grid x:Name="EditPopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnEditKey">
             <Border x:Name="EditScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnEditScrim"/>
-            <Border x:Name="EditCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="EditCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1200" Margin="48,72,48,48" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="EditScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -98,7 +98,7 @@
         <!-- Playlist popup: scrim + card below the title bar -->
         <Grid x:Name="Popup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnPopupKey">
             <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="56,64,56,32" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="PopupCard" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="56,64,56,32" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -143,7 +143,7 @@
         <!-- Search popup: scrim + command-palette card near the top -->
         <Grid x:Name="SearchPopup" Visibility="Collapsed" PreviewKeyDown="OnSearchKey">
             <Border x:Name="SearchScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnSearchScrim"/>
-            <Border x:Name="SearchCard" Width="640" MaxWidth="1200" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="48,72,48,48" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="SearchCard" Width="640" MaxWidth="1200" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="48,72,48,48" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="SearchScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
@@ -158,7 +158,7 @@
         <!-- Session popup: scrim + card centered on screen -->
         <Grid x:Name="SessionPopup" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}" PreviewKeyDown="OnSessionKey">
             <Border x:Name="SessionScrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnSessionScrim"/>
-            <Border x:Name="SessionCardBorder" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="80,64,80,80" CornerRadius="18" Background="{DynamicResource Surface}"
+            <Border x:Name="SessionCardBorder" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="80,64,80,80" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
                     BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
                 <Border.RenderTransform><ScaleTransform x:Name="SessionScale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
                 <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>

@@ -16,11 +16,18 @@ public static class Backdrop
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins m);
 
+    /// <summary>Matches the title bar and Mica tone to the current theme (dark or light); for a window that is already shown.</summary>
+    public static void SetDark(Window w)
+    {
+        int on = Theme.IsLight ? 0 : 1;
+        DwmSetWindowAttribute(new WindowInteropHelper(w).Handle, DwmUseImmersiveDarkMode, ref on, sizeof(int));
+    }
+
     public static void Apply(Window w) => w.SourceInitialized += (_, _) =>
     {
         var hwnd = new WindowInteropHelper(w).Handle;
-        int on = Theme.IsLight ? 0 : 1, mica = MicaBackdrop;
-        DwmSetWindowAttribute(hwnd, DwmUseImmersiveDarkMode, ref on, sizeof(int));
+        int mica = MicaBackdrop;
+        SetDark(w);
         if (Theme.Current == "Black" || Environment.OSVersion.Version.Build < 22621) return; // keep opaque Bg
         if (DwmSetWindowAttribute(hwnd, DwmSystemBackdropType, ref mica, sizeof(int)) != 0) return;
         var m = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };

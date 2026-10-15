@@ -48,6 +48,7 @@ public sealed class AppHost : IDisposable
         _settings.MigrateLocalState();
         FolderAccess.Register(); _uiFile = _settings.UiFile; Ui = UiState.Load(_uiFile);
         L.Set(_settings.Language);
+        Theme.SetCustom(_settings.CustomHue, _settings.CustomSaturation, _settings.CustomBrightness);
         Theme.Apply(_settings.Theme);
         // opening the archive database checks it and imports the earlier files, which can take a while: not before the window
         var archiveDb = _settings.ArchiveDbFile;
@@ -258,6 +259,7 @@ public sealed class AppHost : IDisposable
     /// </summary>
     bool MoveVideosIntoSessions()
     {
+        if (_settings.VideoByRun) return false;
         try
         {
             var archive = _settings.OpenReplays();
@@ -339,7 +341,7 @@ public sealed class AppHost : IDisposable
 
         _saver = new ReplaySaver(_settings.OpenReplays(), _buffer, ClockAnchor.Now,
             (s, e, p, prog) => _video?.ExtractClipAsync(s, e, p, prog) ?? Task.FromResult<ClipResult?>(null),
-            IsPersonalBest, SessionOf, () => _settings.VideoPbOnly, TierNameOf);
+            IsPersonalBest, SessionOf, () => _settings.VideoPbOnly, TierNameOf, () => _settings.VideoByRun);
         _saver.Error += SetError;
         _saver.Saved += info =>
         {
@@ -548,13 +550,21 @@ public sealed class AppHost : IDisposable
         AppLog.FilePath = s.LogFile;
         SaveSettings();
         PreflightAccess();
-        if (s.Language != old.Language || s.Theme != old.Theme)
+        var customChanged = s.Theme == "Custom" && (s.CustomHue != old.CustomHue || s.CustomSaturation != old.CustomSaturation || s.CustomBrightness != old.CustomBrightness);
+        if (s.Language != old.Language || s.Theme != old.Theme || customChanged)
         {
             L.Set(s.Language);
+            Theme.SetCustom(s.CustomHue, s.CustomSaturation, s.CustomBrightness);
             Theme.Apply(s.Theme);
-            _app.Dispatcher.BeginInvoke(RebuildMain);
+            // A new language needs every text rebuilt, and Black has no Mica backdrop (set when the window opens): those open a new window. Other theme changes redraw in place.
+            var newWindow = s.Language != old.Language || s.Theme == "Black" || old.Theme == "Black";
+            _app.Dispatcher.BeginInvoke(newWindow ? RebuildMain : () => _main?.RefreshTheme());
         }
-        else if (s.UiScale != old.UiScale) _app.Dispatcher.Invoke(() => _main?.ApplyScale(s.UiScale));
+        else
+        {
+            if (s.UiScale != old.UiScale) _app.Dispatcher.Invoke(() => _main?.ApplyScale(s.UiScale));
+            if (s.Grain != old.Grain) _app.Dispatcher.Invoke(() => _main?.ApplyGrain(s.Grain));
+        }
         if (s.StorageLimitGb != old.StorageLimitGb || s.MaxAgeDays != old.MaxAgeDays)
             _ = Task.Run(() => { CacheReplays(); if (EnforceStorageLimits()) RunFinished?.Invoke(); });
     }

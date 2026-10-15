@@ -72,6 +72,7 @@
         <WindowChrome CaptionHeight="48" ResizeBorderThickness="6" GlassFrameThickness="-1" CornerRadius="0" UseAeroCaptionButtons="False"/>
     </WindowChrome.WindowChrome>
     <Grid x:Name="Root">
+        <Border x:Name="GrainLayer" IsHitTestVisible="False" Visibility="Collapsed"/>
         <Grid x:Name="Pages"/>
         <Grid x:Name="TitleBar" Panel.ZIndex="1" VerticalAlignment="Top" Height="48" Background="Transparent">
             <Grid.ColumnDefinitions>

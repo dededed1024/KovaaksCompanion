@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
@@ -28,11 +28,12 @@ public partial class SettingsView : UserControl
     {
         InitializeComponent();
         _host = host;
+        _commit.Tick += (_, _) => Commit();
         Load();
         host.GameStateChanged += OnGameState;
     }
 
-    public void Detach() => _host.GameStateChanged -= OnGameState;
+    public void Detach() { _commit.Stop(); _host.GameStateChanged -= OnGameState; }
 
     void OnGameState() => Dispatcher.InvokeAsync(UpdateLock);
 
@@ -59,6 +60,7 @@ public partial class SettingsView : UserControl
         DeleteBeaten.IsChecked = s.DeleteBeatenRuns;
         KeepPb.IsChecked = s.KeepPersonalBests;
         PbOnly.IsChecked = s.VideoPbOnly;
+        ByRun.IsChecked = s.VideoByRun;
         AutoStart.IsChecked = Autostart.IsOn();
         ErrorReports.IsChecked = s.SendErrorReports;
         SizeCamFrame(s);
@@ -85,24 +87,81 @@ public partial class SettingsView : UserControl
         foreach (RadioButton r in ScaleBar.Children) r.IsChecked = (string)r.Tag == scale;
         ThemeBar.Children.Clear();
         var theme = Theme.Normalize(s.Theme);
-        foreach (var name in Theme.Names)
+        foreach (var name in Theme.Names.Where(n => n != "Custom")) // the wheel is the custom theme
         {
             var on = name == theme;
             var (bg, accent) = Theme.Swatch(name);
             var chip = new Border
             {
-                Width = 44, Height = 44, Margin = new Thickness(0, 0, 10, 10), CornerRadius = new CornerRadius(10), Cursor = Cursors.Hand,
+                Width = 28, Height = 28, Margin = new Thickness(8, 0, 0, 0), CornerRadius = new CornerRadius(8), Cursor = Cursors.Hand,
                 Background = new SolidColorBrush(bg), BorderThickness = new Thickness(2), ToolTip = L.T(name),
                 BorderBrush = on ? (Brush)FindResource("Accent") : (Brush)FindResource("EdgeFaint"),
-                Child = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                Child = new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             chip.MouseLeftButtonUp += (_, _) => { if (!on) SaveAppearance(name); };
             ThemeBar.Children.Add(chip);
         }
+        Wheel.Pick = (s.CustomHue, s.CustomSaturation);
+        Wheel.Active = theme == "Custom";
+        BrightnessSlider.Value = s.CustomBrightness * 100;
+        GrainSlider.Value = s.Grain;
     }
 
     void OnAppearance(object sender, RoutedEventArgs e) { if (!_loading) SaveAppearance(); }
 
+    /// <summary>Rebuilds the theme chips and the picker after a theme change made while this popup stays open.</summary>
+    public void RefreshAppearance()
+    {
+        var was = _loading;
+        _loading = true;
+        LoadAppearance(_host.Settings);
+        _loading = was;
+    }
+
+    bool _customDirty, _grainDirty;
+    readonly System.Windows.Threading.DispatcherTimer _commit = new() { Interval = TimeSpan.FromMilliseconds(350) };
+
+    /// <summary>The wheel and the brightness slider make the Custom theme: the colors show at once by rewriting the theme brushes, and are saved when the pick is final.</summary>
+    void PreviewCustom()
+    {
+        _customDirty = true;
+        var (hue, sat) = Wheel.Pick;
+        Theme.SetCustom(hue, sat, BrightnessSlider.Value / 100);
+        Theme.Apply("Custom");
+    }
+
+    void OnWheelPicking() { if (!_loading) PreviewCustom(); }
+
+    void OnWheelPicked()
+    {
+        if (_loading) return;
+        PreviewCustom();
+        Commit();
+    }
+
+    void OnBrightness(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading) return;
+        PreviewCustom();
+        Wheel.Active = true;
+        _commit.Stop(); _commit.Start(); // saved once the slider rests
+    }
+
+    void OnGrain(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading) return;
+        _grainDirty = true;
+        (Window.GetWindow(this) as MainWindow)?.ApplyGrain((int)GrainSlider.Value);
+        _commit.Stop(); _commit.Start();
+    }
+
+    void Commit()
+    {
+        _commit.Stop();
+        var custom = _customDirty;
+        _customDirty = _grainDirty = false;
+        SaveAppearance(custom ? "Custom" : null);
+    }
     /// <summary>Applies language, theme and size. Allowed while the game runs: it changes only how the app looks.</summary>
     void SaveAppearance(string? theme = null)
     {
@@ -113,6 +172,8 @@ public partial class SettingsView : UserControl
             Language = Tag(LanguageBar, cur.Language),
             Theme = theme ?? cur.Theme,
             UiScale = int.TryParse(Tag(ScaleBar, ""), out var sc) ? sc : cur.UiScale,
+            CustomHue = Wheel.Pick.Hue, CustomSaturation = Wheel.Pick.Saturation, CustomBrightness = Math.Round(BrightnessSlider.Value) / 100,
+            Grain = (int)Math.Round(GrainSlider.Value),
         };
         if (next == cur) return;
         _host.ApplySettings(next);
@@ -195,6 +256,7 @@ public partial class SettingsView : UserControl
             DeleteBeatenRuns = DeleteBeaten.IsChecked == true,
             KeepPersonalBests = KeepPb.IsChecked == true,
             VideoPbOnly = PbOnly.IsChecked == true,
+            VideoByRun = ByRun.IsChecked == true,
             WebcamEnabled = CamOn.IsChecked == true,
             WebcamSave = CamSaveBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag is string cs
                 && Enum.TryParse<WebcamSave>(cs, out var hs) ? hs : cur.WebcamSave,
@@ -588,6 +650,7 @@ public partial class SettingsView : UserControl
     void OnBeatenLabel(object sender, MouseButtonEventArgs e) => DeleteBeaten.IsChecked = DeleteBeaten.IsChecked != true;
 
     void OnPbOnlyLabel(object sender, MouseButtonEventArgs e) => PbOnly.IsChecked = PbOnly.IsChecked != true;
+    void OnByRunLabel(object sender, MouseButtonEventArgs e) => ByRun.IsChecked = ByRun.IsChecked != true;
     void OnKeepPbLabel(object sender, MouseButtonEventArgs e) => KeepPb.IsChecked = KeepPb.IsChecked != true;
     void OnErrorReportsLabel(object sender, MouseButtonEventArgs e) => ErrorReports.IsChecked = ErrorReports.IsChecked != true;
 

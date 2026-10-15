@@ -10,17 +10,20 @@ namespace KovaaksCompanion.App;
 /// <summary>The single app window: the Stats page, with the replay and settings popups floating above it.</summary>
 public partial class MainWindow : Window
 {
-    readonly StatsView _stats;
-    readonly ReplayView _replay;
+    readonly AppHost _host;
+    StatsView _stats;
+    ReplayView _replay;
     readonly SettingsView _settings;
     readonly UpdateView _update = new();
 
     public MainWindow(AppHost host)
     {
+        _host = host;
         InitializeComponent();
         Popups.Reset();
         Backdrop.Apply(this);
         ApplyScale(host.Settings.UiScale);
+        ApplyGrain(host.Settings.Grain);
         _stats = new StatsView(host);
         _replay = new ReplayView(host);
         _settings = new SettingsView(host);
@@ -44,6 +47,34 @@ public partial class MainWindow : Window
         Root.LayoutTransform = new ScaleTransform(s, s);
         MinWidth = 1280 * s; MinHeight = 720 * s;
         WindowChrome.GetWindowChrome(this).CaptionHeight = 48 * s;
+    }
+
+    /// <summary>
+    /// Redraws the window after a theme change without recreating it: the shared brushes are already rewritten, so the Stats page and the replay popup
+    /// (which draw with brushes read at build time) are built again in place; the open settings popup stays.
+    /// </summary>
+    public void RefreshTheme()
+    {
+        Backdrop.SetDark(this);
+        var index = Root.Children.IndexOf(_replay);
+        _stats.Detach(); _replay.Detach();
+        Pages.Children.Remove(_stats);
+        Root.Children.Remove(_replay);
+        _stats = new StatsView(_host) { ConfettiLayer = ConfettiLayer };
+        _replay = new ReplayView(_host);
+        Pages.Children.Add(_stats);
+        Root.Children.Insert(index, _replay);
+        _settings.RefreshAppearance();
+    }
+
+    /// <summary>Shows the film grain behind the pages at <paramref name="strength"/> (0-100); 0 removes it.</summary>
+    public void ApplyGrain(int strength)
+    {
+        Grain.Set(strength);
+        GrainLayer.Visibility = strength > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (strength <= 0) return;
+        GrainLayer.Background = Grain.Brush;
+        GrainLayer.Opacity = Grain.Opacity(strength);
     }
 
     // A chrome window overshoots the screen by the resize border when maximized; pad it back in.

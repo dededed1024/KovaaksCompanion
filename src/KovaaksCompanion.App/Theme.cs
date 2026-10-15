@@ -21,7 +21,7 @@ public static class Theme
         ["Rose"] = (6, 0.72, 0.55), ["Ember"] = (26, 0.76, 0.58), ["Forest"] = (138, 0.85, 0.36),
     };
 
-    static Color FromHsv(double h, double s, double v)
+    internal static Color FromHsv(double h, double s, double v)
     {
         var c = v * s;
         var x = c * (1 - Math.Abs(h / 60 % 2 - 1));
@@ -44,6 +44,18 @@ public static class Theme
         return new(Hex(bg), "#F2" + Hex(surface)[1..], Hex(raised), accent);
     }
 
+    /// <summary>The Custom theme from the picker: a background of the chosen hue, saturation and brightness, and an accent of the same hue. A bright background turns it into a light theme.</summary>
+    static Look CustomLook(double hue, double saturation, double brightness)
+    {
+        var bg = FromHsv(Math.Clamp(hue, 0, 359.9), Math.Clamp(saturation, 0, 1), Math.Clamp(brightness, 0.1, 0.95));
+        if (ChartPaths.Lum(bg) > 0.4)
+            return new(Hex(bg), "#F2" + Hex(Mix(bg, Colors.White, 0.5))[1..], Hex(Mix(bg, Colors.White, 0.72)), Hex(FromHsv(hue % 360, 0.85, 0.5)), true);
+        return new(Hex(bg), "#F2" + Hex(Mix(bg, Colors.White, 0.04))[1..], Hex(Mix(bg, Colors.White, 0.08)), Hex(FromHsv(hue % 360, 0.6, 1)));
+    }
+
+    /// <summary>Sets the Custom theme colors; call <see cref="Apply"/> to show them.</summary>
+    public static void SetCustom(double hue, double saturation, double brightness) => Looks["Custom"] = CustomLook(hue, saturation, brightness);
+
     static readonly Dictionary<string, Look> Looks = BuildLooks();
 
     static Dictionary<string, Look> BuildLooks()
@@ -55,11 +67,12 @@ public static class Theme
             ["Black"] = new("#000000", "#F20A0A0C", "#151517", "#0A84FF"),
         };
         foreach (var (name, accent) in Colored) d[name] = Tinted(name, accent);
+        d["Custom"] = CustomLook(215, 0.6, 0.4);
         return d;
     }
 
     /// <summary>The colored themes in palette order, then black, dark gray and white at the far end.</summary>
-    public static readonly string[] Names = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light"];
+    public static readonly string[] Names = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light", "Custom"];
 
     static readonly Dictionary<string, string> Dark = new()
     {

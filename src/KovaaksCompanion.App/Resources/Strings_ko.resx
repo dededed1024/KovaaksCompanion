@@ -60,6 +60,7 @@
   <data name="Storage" xml:space="preserve"><value>저장 공간</value></data>
   <data name="Max storage (0 GB = unlimited)" xml:space="preserve"><value>최대 용량 (0 GB = 무제한)</value></data>
   <data name="Keep only the best run video in a session" xml:space="preserve"><value>세션 내 최고 기록만 영상 남기기</value></data>
+  <data name="Save videos per run" xml:space="preserve"><value>영상을 런별로 저장</value></data>
   <data name="Save video for PB only" xml:space="preserve"><value>PB 영상만 저장</value></data>
   <data name="Server records" xml:space="preserve"><value>서버 기록</value></data>
   <data name="To top" xml:space="preserve"><value>맨 위로</value></data>
@@ -202,6 +203,9 @@
   <data name="Ember" xml:space="preserve"><value>엠버</value></data>
   <data name="Ocean" xml:space="preserve"><value>오션</value></data>
   <data name="Gold" xml:space="preserve"><value>골드</value></data>
+  <data name="Custom" xml:space="preserve"><value>커스텀</value></data>
+  <data name="Grain" xml:space="preserve"><value>그레인</value></data>
+  <data name="Brightness" xml:space="preserve"><value>밝기</value></data>
   <data name="Score" xml:space="preserve"><value>점수</value></data>
   <data name="Kills" xml:space="preserve"><value>킬</value></data>
   <data name="Shots" xml:space="preserve"><value>발사</value></data>

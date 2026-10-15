@@ -88,7 +88,7 @@
     </UserControl.Resources>
     <Grid>
         <Border x:Name="Scrim" Background="{DynamicResource Scrim}" Opacity="0" MouseLeftButtonDown="OnScrim"/>
-        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,32" CornerRadius="18" Background="{DynamicResource Surface}"
+        <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,32" CornerRadius="18" app:Grain.Card="True" Background="{DynamicResource Surface}"
                 BorderBrush="{DynamicResource Edge}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="0.94" ScaleY="0.94"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>

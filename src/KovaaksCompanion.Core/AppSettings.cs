@@ -20,8 +20,15 @@ public sealed record AppSettings
     public bool StartWithWindows { get; init; } = true;
     /// <summary>UI language code ("en", "ko"); empty = follow Windows.</summary>
     public string Language { get; init; } = "";
-    /// <summary>Color theme name (surfaces and accent together): Dark, Light, Black, Violet, Rose, Forest, Ember or Ocean.</summary>
+    /// <summary>Color theme name (surfaces and accent together): Dark, Light, Black, Violet, Rose, Forest, Ember, Ocean, Gold or Custom.</summary>
     public string Theme { get; init; } = "Dark";
+    /// <summary>The Custom theme: hue in degrees (0-360), saturation and brightness (0-1) of the background; the accent follows the hue.</summary>
+    public double CustomHue { get; init; } = 215;
+    public double CustomSaturation { get; init; } = 0.6;
+    public double CustomBrightness { get; init; } = 0.4;
+    /// <summary>Strength of the film grain over the window background, 0-100; 0 = off.</summary>
+    public int Grain { get; init; }
+    public const int MaxGrain = 100;
     /// <summary>UI size in percent of the design size.</summary>
     public int UiScale { get; init; } = 100;
     public const int MinUiScale = 75, MaxUiScale = 150;
@@ -33,6 +40,9 @@ public sealed record AppSettings
 
     /// <summary>Keep the video only of runs that set a personal best; the clip of any other run is not saved (its stats and mouse trail still are).</summary>
     public bool VideoPbOnly { get; init; }
+
+    /// <summary>Put each video straight in the videos folder instead of a folder per play session.</summary>
+    public bool VideoByRun { get; init; }
 
     /// <summary>Maximum size of the replays folder in GB; 0 = unlimited.</summary>
     public int StorageLimitGb { get; init; }
