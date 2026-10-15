@@ -193,14 +193,20 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
                         <Grid>
-                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusM}" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusM}"/>
+                            <Border x:Name="On" Background="{DynamicResource AccentFill}" CornerRadius="{StaticResource RadiusM}" Opacity="0" IsHitTestVisible="False"/>
                             <Border x:Name="Hl" Background="{DynamicResource Highlight}" CornerRadius="{StaticResource RadiusM}" Opacity="0" IsHitTestVisible="False"/>
+                            <ContentPresenter x:Name="Label" Content="{TemplateBinding Content}" Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Hl" Property="Opacity" Value="1"/></Trigger>
-                            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentFill}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                                <Trigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Hl" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                                <Trigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="On" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -219,14 +225,16 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="9" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="Bd" Background="{DynamicResource Selected}" CornerRadius="9" Opacity="0"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource Fg}"/></Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Selected}"/>
                                 <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+                                <Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                                <Trigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Bd" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
