@@ -819,10 +819,16 @@ public partial class StatsView
             }
             var chev = Chevron(HorizontalAlignment.Right);
             chev.FontSize = 10;
-            Grid.SetColumn(chev, pbCount >= 1 ? 2 : 1);
+            Grid.SetColumn(chev, pbCount >= 1 ? 3 : 2);
             if (s.RunCount > 0) g.Children.Add(chev);
             var row = new Border { CornerRadius = new CornerRadius(10), Background = rest, Cursor = Cursors.Hand, Child = g, Margin = new Thickness(0, 0, 0, 2) };
             if (isLive) { row.BorderBrush = Solid("#99FF453A"); row.BorderThickness = new Thickness(1); }
+            if (SessionHasVideo(s))
+            {
+                var video = VideoMark();
+                Grid.SetColumn(video, pbCount >= 1 ? 2 : 1);
+                g.Children.Add(video);
+            }
             var sess = s;
             if (s.RunCount == 0) { row.Cursor = Cursors.Arrow; host.Children.Add(row); continue; }
             RowClick.Attach(row, p => _host.ShowSession(sess, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : rest);
@@ -863,11 +869,25 @@ public partial class StatsView
 
     UIElement SessionCard(PlaySession s, IReadOnlySet<RunRecord> pbs, bool live, bool expanded = false, bool capture = false)
     {
+    bool SessionHasVideo(PlaySession s) => s.Runs.Any(r => ReplayStore.HasVideo(_replays, r.Scenario, r.End));
+
+    TextBlock VideoMark() => new() { Text = "", FontFamily = new FontFamily(Icons), FontSize = 15, Foreground = (Brush)FindResource("Accent"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+
+    /// <summary>The folder that holds the videos of the session: where the first run with a video is stored; null when no run has one.</summary>
+    string? SessionFolder(PlaySession s)
+    {
+        foreach (var r in s.Runs)
+        {
+            var i = ReplayStore.FindRun(_replays, r.Scenario, r.End);
+            if (i >= 0 && _replays[i].HasVideo && _host.Replays.VideoPath(_replays[i]) is { } p) return System.IO.Path.GetDirectoryName(p);
+        }
+        return null;
+    }
+
         var pbCount = s.Runs.Count(pbs.Contains);
         var head = new Grid { Margin = new Thickness(24, 3, 24, 3) };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        for (var i = 0; i < 4; i++) head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var title = new TextBlock();
         title.Inlines.Add(new System.Windows.Documents.Run($"#{s.Number}") { FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = FgB });
@@ -900,6 +920,38 @@ public partial class StatsView
         {
             var copy = new Button
             {
+            Button IconButton(string tip, int col)
+            {
+                var b = new Button
+                {
+                    FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0),
+                    Margin = new Thickness(6, 0, 0, 0), MinHeight = 36, MinWidth = 36, VerticalAlignment = VerticalAlignment.Center, ToolTip = tip,
+                };
+                Grid.SetColumn(b, col);
+                head.Children.Add(b);
+                return b;
+            }
+            var star = IconButton("", 2);
+            void ShowStar()
+            {
+                var fav = _host.Ui.IsFavoriteSession(s);
+                GlyphButton.Set(star, fav ? "" : "", (Brush)FindResource(fav ? "Yellow" : "Dim"));
+                star.ToolTip = L.T(fav ? "Unfavorite session" : "Favorite session");
+            }
+            ShowStar();
+            star.Click += (_, _) =>
+            {
+                _host.Ui.ToggleFavoriteSession(s);
+                _host.SaveUi();
+                ShowStar();
+                if (_browseTab == "Sessions") FillBrowse();
+            };
+            if (SessionFolder(s) != null)
+            {
+                var folder = IconButton(L.T("Show in Explorer"), 3);
+                GlyphButton.Set(folder, "", DimB);
+                folder.Click += (_, _) => { if (SessionFolder(s) is { } dir) System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\""); };
+            }
                 Content = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), Background = Brushes.Transparent, Padding = new Thickness(10, 0, 10, 0),
                 Margin = new Thickness(6, 0, 0, 0), MinHeight = 36, MinWidth = 36, VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Copy session as image"),
             };
@@ -911,7 +963,7 @@ public partial class StatsView
                 await Task.Delay(1200);
                 copy.Content = icon;
             };
-            Grid.SetColumn(copy, 2);
+            Grid.SetColumn(copy, 4);
             head.Children.Add(copy);
         }
 
@@ -1127,7 +1179,7 @@ public partial class StatsView
     UIElement BuildBrowse()
     {
         var tabs = new UniformGrid { Rows = 1 };
-        foreach (var (kind, label, glyph) in new[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Runs", "Record", "") })
+        foreach (var (kind, label, glyph) in new[] { ("Playlists", "Playlists", ""), ("Scenarios", "Scenarios", ""), ("Sessions", "Sessions", ""), ("Runs", "Record", "") })
         {
             var tab = kind;
             var content = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1156,7 +1208,7 @@ public partial class StatsView
         var cols = BrowseColumns(tab, HomeHost.Width);
         _browseCols = cols;
         var items = tab == "Playlists" ? SortedPlaylists().Select(x => (Func<UIElement>)(() => PlaylistCard(x.B, x.D, x.Fav))).ToList()
-            : tab == "Scenarios" ? ScenarioRows() : RecordRows();
+            : tab == "Scenarios" ? ScenarioRows() : tab == "Sessions" ? SessionRows() : RecordRows();
 
         var body = new StackPanel();
         if (_browseTabs != null)
@@ -1164,7 +1216,7 @@ public partial class StatsView
             (_browseTabs.Parent as Panel)?.Children.Remove(_browseTabs);
             body.Children.Add(_browseTabs);
         }
-        if (items.Count == 0) body.Children.Add(Text(L.T(tab == "Scenarios" ? "No scenarios" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
+        if (items.Count == 0) body.Children.Add(Text(L.T(_favOnly ? "No favorites" : tab == "Scenarios" ? "No scenarios" : tab == "Sessions" ? "No sessions" : "No runs"), 13, DimB, null, new Thickness(16, 12, 16, 12)));
         var grid = new UniformGrid { Columns = cols };
         _browseItems = items; _browseGrid = grid; _browseShown = 0;
         AppendBrowse(BrowseBatch);
@@ -1253,11 +1305,8 @@ public partial class StatsView
             Grid.SetColumn(e, col);
             g.Children.Add(e);
         }
-        var nm = Text("", 13, FgB, FontWeights.SemiBold);
-        if (fav) nm.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A") });
-        nm.Inlines.Add(new System.Windows.Documents.Run(name));
-        nm.TextTrimming = TextTrimming.CharacterEllipsis;
-        Put(nm, 0, new Thickness(12, 0, 16, 0));
+        Put(NameWithFavoriteSlot(name, fav, 36, 12), 0, new Thickness(0, 0, 16, 0));
+        if (ScenariosWithVideo().Contains(name)) Put(VideoMark(), 5, new Thickness(0), HorizontalAlignment.Center);
         var bench = Text(TierBenchmarkName(name) ?? "-", 12, DimB);
         bench.TextTrimming = TextTrimming.CharacterEllipsis;
         Put(bench, 1, new Thickness(8, 0, 8, 0), HorizontalAlignment.Center);
@@ -1312,6 +1361,20 @@ public partial class StatsView
             {
                 StartPoint = new Point(0, 0),
                 EndPoint = new Point(1, 0),
+    HashSet<string>? _videoScenarios;
+    List<ReplayInfo>? _videoScenariosFor;
+
+    /// <summary>Scenarios that have a replay with a video; rebuilt when the replay list changes.</summary>
+    HashSet<string> ScenariosWithVideo()
+    {
+        if (_videoScenarios == null || !ReferenceEquals(_videoScenariosFor, _replays))
+        {
+            _videoScenarios = _replays.Where(i => i.HasVideo).Select(i => i.Scenario).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _videoScenariosFor = _replays;
+        }
+        return _videoScenarios;
+    }
+
                 GradientStops = new GradientStopCollection { new GradientStop(Color.FromArgb(0x05, 255, 255, 255), 0), new GradientStop(Color.FromArgb(0x38, c.R, c.G, c.B), 1) }
             };
             grad.Freeze();
@@ -1321,6 +1384,8 @@ public partial class StatsView
             content.Children.Add(overlay);
             content.Children.Add(info);
             card.Child = content;
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
             var dur = TimeSpan.FromMilliseconds(120);
             card.MouseEnter += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Theme.Ink(Color.FromArgb(0x12, 255, 255, 255)), dur));
             card.MouseLeave += (_, _) => overlay.Background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, dur));
@@ -1339,11 +1404,73 @@ public partial class StatsView
     {
         _progress.TryGetValue(d.KovaaksBenchmarkId, out var p);
         var ranked = p != null && p.OverallTierName.Length > 0;
+        Put(Text(stats.Plays == 1 ? L.F("{0} run", stats.Plays) : L.F("{0} runs", stats.Plays), 12, DimB), 4, new Thickness(0, 0, 12, 0), HorizontalAlignment.Right);
         var tier = ranked ? TierBrush(d, p!.OverallTierName) : (Brush)FindResource("Dim");
         var history = p == null ? [] : TierLadder.History(p.Scenarios.Select(sc => (_book.For(sc.Scenario), (IReadOnlyList<double>)sc.TierThresholds)));
         var watermark = ranked ? TierText.Label(p!.OverallTierName) : L.T("UNRANKED");
         var complete = p != null && p.IsTierComplete(p.OverallTier);
         return MiniCard(b.BenchmarkName, d.DifficultyName, ParseBrush(b.Color), tier, ranked, history, watermark, complete, p?.OverallFraction, p, () => OpenPlaylist(b, d));
+    }
+
+    List<Func<UIElement>> SessionRows()
+    {
+        var ui = _host.Ui;
+        var plays = AllPlays();
+        var pbs = PbSet();
+        var sessions = PlaySession.Group(plays, all: plays, personalBests: pbs).Where(s => s.RunCount > 0).ToList();
+        // the number sits where the widest time range ends, so it lines up in every row
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var face = new Typeface(FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        var rangeWidth = sessions.Select(s => new FormattedText(SessionRange(s), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, face, 12, Brushes.Black, dpi).WidthIncludingTrailingWhitespace).DefaultIfEmpty(0).Max() + 2;
+        return sessions
+            .Select(s => (S: s, Fav: ui.IsFavoriteSession(s)))
+            .Where(i => !_favOnly || i.Fav).OrderByDescending(i => i.S.Start)
+            .Select(i => (Func<UIElement>)(() => SessionRow(i.S, i.Fav, rangeWidth))).ToList();
+    }
+
+    static string SessionRange(PlaySession s) => $"{L.MonthDay(s.Start)} {ClockFormat.Clock(s.Start)} - {L.MonthDay(s.End)} {ClockFormat.Clock(s.End)}";
+
+    /// <summary>One session as a list row: favorite mark, start - end (date and time) and number on the left; time played, scenarios, runs and, when there are any, PBs on the right.</summary>
+    Border SessionRow(PlaySession s, bool fav, double rangeWidth)
+    {
+        var g = new Grid();
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        foreach (var w in new double[] { 84, 100, 56, 76, 36 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w) });
+        void Put(FrameworkElement e, int col, HorizontalAlignment h)
+        {
+            e.VerticalAlignment = VerticalAlignment.Center; e.HorizontalAlignment = h;
+            Grid.SetColumn(e, col);
+            g.Children.Add(e);
+        }
+        var left = new Grid();
+        left.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
+        left.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(rangeWidth + 14) });
+        left.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var star = new TextBlock { Text = fav ? "" : "", FontFamily = new FontFamily(Icons), FontSize = 13, Foreground = Solid("#FFD60A"), Padding = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var range = Text(SessionRange(s), 12, DimB);
+        range.VerticalAlignment = VerticalAlignment.Center;
+        var number = Text($"#{s.Number}", 13, FgB, FontWeights.SemiBold);
+        number.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(range, 1); Grid.SetColumn(number, 2);
+        left.Children.Add(star); left.Children.Add(range); left.Children.Add(number);
+        Put(left, 0, HorizontalAlignment.Left);
+        Put(Text(Dur(s.Duration), 12, DimB), 1, HorizontalAlignment.Right);
+        Put(Text(s.ScenarioCount == 1 ? L.F("{0} scenario", s.ScenarioCount) : L.F("{0} scenarios", s.ScenarioCount), 12, DimB), 2, HorizontalAlignment.Right);
+        Put(Text(s.RunCount == 1 ? L.F("{0} run", s.RunCount) : L.F("{0} runs", s.RunCount), 12, DimB), 3, HorizontalAlignment.Right);
+        if (s.PersonalBests > 0)
+        {
+            var green = (Brush)FindResource("Green");
+            var badge = new Grid { Margin = new Thickness(0, 0, 12, 0) };
+            badge.Children.Add(new Border { CornerRadius = new CornerRadius(9), Background = green, Opacity = 0.35 });
+            badge.Children.Add(new TextBlock { Text = s.PersonalBests >= 2 ? L.F("PB ×{0}", s.PersonalBests) : L.T("PB"), Foreground = green, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 3, 10, 3) });
+            Put(badge, 4, HorizontalAlignment.Left);
+        }
+        if (SessionHasVideo(s)) Put(VideoMark(), 5, HorizontalAlignment.Center);
+        var row = new Border { Height = ListRowHeight, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = g };
+        RowClick.Attach(row, p => _host.ShowSession(s, p), down => row.Background = down ? Solid("#14FFFFFF") : row.IsMouseOver ? Solid("#0DFFFFFF") : Brushes.Transparent);
+        row.MouseEnter += (_, _) => row.Background = Solid("#0DFFFFFF");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        return row;
     }
 
     /// <summary>Profile card: <paramref name="name"/> and <paramref name="sub"/> on the left, the tier progress line on the right over a card-high tier-name watermark. <paramref name="fraction"/> is the progress to the next tier (shown while not <paramref name="complete"/>); <paramref name="cloudOf"/> supplies the scenarios whose cloud scores fill in a line with no local runs.</summary>

@@ -15,8 +15,16 @@
   <data name="Mute" xml:space="preserve"><value>음소거</value></data>
   <data name="Unmute" xml:space="preserve"><value>음소거 해제</value></data>
   <data name="Show in Explorer" xml:space="preserve"><value>탐색기에서 보기</value></data>
-  <data name="Add to favorites" xml:space="preserve"><value>즐겨찾기에 추가</value></data>
-  <data name="Remove from favorites" xml:space="preserve"><value>즐겨찾기에서 제거</value></data>
+  <data name="No sessions" xml:space="preserve"><value>세션 없음</value></data>
+  <data name="Favorite session" xml:space="preserve"><value>세션 즐겨찾기</value></data>
+  <data name="Unfavorite session" xml:space="preserve"><value>세션 즐겨찾기 해제</value></data>
+  <data name="Favorites only" xml:space="preserve"><value>즐겨찾기만 보기</value></data>
+  <data name="Favorite playlist" xml:space="preserve"><value>플레이리스트 즐겨찾기</value></data>
+  <data name="Unfavorite playlist" xml:space="preserve"><value>플레이리스트 즐겨찾기 해제</value></data>
+  <data name="Favorite scenario" xml:space="preserve"><value>시나리오 즐겨찾기</value></data>
+  <data name="Unfavorite scenario" xml:space="preserve"><value>시나리오 즐겨찾기 해제</value></data>
+  <data name="Favorite replay" xml:space="preserve"><value>리플레이 즐겨찾기</value></data>
+  <data name="Unfavorite replay" xml:space="preserve"><value>리플레이 즐겨찾기 해제</value></data>
   <data name="Up to 6 favorites" xml:space="preserve"><value>즐겨찾기는 최대 6개</value></data>
   <data name="Overlay the previous local run" xml:space="preserve"><value>이전 런 겹쳐 보기</value></data>
   <data name="Overview" xml:space="preserve"><value>개요</value></data>
