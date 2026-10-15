@@ -35,7 +35,7 @@ public static unsafe class ObsRuntime
             try { result = body(); }
             catch (Exception e) { error = e; }
         }) { IsBackground = true, Name = "libobs" };
-        t.SetApartmentState(ApartmentState.STA);
+        if (OperatingSystem.IsWindows()) t.SetApartmentState(ApartmentState.STA);
         t.Start();
         t.Join();
         if (error != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();

@@ -122,7 +122,7 @@ public partial class SettingsView : UserControl
         _loading = was;
     }
 
-    bool _customDirty, _grainDirty;
+    bool _customDirty;
     readonly System.Windows.Threading.DispatcherTimer _commit = new() { Interval = TimeSpan.FromMilliseconds(350) };
 
     /// <summary>The wheel and the brightness slider make the Custom theme: the colors show at once by rewriting the theme brushes, and are saved when the pick is final.</summary>
@@ -159,7 +159,6 @@ public partial class SettingsView : UserControl
     void OnGrain(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_loading) return;
-        _grainDirty = true;
         (Window.GetWindow(this) as MainWindow)?.ApplyGrain((int)GrainSlider.Value);
         _commit.Stop(); _commit.Start();
     }
@@ -168,7 +167,7 @@ public partial class SettingsView : UserControl
     {
         _commit.Stop();
         var custom = _customDirty;
-        _customDirty = _grainDirty = false;
+        _customDirty = false;
         SaveAppearance(custom ? "Custom" : null);
     }
     /// <summary>Applies language, theme and size. Allowed while the game runs: it changes only how the app looks.</summary>
