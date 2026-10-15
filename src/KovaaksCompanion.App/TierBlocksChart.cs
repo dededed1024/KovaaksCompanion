@@ -110,7 +110,7 @@ public sealed class TierBlocksChart : FrameworkElement
         var tb = rank >= 1 && rank <= _brushes.Count ? _brushes[rank - 1] : dim;
         var t1 = Text(name, 13, fg, true);
         var t2 = Text(tier, 11, ChartPaths.TextTone(tb), true);
-        var t3 = Text(rank >= _names.Count ? L.T("Max tier") : L.F("+{0}% to next", $"{frac * 100:0}"), 10, dim);
+        var t3 = Text(rank >= _names.Count ? L.T("Max tier") : L.F("+{0}% to next", $"{Math.Floor(frac * 10000 + 1e-6) / 100:0.00}"), 10, dim);
         double bw = Math.Max(t1.Width, Math.Max(t2.Width, t3.Width)) + 16, bh = t1.Height + t2.Height + t3.Height + 12;
         var bx = x + 14;
         if (bx + bw > w - 2) bx = x - 14 - bw;

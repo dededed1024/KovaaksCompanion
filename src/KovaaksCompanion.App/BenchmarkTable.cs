@@ -251,7 +251,7 @@ public sealed class BenchmarkTable : UserControl
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), Background = Argb("#1AFFFFFF") });
             bar.Children.Add(new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 120 * Math.Clamp(stat.Fraction, 0, 1), Background = nextBrush });
             H(bar, 2);
-            H(Cell(stat.Tier >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{stat.Fraction * 100:0}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
+            H(Cell(stat.Tier >= tiers ? L.T("Complete").ToUpperInvariant() : $"+{Math.Floor(stat.Fraction * 10000 + 1e-6) / 100:0.00}%", 11, dim, HorizontalAlignment.Left, null, new Thickness(8, 0, 0, 0)), 3);
             if (ShowCaptureButton)
             {
                 var cb = CaptureButton(() => CategoryCaptureRequested?.Invoke(cat));
@@ -386,7 +386,7 @@ public sealed class BenchmarkTable : UserControl
         }));
         Add(score, 1);
 
-        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100%" : $"{pos.Fraction * 100:0}%", 13, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
+        Add(Cell(row.Maxes.Count == 0 || row.Best == null ? "" : pos.ToNext == null ? "100.00%" : $"{Math.Floor(pos.Fraction * 10000 + 1e-6) / 100:0.00}%", 13, dim, HorizontalAlignment.Right, null, new Thickness(0, 0, 6, 0)), 2);
 
         for (var k = 1; k <= tiers; k++)
         {

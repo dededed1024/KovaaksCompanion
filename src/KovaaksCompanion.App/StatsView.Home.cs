@@ -681,7 +681,7 @@ public partial class StatsView
         stack.Children.Add(tierGrid);
 
         // Line 3: Percentage (11.5, centered)
-        var percentText = Text($"{p.OverallFraction * 100:0}%", 11.5, textDim, null, new Thickness(0, 8, 0, 0));
+        var percentText = Text($"{Math.Floor(p.OverallFraction * 10000 + 1e-6) / 100:0.00}%", 11.5, textDim, null, new Thickness(0, 8, 0, 0));
         percentText.HorizontalAlignment = HorizontalAlignment.Center;
         percentText.TextAlignment = TextAlignment.Center;
         stack.Children.Add(percentText);

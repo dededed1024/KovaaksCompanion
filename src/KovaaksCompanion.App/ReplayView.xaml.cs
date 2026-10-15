@@ -788,7 +788,7 @@ public partial class ReplayView : UserControl
             var next = bands.FirstOrDefault(b => b.Value > BestScore);
             var lo = cur?.Value ?? 0;
             var frac = next is null ? 1 : Math.Clamp((BestScore - lo) / Math.Max(1e-9, next.Value - lo), 0, 1);
-            tiles.Add((next is null ? L.T("COMPLETE") : frac.ToString("P0"), Big(cur?.Label ?? Dash, cur is null ? null : ChartPaths.TextTone(cur.Brush))));
+            tiles.Add((next is null ? L.T("COMPLETE") : $"{Math.Floor(frac * 10000 + 1e-6) / 100:0.00}%", Big(cur?.Label ?? Dash, cur is null ? null : ChartPaths.TextTone(cur.Brush))));
         }
         return TileRow(tiles);
     }
