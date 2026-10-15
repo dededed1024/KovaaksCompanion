@@ -1,12 +1,17 @@
 namespace KovaaksCompanion.Core.Perf;
 
 /// <summary>One ~1 s bucket of a run. <see cref="TSec"/> is the bucket's end, seconds after challenge start.</summary>
-public readonly record struct PerfBucket(double TSec, int Shots, int Hits, int Misses, int Kills, double DamageDone, double DamagePossible, double Score);
+public readonly record struct PerfBucket(double TSec, int Shots, int Hits, int Misses, int Kills, double DamageDone, double DamagePossible, double Score, int Reloads = 0, double Distance = 0);
 
-public sealed record PerfData(IReadOnlyList<PerfBucket> Buckets)
+/// <summary>Where the run was played: the map or environment file, the bot files (one per slot) and the profile name.</summary>
+public sealed record PerfHeader(string Map, IReadOnlyList<string> Bots, string Profile);
+
+public sealed record PerfData(IReadOnlyList<PerfBucket> Buckets, PerfHeader? Header = null)
 {
     public int TotalShots => Buckets.Sum(b => b.Shots);
     public int TotalHits => Buckets.Sum(b => b.Hits);
+    public int TotalReloads => Buckets.Sum(b => b.Reloads);
+    public double TotalDistance => Buckets.Sum(b => b.Distance);
 }
 
 public sealed class PerfFormatException(string message) : Exception(message);
@@ -14,7 +19,7 @@ public sealed class PerfFormatException(string message) : Exception(message);
 /// <summary>
 /// Reads KovaaK's "&lt;run&gt; Performance.perf" (protobuf, no published schema). Top-level field 2 repeats; each record
 /// has the bucket time in field 1 and one metric: 2/3/4/5/6/7/8 = shots/hits/misses/damage done/damage possible/score/kills,
-/// a submessage whose field 1 is the value. Records with the same time form one bucket; zero-valued metrics are omitted.
+/// 12/14 = reloads/distance moved (10 = overshots at a kill, not read), a submessage whose field 1 is the value. Records with the same time form one bucket; zero-valued metrics are omitted.
 /// </summary>
 public static class PerfParser
 {
@@ -32,6 +37,7 @@ public static class PerfParser
     public static PerfData Parse(byte[] data)
     {
         var buckets = new List<PerfBucket>();
+        PerfHeader? header = null;
         try
         {
             var pos = 0;
@@ -39,6 +45,7 @@ public static class PerfParser
             {
                 var (field, wire) = Tag(data, ref pos);
                 if (field == 2 && wire == 2) Merge(buckets, Bucket(Bytes(data, ref pos)));
+                else if (field == 1 && wire == 2) header = Header(Bytes(data, ref pos));
                 else Skip(data, ref pos, wire);
             }
         }
@@ -46,7 +53,31 @@ public static class PerfParser
         {
             throw new PerfFormatException("Truncated or unsupported .perf file");
         }
-        return new PerfData(buckets);
+        return new PerfData(buckets, header);
+    }
+
+    /// <summary>Field 5 of the header holds the setup: 2 = profile, 3 (repeated) = bot files, 8 = map. The other figures in it are not read.</summary>
+    static PerfHeader? Header(byte[] msg)
+    {
+        var pos = 0;
+        while (pos < msg.Length)
+        {
+            var (field, wire) = Tag(msg, ref pos);
+            if (field != 5 || wire != 2) { Skip(msg, ref pos, wire); continue; }
+            string map = "", profile = "";
+            var bots = new List<string>();
+            var cfg = Bytes(msg, ref pos);
+            var p = 0;
+            while (p < cfg.Length)
+            {
+                var (f, w) = Tag(cfg, ref p);
+                if (w != 2) { Skip(cfg, ref p, w); continue; }
+                var s = System.Text.Encoding.UTF8.GetString(Bytes(cfg, ref p));
+                if (f == 2) profile = s; else if (f == 3) bots.Add(s); else if (f == 8) map = s;
+            }
+            return new PerfHeader(map, bots, profile);
+        }
+        return null;
     }
 
     static void Merge(List<PerfBucket> buckets, PerfBucket b)
@@ -56,13 +87,14 @@ public static class PerfParser
         if (i < 0) { buckets.Add(b); return; }
         var a = buckets[i];
         buckets[i] = new PerfBucket(a.TSec, a.Shots + b.Shots, a.Hits + b.Hits, a.Misses + b.Misses, a.Kills + b.Kills,
-            a.DamageDone + b.DamageDone, a.DamagePossible + b.DamagePossible, a.Score + b.Score);
+            a.DamageDone + b.DamageDone, a.DamagePossible + b.DamagePossible, a.Score + b.Score, a.Reloads + b.Reloads, a.Distance + b.Distance);
     }
 
     static PerfBucket Bucket(byte[] msg)
     {
         double t = 0, dmg = 0, dmgMax = 0, score = 0;
-        int shots = 0, hits = 0, misses = 0, kills = 0;
+        int shots = 0, hits = 0, misses = 0, kills = 0, reloads = 0;
+        double distance = 0;
         var pos = 0;
         while (pos < msg.Length)
         {
@@ -80,9 +112,11 @@ public static class PerfParser
                 case 6: dmgMax = value; break;
                 case 7: score = value; break;
                 case 8: kills = (int)value; break;
+                case 12: reloads = (int)value; break;
+                case 14: distance = value; break;
             }
         }
-        return new PerfBucket(t, shots, hits, misses, kills, dmg, dmgMax, score);
+        return new PerfBucket(t, shots, hits, misses, kills, dmg, dmgMax, score, reloads, distance);
     }
 
     /// <summary>Submessage holding one number in field 1 (varint or float).</summary>
