@@ -41,8 +41,8 @@ public static partial class StatsCsvParser
             MissCount = Int(values, "Miss Count"),
             Hash = values.GetValueOrDefault("Hash", ""),
             GameVersion = values.GetValueOrDefault("Game Version", ""),
-            PauseCount = Int(values, "Pause Count"),
-            PauseDuration = TimeSpan.FromSeconds(Double(values, "Pause Duration")),
+            Reloads = values.ContainsKey("Reloads") ? Int(values, "Reloads") : null,
+            DistanceTraveled = values.ContainsKey("Distance Traveled") ? Double(values, "Distance Traveled") : null,
             Settings = new InputSettings
             {
                 SensScale = values.GetValueOrDefault("Sens Scale", ""),

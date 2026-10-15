@@ -12,8 +12,9 @@ public sealed record RunStats
     public int MissCount { get; init; }
     public string Hash { get; init; } = "";
     public string GameVersion { get; init; } = "";
-    public int PauseCount { get; init; }
-    public TimeSpan PauseDuration { get; init; }
+    /// <summary>Reloads and the distance the player moved; null when the source (an older replay) did not keep them.</summary>
+    public int? Reloads { get; init; }
+    public double? DistanceTraveled { get; init; }
     public InputSettings Settings { get; init; } = new();
     public IReadOnlyList<KillEvent> KillEvents { get; init; } = [];
 }
