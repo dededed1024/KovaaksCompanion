@@ -1674,7 +1674,10 @@ public partial class ReplayView : UserControl
     {
         var prev = Chart.Has(ChartSeries.Accuracy) ? FindPrev() : null;
         PrevChip.Visibility = prev is null ? Visibility.Collapsed : Visibility.Visible;
-        PrevChip.Opacity = _host.Ui.ComparePrev ? 1 : 0.5;
+        var on = _host.Ui.ComparePrev;
+        PrevChip.Opacity = on ? 1 : 0.55;
+        PrevText.Foreground = (Brush)FindResource(on ? "Fg" : "Dim");
+        if (on) PrevChip.Background = (Brush)FindResource("AccentFill"); else PrevChip.ClearValue(Border.BackgroundProperty);
         if (prev is not { } p || !_host.Ui.ComparePrev || _replay is null) { Chart.SetGhost([]); return; }
         PrevChip.ToolTip = L.F("Previous run · {0}", L.Stamp(p.Info.Start));
         Chart.SetGhost(PerfSeries.Build(p.Perf).Select(x => new ChartPoint(ChartTime(x.TSec), x.Accuracy, x.Score, x.Kills, x.Shots, x.Hits)).ToList());
