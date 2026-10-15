@@ -113,9 +113,7 @@ public partial class StatsView
     void OnTopButton(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        _ws = HomeScroll;
-        _target = 0;
-        StartEase(HomeScroll);
+        SmoothScroll.To(HomeScroll, 0);
     }
 
     void OnLivePill(object sender, MouseButtonEventArgs e)
@@ -123,9 +121,7 @@ public partial class StatsView
         e.Handled = true;
         if (_liveCard == null || !_liveCard.IsDescendantOf(HomeScroll)) return;
         var y = _liveCard.TransformToAncestor(HomeScroll).Transform(new Point(0, 0)).Y;
-        _ws = HomeScroll;
-        _target = Math.Clamp(HomeScroll.VerticalOffset + y - 64, 0, HomeScroll.ScrollableHeight);
-        StartEase(HomeScroll);
+        SmoothScroll.To(HomeScroll, HomeScroll.VerticalOffset + y - 64);
     }
 
     /// <summary>Redraws the parts that depend on server data or favorites (tier hero, playlists, search results) without rebuilding the page.</summary>
@@ -1001,9 +997,7 @@ public partial class StatsView
                 if (cardRef == null || !cardRef.IsDescendantOf(HomeScroll)) return;
                 var y = cardRef.TransformToAncestor(HomeScroll).Transform(new Point(0, 0)).Y;
                 if (y >= 0) return;
-                _ws = HomeScroll;
-                _target = Math.Clamp(HomeScroll.VerticalOffset + y - 64, 0, HomeScroll.ScrollableHeight);
-                StartEase(HomeScroll);
+                SmoothScroll.To(HomeScroll, HomeScroll.VerticalOffset + y - 64);
             }));
         };
         Fill();

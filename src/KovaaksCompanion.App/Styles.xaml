@@ -530,6 +530,7 @@
         <!-- Overlay scroll viewer: bars float over content (no layout space) and fade via ScrollFade -->
         <Style TargetType="ScrollViewer">
             <Setter Property="app:ScrollFade.IsEnabled" Value="True"/>
+            <Setter Property="app:SmoothScroll.Enabled" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollViewer">
@@ -550,6 +551,7 @@
         <!-- Scroll viewer with an always-visible vertical bar (no fade) -->
         <Style x:Key="PinnedScroll" TargetType="ScrollViewer">
             <Setter Property="app:ScrollFade.IsEnabled" Value="False"/>
+            <Setter Property="app:SmoothScroll.Enabled" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollViewer">

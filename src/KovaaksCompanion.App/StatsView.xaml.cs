@@ -58,12 +58,7 @@ public partial class StatsView : UserControl
         _favSig = FavSig();
         DiffTrack.SizeChanged += (_, _) => FitHeading();
         Body.SizeChanged += (_, _) => FitHeading();
-        foreach (var sv in new[] { PlaylistScroll, HomeScroll })
-        {
-            sv.PreviewMouseWheel += OnWheel;
-            sv.ScrollChanged += OnScrolled;
-        }
-        MiddleScroll.Started += _ => StopEase();
+        MiddleScroll.Started += _ => SmoothScroll.Stop();
         PlaylistScroll.SizeChanged += (_, _) => FitHost();
         PageHost.IsVisibleChanged += (_, _) => CopyImage.Visibility = PageHost.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         Popups.AddBase(HomeScroll);
@@ -90,72 +85,6 @@ public partial class StatsView : UserControl
     }
 
     void OnViewSized(object sender, SizeChangedEventArgs e) => FitHeading();
-
-    ScrollViewer _ws = null!;
-    double _target, _lastSet;
-    bool _easing;
-    readonly System.Diagnostics.Stopwatch _clock = new();
-    TimeSpan _lastTick;
-
-    /// <summary>Smooth wheel scrolling over the whole page: ease towards a target offset (about 96px per notch). Inner scrollers that can still move get the wheel first; otherwise it chains to the outer one.</summary>
-    void OnWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
-    {
-        e.Handled = true;
-        var outer = (ScrollViewer)sender;
-        var sv = outer;
-        var node = e.OriginalSource as DependencyObject;
-        while (node != null && node != outer)
-        {
-            if (node is ScrollViewer inner && inner.ScrollableHeight > 0
-                && (e.Delta > 0 ? inner.VerticalOffset > 0 : e.Delta < 0 && inner.VerticalOffset < inner.ScrollableHeight))
-            {
-                sv = inner;
-                break;
-            }
-            node = node is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
-        }
-        if (_easing && sv != _ws) StopEase();
-        _ws = sv;
-        if (!_easing) _target = sv.VerticalOffset;
-        _target = Math.Clamp(_target - e.Delta * 0.8, 0, sv.ScrollableHeight);
-        StartEase(sv);
-    }
-
-    void StartEase(ScrollViewer sv)
-    {
-        _ws = sv;
-        if (_easing) return;
-        _easing = true;
-        _lastSet = sv.VerticalOffset;
-        _lastTick = TimeSpan.Zero;
-        _clock.Restart();
-        CompositionTarget.Rendering += OnEase;
-    }
-
-    void OnEase(object? sender, EventArgs e)
-    {
-        var now = _clock.Elapsed;
-        var dt = Math.Min((now - _lastTick).TotalSeconds, 0.05);
-        _lastTick = now;
-        var cur = _ws.VerticalOffset;
-        var diff = _target - cur;
-        if (Math.Abs(diff) < 0.5) { _lastSet = _target; _ws.ScrollToVerticalOffset(_target); StopEase(); return; }
-        _lastSet = cur + diff * (1 - Math.Exp(-dt / 0.05));
-        _ws.ScrollToVerticalOffset(_lastSet);
-    }
-
-    void StopEase()
-    {
-        if (!_easing) return;
-        _easing = false;
-        CompositionTarget.Rendering -= OnEase;
-    }
-
-    /// <summary>A scroll we did not cause (scrollbar drag, bring-into-view) cancels the easing.</summary>
-    void OnScrolled(object sender, ScrollChangedEventArgs e)
-    {
-        if (_easing && sender == _ws && e.VerticalChange != 0 && Math.Abs(_ws.VerticalOffset - _lastSet) > 1.5) StopEase();
-    }
 
     /// <summary>The difficulty control sits right of the title, or wraps below it when they do not fit together.</summary>
     void FitHeading()
@@ -441,7 +370,7 @@ public partial class StatsView : UserControl
         _token++; // drops in-flight loads
         _playlist = null;
         var tok = ++_popTok;
-        StopEase();
+        SmoothScroll.Stop();
         Animate(false, () =>
         {
             if (tok != _popTok) return;
