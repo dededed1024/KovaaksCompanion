@@ -39,7 +39,7 @@ internal sealed class WebpFrameEncoder : IDisposable
         var exe = EnsureExe();
         if (exe == null || _frames.Count == 0) return false;
         // Frame names are relative to the working folder: 234 absolute temp paths would overflow the command line limit.
-        var args = new List<string> { "-loop", "0", "-d", _delayMs.ToString(), "-lossy", "-q", "90", "-m", "4", "-sharp_yuv" };
+        var args = new List<string> { "-loop", "0", "-d", _delayMs.ToString(), "-lossy", "-q", "75", "-m", "4", "-sharp_yuv" };
         args.AddRange(_frames.Select(Path.GetFileName)!);
         args.Add("-o"); args.Add($"\"{file}\"");
         var psi = new ProcessStartInfo(exe, string.Join(' ', args)) { WorkingDirectory = _dir, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };

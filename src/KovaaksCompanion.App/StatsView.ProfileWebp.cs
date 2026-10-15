@@ -16,7 +16,7 @@ public partial class StatsView
     {
         if (_webpBusy || ProfileCard.ActualWidth <= 0) return;
         _webpBusy = true;
-        const int frames = 234, delayMs = 30; // ~33 fps x 7 s, the length of one drift loop
+        const int frames = 117, delayMs = 60; // ~17 fps x 7 s, the length of one drift loop
         var charts = _profileCharts.ToList();
         var file = Path.Combine(_host.Settings.ScreenshotsFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.webp");
         var effect = ProfileCard.Effect;
