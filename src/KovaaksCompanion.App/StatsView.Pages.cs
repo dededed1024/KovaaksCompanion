@@ -355,7 +355,7 @@ public partial class StatsView
     /// <summary>Activity calendar (left) and progress chart (right) in one card; stacked when narrower than 820px (<c>stackBelow</c> on the card).</summary>
     UIElement BuildActivity(PlaylistCtx c)
     {
-        return ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), cal => cal.ShowLegend = false);
+        return ActivityCard(c.Plays, ChartPaths.TextTone(c.Theme), 9, ProgressChart(c), cal => { cal.ShowLegend = false; cal.PbDays = c.Report.PersonalBestDays(); });
     }
 
     UIElement ActivityCard(IReadOnlyDictionary<DateTime, int> plays, Brush tone, int? weeks, FrameworkElement chart, Action<ActivityCalendar>? withCalendar = null, double calendarShare = 0, double maxCell = 16, int maxWeeks = 53, double stackBelow = 820)

@@ -35,6 +35,10 @@ public sealed record PlaylistReport(string Name, IReadOnlyList<ScenarioHistory> 
     public IReadOnlyList<(DateTime Day, int Plays)> PlaysPerDay() =>
         Scenarios.SelectMany(s => s.Records).GroupBy(r => r.Time.Date).OrderBy(g => g.Key).Select(g => (g.Key, g.Count())).ToList();
 
+    /// <summary>Days with a personal best in any scenario of the playlist.</summary>
+    public IReadOnlySet<DateTime> PersonalBestDays() =>
+        Scenarios.SelectMany(s => s.PersonalBests).Select(r => r.Time.Date).ToHashSet();
+
     public int PlaysSince(DateTime since) => Scenarios.Sum(s => s.Records.Count(r => r.Time >= since));
 
     public static PlaylistReport Build(string name, IEnumerable<string> scenarios, ScoreBook book) =>
