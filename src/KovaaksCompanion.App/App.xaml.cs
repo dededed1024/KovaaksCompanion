@@ -31,6 +31,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        System.Windows.Controls.ToolTipService.InitialShowDelayProperty.OverrideMetadata(typeof(DependencyObject), new FrameworkPropertyMetadata(100));
         MiddleScroll.Register();
         DispatcherUnhandledException += (_, a) => Unhandled("ui thread", a.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, a) => Unhandled("unhandled", a.ExceptionObject as Exception);
