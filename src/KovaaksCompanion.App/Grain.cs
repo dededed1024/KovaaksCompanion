@@ -64,7 +64,7 @@ public static class Grain
     }
 
     /// <summary>Opacity of the grain layer for a strength of 0-100: a faint speckle at the top.</summary>
-    public static double Opacity(int strength) => Math.Clamp(strength, 0, 100) / 100.0 * 0.05;
+    public static double Opacity(int strength) => Math.Clamp(strength, 0, 100) / 100.0 * 0.12;
 
     static int _strength;
     static event Action? Changed;
