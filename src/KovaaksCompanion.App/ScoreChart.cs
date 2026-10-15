@@ -38,12 +38,26 @@ public sealed class ScoreChart : FrameworkElement
     bool _manual;
     const int AutoMax = 70, ZoomMin = 5;
 
-    /// <summary>Line mode: the view follows the recent trend and the mouse wheel zooms. Right click goes back to the automatic range.</summary>
+    /// <summary>Line mode: only a window of the runs is shown. It starts on the recent trend; <see cref="SetView"/> moves and resizes it.</summary>
     public bool Zoomable { get; set; }
 
     /// <summary>Last N runs to show: the recent runs inside the current tier and the one below it, at most <see cref="AutoMax"/>. All runs when there are no more than that.</summary>
     int AutoWindow()
     {
+    /// <summary>Fewest runs the window can be narrowed to.</summary>
+    public const int MinWindow = ZoomMin;
+
+    /// <summary>Raised after the window changed.</summary>
+    public event Action? ViewChanged;
+
+    public int Total => _all.Count;
+
+    /// <summary>First run shown and how many are shown.</summary>
+    public (int Off, int Len) View => (_off, _len);
+
+    /// <summary>True when the window can be moved at all.</summary>
+    public bool CanZoom => Zoomable && _kind == ChartKind.Line && _all.Count > ZoomMin;
+
         var p = _all;
         var n = p.Count;
         if (n <= AutoMax) return n;
@@ -58,23 +72,17 @@ public sealed class ScoreChart : FrameworkElement
     void ApplyWindow()
     {
         var n = _all.Count;
-        if (!Zoomable || _kind != ChartKind.Line || n <= ZoomMin) { _points = _all; _off = 0; _len = n; return; }
-        if (!_manual) _len = AutoWindow();
+        if (!CanZoom) { _points = _all; _off = 0; _len = n; return; }
+        if (!_manual) { _len = AutoWindow(); _off = n - _len; }
         _len = Math.Clamp(_len, Math.Min(ZoomMin, n), n);
         _off = n - _len;
         _points = _len == n ? _all : _all.Skip(_off).Take(_len).ToList();
     }
 
-    protected override void OnMouseWheel(MouseWheelEventArgs e)
+    /// <summary>Shows <paramref name="len"/> runs from run <paramref name="off"/>.</summary>
+    public void SetView(int off, int len)
     {
-        base.OnMouseWheel(e);
-        var n = _all.Count;
-        if (!Zoomable || _miniBrush != null || n <= ZoomMin || ActualWidth <= 0 || ActualHeight <= 0) return;
-        var next = (int)Math.Round(_len * (e.Delta > 0 ? 0.8 : 1.25));
-        if (next == _len) next += e.Delta > 0 ? -1 : 1;
-        next = Math.Clamp(next, ZoomMin, n);
-        if (next == _len) return; // at the zoom limit: the wheel scrolls the page again
-        e.Handled = true;
+        if (!CanZoom) return;
         _manual = true;
         _len = next;
         ApplyWindow();
@@ -82,10 +90,11 @@ public sealed class ScoreChart : FrameworkElement
         InvalidateVisual();
     }
 
-    protected override void OnMouseRightButtonUp(MouseButtonEventArgs e)
+    /// <summary>Back to the automatic window.</summary>
+    public void ResetView()
+        ViewChanged?.Invoke();
     {
-        base.OnMouseRightButtonUp(e);
-        if (!Zoomable || !_manual) return;
+        if (!CanZoom) return;
         _manual = false;
         ApplyWindow();
         _hover = -1;
@@ -93,6 +102,53 @@ public sealed class ScoreChart : FrameworkElement
     }
 
     double _miniTextCap = 200, _miniStackAbove = double.PositiveInfinity;
+        ViewChanged?.Invoke();
+    }
+
+    IReadOnlyList<ChartLine> _lines = [];
+    ISet<string> _shown = new HashSet<string>();
+
+    /// <summary>The name the score line goes by in the shown set; the score is drawn only while this is in it (always, when there are no extra lines).</summary>
+    public string ScoreName { get; set; } = "Score";
+
+    bool ScoreOn => _lines.Count == 0 || _shown.Contains(ScoreName);
+
+    /// <summary>The scale of one extra line: its own value range and the width of its label column on the right.</summary>
+    sealed record Axis(ChartLine Line, double Lo, double Hi, double ColW);
+
+    List<Axis> _axes = [];
+    const double AxisGap = 10, AxisLabelSize = 10;
+
+    List<Axis> ComputeAxes()
+    {
+        var res = new List<Axis>();
+        if (_kind != ChartKind.Line) return res;
+        var n = _points.Count;
+        foreach (var line in _lines)
+        {
+            if (!_shown.Contains(line.Name) || line.Values.Count != _all.Count) continue;
+            var vals = Enumerable.Range(_off, n).Select(i => line.Values[i]).Where(v => !double.IsNaN(v)).ToList();
+            if (vals.Count == 0) continue;
+            double min = vals.Min(), max = vals.Max();
+            var percent = line.Format.EndsWith('%');
+            var pad = max - min < 1e-9 ? (percent ? 0.05 : Math.Max(Math.Abs(max) * 0.1, 1)) : (max - min) * 0.06;
+            double lo = min - pad, hi = max + pad;
+            if (min >= 0 && lo < 0) lo = 0;
+            var ticks = NiceTicks(lo, hi, percent);
+            if (min >= 0) ticks = ticks.Where(t => t >= -1e-9).ToList();
+            if (ticks.Count < 2) ticks = [lo, hi];
+            lo = ticks[0]; hi = ticks[^1];
+            var colW = new[] { lo, (lo + hi) / 2, hi }.Max(v => Text(v.ToString(line.Format, CultureInfo.InvariantCulture), AxisLabelSize, Brushes.White).Width);
+            res.Add(new Axis(line, lo, hi, colW));
+        }
+        return res;
+    }
+
+    /// <summary>The extra figures to draw over the score line: only those named in <paramref name="shown"/>.</summary>
+    public void SetLines(IReadOnlyList<ChartLine> lines, ISet<string> shown)
+    {
+        _lines = lines; _shown = shown;
+        InvalidateVisual();
     /// <summary>Card mode: the watermark is sized from at most this card height.</summary>
     public double MiniTextCap { get => _miniTextCap; set { if (Math.Abs(_miniTextCap - value) < 0.01) return; _miniTextCap = value; InvalidateVisual(); } }
     /// <summary>Card mode: above this card height the watermark repeats upward to fill the card.</summary>
