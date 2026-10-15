@@ -25,7 +25,13 @@ static class LegacyReplays
         var traj = Path.Combine(folder, TrajectoryFile);
         var csv = Directory.GetFiles(folder, "*Stats.csv").FirstOrDefault();
         var perf = Directory.GetFiles(folder, PerfPattern).FirstOrDefault();
-        return new(File.Exists(traj) ? File.ReadAllBytes(traj) : null, perf is null ? null : File.ReadAllBytes(perf), csv is null ? null : ReadStats(csv));
+        return new(File.Exists(traj) ? File.ReadAllBytes(traj) : null, perf is null ? null : ReadPerf(perf), csv is null ? null : ReadStats(csv));
+    }
+
+    static Perf.PerfData? ReadPerf(string file)
+    {
+        try { return Perf.PerfParser.Parse(File.ReadAllBytes(file)); }
+        catch (Perf.PerfFormatException) { return null; } // a .perf that cannot be read is left out
     }
 
     static RepStats? ReadStats(string csv)

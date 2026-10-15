@@ -48,7 +48,7 @@ public sealed class ReplaySaver
         {
             try
             {
-                if (File.Exists(perf)) return await File.ReadAllBytesAsync(perf);
+                if (File.Exists(perf)) return PerfParser.Parse(await File.ReadAllBytesAsync(perf));
             }
             catch (IOException) { } // still being written
             if (i < attempts - 1) await Task.Delay(250);

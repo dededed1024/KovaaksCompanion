@@ -38,14 +38,10 @@ public static class ReplayStore
         try
         {
             if (parts.Stats is null) return null;
-            AccuracyDrift? drift = null;
-            if (parts.Perf is { } p)
-            {
-                try { drift = AccuracyDrift.From(PerfParser.Parse(p)); }
-                catch (PerfFormatException) { }
-            }
+            var perf = parts.Perf;
+            var drift = perf is null ? null : AccuracyDrift.From(perf);
             var speed = parts.Trajectory is { } t ? ReadSpeed(t) : null;
-            return RunRecord.From(parts.Stats.ToRunStats(info), drift) with { Speed = speed };
+            return RunRecord.From(parts.Stats.ToRunStats(info), drift, perf) with { Speed = speed };
         }
         catch (Exception e) when (e is FormatException or ArgumentException) { return null; }
     }
@@ -62,12 +58,6 @@ public static class ReplayStore
     {
         var traj = parts.Trajectory is { } t ? TrajectorySerializer.Deserialize(t) : null;
         var stats = parts.Stats?.ToRunStats(info);
-        PerfData? perf = null;
-        if (parts.Perf is { } p)
-        {
-            try { perf = PerfParser.Parse(p); }
-            catch (PerfFormatException) { } // optional data: the replay still opens without it
-        }
-        return new LoadedReplay(info, traj, stats, perf, videoPath);
+        return new LoadedReplay(info, traj, stats, parts.Perf, videoPath);
     }
 }

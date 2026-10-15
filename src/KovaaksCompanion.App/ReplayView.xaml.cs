@@ -1667,13 +1667,11 @@ public partial class ReplayView : UserControl
             if (_prev is { } c && c.Id == it.Info.Id) return (c.Id, c.Perf, it.Info);
             try
             {
-                if (_host.Replays.ReadParts(it.Info.Id).Perf is not { } bytes) continue;
-                var perf = PerfParser.Parse(bytes);
-                if (perf.Buckets.Count == 0) continue;
+                if (_host.Replays.ReadParts(it.Info.Id).Perf is not { Buckets.Count: > 0 } perf) continue;
                 _prev = (it.Info.Id, perf);
                 return (it.Info.Id, perf, it.Info);
             }
-            catch (Exception e) when (e is IOException or PerfFormatException or ReplayFormatException) { }
+            catch (Exception e) when (e is IOException or ReplayFormatException) { }
         }
         return null;
     }
