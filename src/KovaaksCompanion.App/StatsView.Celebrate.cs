@@ -10,7 +10,7 @@ namespace KovaaksCompanion.App;
 /// <summary>After a session: playlists, subcategories and scenarios that gained a tier or reached COMPLETE get a card under the profile card and a confetti burst.</summary>
 public partial class StatsView
 {
-    const int MaxCelebrated = 4;
+    const int MaxCelebrated = 5;
 
     readonly record struct TierMark(int Tier, bool Complete);
 
@@ -78,7 +78,7 @@ public partial class StatsView
             if (won.Count > 0)
             {
                 foreach (var k in won) { if (now[k].Complete && !old[k].Complete) _celebratedComplete.Add(k); else _celebratedComplete.Remove(k); }
-                _celebrated = won.Concat(_celebrated.Where(k => !won.Contains(k, StringComparer.OrdinalIgnoreCase))).ToList();
+                _celebrated = _celebrated.Where(k => !won.Contains(k, StringComparer.OrdinalIgnoreCase)).Concat(won).TakeLast(MaxCelebrated).ToList();
                 _confettiPending = true;
                 _celebrationExpiry.Stop();
                 _celebrationExpiry.Start();
@@ -109,7 +109,7 @@ public partial class StatsView
         // Same surface as the Home cards (theme-aware ink).
         CelebrationCard.Background = Solid("#0DFFFFFF");
         CelebrationCard.BorderBrush = Solid("#12FFFFFF");
-        var keys = _celebrated.Where(k => BuildProfileCard(k) != null).ToList();
+        var keys = _celebrated.Where(k => BuildProfileCard(k) != null).TakeLast(MaxCelebrated).ToList();
         var items = keys.Select(BuildProfileCard).OfType<(UIElement Card, Color? Tier)>().ToList();
         CelebrationCard.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         _celebrationColors = items.Take(MaxCelebrated).Select(x => x.Tier).OfType<Color>().ToList();
