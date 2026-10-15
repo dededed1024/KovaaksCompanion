@@ -392,15 +392,14 @@ public partial class ReplayView : UserControl
     void ShowScenarioStar()
     {
         if (_scenario.Length == 0) { ScnStar.Visibility = Visibility.Collapsed; RunStar.Visibility = Visibility.Collapsed; return; }
-        void Style(Button b, bool fav)
+        void Style(Button b, bool fav, string kind)
         {
-            b.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
-            b.Foreground = (Brush)FindResource(fav ? "Orange" : "Dim");
-            b.ToolTip = fav ? L.T("Remove from favorites") : L.T("Add to favorites");
+            GlyphButton.Set(b, ((char)(fav ? 0xE735 : 0xE734)).ToString(), (Brush)FindResource(fav ? "Yellow" : "Dim"));
+            b.ToolTip = L.T((fav ? "Unfavorite " : "Favorite ") + kind);
             b.Visibility = Visibility.Visible;
         }
-        Style(ScnStar, _host.Ui.IsFavoriteScenario(_scenario));
-        if (OpenRun() is { } r) Style(RunStar, _host.Ui.IsFavoriteRun(r.Scenario, r.End));
+        Style(ScnStar, _host.Ui.IsFavoriteScenario(_scenario), "scenario");
+        if (OpenRun() is { } r) Style(RunStar, _host.Ui.IsFavoriteRun(r.Scenario, r.End), "replay");
         else RunStar.Visibility = Visibility.Collapsed;
         FitHeader();
     }

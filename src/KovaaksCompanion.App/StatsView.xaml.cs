@@ -68,7 +68,7 @@ public partial class StatsView : UserControl
         PageHost.IsVisibleChanged += (_, _) => CopyImage.Visibility = PageHost.IsVisible ? Visibility.Visible : Visibility.Collapsed;
         Popups.AddBase(HomeScroll);
         HomeScroll.SizeChanged += (_, _) => { FitHome(); UpdateLivePill(); UpdateTopButton(); };
-        HomeScroll.ScrollChanged += (_, _) => { UpdateLivePill(); UpdateTopButton(); LoadMoreBrowse(); };
+        HomeScroll.ScrollChanged += (_, _) => { TrimHomePad(); UpdateLivePill(); UpdateTopButton(); LoadMoreBrowse(); };
         PopupCard.PreviewMouseDown += (_, _) => { if (!Popup.IsKeyboardFocusWithin) Popup.Focus(); };
         HomeScroll.Loaded += (_, _) =>
         {
@@ -200,7 +200,9 @@ public partial class StatsView : UserControl
 
     string _dpiFixSig = "";
 
-    string FavSig() => string.Join('|', _host.Ui.FavoritePlaylists.Order(StringComparer.OrdinalIgnoreCase));
+    string FavSig() => string.Join('|', _host.Ui.FavoritePlaylists.Order(StringComparer.OrdinalIgnoreCase))
+        + "#" + string.Join('|', _host.Ui.FavoriteScenarios.Order(StringComparer.OrdinalIgnoreCase))
+        + "#" + string.Join('|', _host.Ui.FavoriteRuns.Order(StringComparer.Ordinal));
 
     /// <summary>Favorites changed: redraw what lists playlists.</summary>
     void OnUiChanged()
@@ -254,8 +256,7 @@ public partial class StatsView : UserControl
         var pinned = _host.Ui.IsPinned(key);
         if (PinnedTiersEnabled)
         {
-            Pin.Content = ((char)(pinned ? 0xE842 : 0xE718)).ToString();
-            Pin.Foreground = (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim");
+            GlyphButton.Set(Pin, ((char)(pinned ? 0xE842 : 0xE718)).ToString(), (System.Windows.Media.Brush)FindResource(pinned ? "Accent" : "Dim"));
             Pin.ToolTip = pinned ? L.T("Remove tier from Home") : L.T("Show tier on Home");
             Pin.Visibility = Visibility.Visible;
         }
@@ -264,9 +265,8 @@ public partial class StatsView : UserControl
             Pin.Visibility = Visibility.Collapsed;
         }
         var fav = _host.Ui.IsFavorite(key);
-        Star.Content = ((char)(fav ? 0xE735 : 0xE734)).ToString();
-        Star.Foreground = (System.Windows.Media.Brush)FindResource(fav ? "Orange" : "Dim");
-        Star.ToolTip = fav ? L.T("Remove from favorites") : _host.Ui.FavoritesFull ? L.T("Up to 6 favorites") : L.T("Add to favorites");
+        GlyphButton.Set(Star, ((char)(fav ? 0xE735 : 0xE734)).ToString(), (System.Windows.Media.Brush)FindResource(fav ? "Yellow" : "Dim"));
+        Star.ToolTip = fav ? L.T("Unfavorite playlist") : _host.Ui.FavoritesFull ? L.T("Up to 6 favorites") : L.T("Favorite playlist");
         Star.Visibility = Visibility.Visible;
     }
 
