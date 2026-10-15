@@ -195,7 +195,7 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{app:Loc 'Max storage (0 GB = unlimited)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                                        <TextBlock Text="{app:Loc 'Max video folder size (0 GB = unlimited)'}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" Margin="4,0,16,0"/>
                                         <TextBox Grid.Column="1" x:Name="StorageBox" Width="100" MaxLength="8" TextChanged="Validate" GotKeyboardFocus="OnStorageFocus" LostFocus="OnStorageLostFocus" KeyDown="OnTextKey" PreviewTextInput="OnDigits"/>
                                     </Grid>
                                     <TextBlock x:Name="StorageError" Foreground="{DynamicResource Red}" FontSize="12" Margin="4,4,0,0" HorizontalAlignment="Right" Visibility="Collapsed"/>

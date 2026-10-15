@@ -59,7 +59,7 @@
   <data name="High" xml:space="preserve"><value>높음</value></data>
   <data name="Ultra" xml:space="preserve"><value>최상</value></data>
   <data name="Recording FPS" xml:space="preserve"><value>녹화 프레임</value></data>
-  <data name="Max storage (0 GB = unlimited)" xml:space="preserve"><value>최대 용량 (0 GB = 무제한)</value></data>
+  <data name="Max video folder size (0 GB = unlimited)" xml:space="preserve"><value>최대 영상 폴더 용량 (0 GB = 무제한)</value></data>
   <data name="Keep only the best run video in a session" xml:space="preserve"><value>세션 내 최고 기록만 영상 남기기</value></data>
   <data name="Video folders" xml:space="preserve"><value>영상 폴더 구분</value></data>
   <data name="By session" xml:space="preserve"><value>세션별</value></data>
