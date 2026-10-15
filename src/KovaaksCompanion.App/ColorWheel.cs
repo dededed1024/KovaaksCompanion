@@ -65,13 +65,21 @@ public sealed class ColorWheel : FrameworkElement
     {
         var rect = new Rect(0, 0, ActualWidth, ActualHeight);
         dc.DrawImage(Disc.Value, rect);
+        if (Math.Min(ActualWidth, ActualHeight) >= 40) // a hairline rim, so the disc keeps its edge on any background
+            dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x33, 0, 0, 0)), 1), new Point(ActualWidth / 2, ActualHeight / 2), ActualWidth / 2 - 0.5, ActualHeight / 2 - 0.5);
         if (!_active) return;
         var r = Math.Min(ActualWidth, ActualHeight) / 2;
         var a = _hue * Math.PI / 180;
         var p = new Point(r + Math.Cos(a) * _saturation * (r - 1), r + Math.Sin(a) * _saturation * (r - 1));
-        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)), null, new Point(p.X, p.Y + 1), 10, 10);
-        dc.DrawEllipse(new SolidColorBrush(Theme.FromHsv(_hue, _saturation, _brightness)), new Pen(Brushes.White, 3), p, 9, 9);
+        var k = _dragging ? 1.15 : 1; // the thumb swells while it is held
+        dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x33, 0, 0, 0)), null, new Point(p.X, p.Y + 1.5), 11 * k, 11 * k);
+        dc.DrawEllipse(new SolidColorBrush(Theme.FromHsv(_hue, _saturation, _brightness)), new Pen(Brushes.White, 3), p, 9 * k, 9 * k);
+        dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), 1), p, 10.5 * k, 10.5 * k);
     }
+
+    /// <summary>A gradient track for a brightness slider: the pick's color from brightness <paramref name="min"/> to <paramref name="max"/> (0-1).</summary>
+    public static Brush BrightnessTrack(double hue, double saturation, double min, double max) =>
+        new LinearGradientBrush(Theme.FromHsv(hue, saturation, min), Theme.FromHsv(hue, saturation, max), new Point(0, 0), new Point(1, 0));
 
     void PickAt(Point p)
     {
@@ -103,6 +111,7 @@ public sealed class ColorWheel : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (!_dragging) return;
         _dragging = false;
+        InvalidateVisual();
         ReleaseMouseCapture();
         Picked?.Invoke();
     }

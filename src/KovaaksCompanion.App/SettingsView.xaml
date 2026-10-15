@@ -115,7 +115,7 @@
                                         <app:ColorWheel x:Name="Wheel" Width="140" Height="140" Margin="4,0,0,0" Picking="OnWheelPicking" Picked="OnWheelPicked"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="28,0,0,0">
                                             <TextBlock Text="{app:Loc Brightness}" Foreground="{DynamicResource Dim}" FontSize="12"/>
-                                            <Slider x:Name="BrightnessSlider" Minimum="10" Maximum="95" Height="30" ValueChanged="OnBrightness"/>
+                                            <Slider x:Name="BrightnessSlider" Style="{StaticResource ColorSlider}" Minimum="10" Maximum="95" ValueChanged="OnBrightness"/>
                                             <TextBlock Text="{app:Loc Grain}" Foreground="{DynamicResource Dim}" FontSize="12" Margin="0,10,0,0"/>
                                             <Slider x:Name="GrainSlider" Minimum="0" Maximum="100" Height="30" ValueChanged="OnGrain"/>
                                         </StackPanel>

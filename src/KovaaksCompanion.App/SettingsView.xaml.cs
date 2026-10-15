@@ -93,10 +93,10 @@ public partial class SettingsView : UserControl
             var (bg, accent) = Theme.Swatch(name);
             var chip = new Border
             {
-                Width = 28, Height = 28, Margin = new Thickness(8, 0, 0, 0), CornerRadius = new CornerRadius(8), Cursor = Cursors.Hand,
+                Width = 28, Height = 28, Margin = new Thickness(8, 0, 0, 0), CornerRadius = new CornerRadius(14), Cursor = Cursors.Hand,
                 Background = new SolidColorBrush(bg), BorderThickness = new Thickness(2), ToolTip = L.T(name),
                 BorderBrush = on ? (Brush)FindResource("Accent") : (Brush)FindResource("EdgeFaint"),
-                Child = new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                Child = new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(accent), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             chip.MouseLeftButtonUp += (_, _) => { if (!on) SaveAppearance(name); };
             ThemeBar.Children.Add(chip);
@@ -107,6 +107,7 @@ public partial class SettingsView : UserControl
         Wheel.Active = true;
         BrightnessSlider.Value = Math.Clamp(val, 0.1, 0.95) * 100;
         Wheel.Brightness = val;
+        UpdateBrightnessTrack();
         GrainSlider.Value = s.Grain;
     }
 
@@ -125,8 +126,12 @@ public partial class SettingsView : UserControl
     readonly System.Windows.Threading.DispatcherTimer _commit = new() { Interval = TimeSpan.FromMilliseconds(350) };
 
     /// <summary>The wheel and the brightness slider make the Custom theme: the colors show at once by rewriting the theme brushes, and are saved when the pick is final.</summary>
+    void UpdateBrightnessTrack() =>
+        BrightnessSlider.Background = ColorWheel.BrightnessTrack(Wheel.Pick.Hue, Wheel.Pick.Saturation, BrightnessSlider.Minimum / 100, BrightnessSlider.Maximum / 100);
+
     void PreviewCustom()
     {
+        UpdateBrightnessTrack();
         _customDirty = true;
         var (hue, sat) = Wheel.Pick;
         Theme.SetCustom(hue, sat, BrightnessSlider.Value / 100);

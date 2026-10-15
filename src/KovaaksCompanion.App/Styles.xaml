@@ -621,6 +621,44 @@
             </Setter>
         </Style>
 
+        <!-- Color slider: a thick rounded gradient track (the Background of the slider) and a white ring thumb, like the macOS color controls -->
+        <Style x:Key="ColorSlider" TargetType="Slider">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Background" Value="{DynamicResource Selected}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="Transparent">
+                            <Border Height="12" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Edge}" BorderThickness="1" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" IsTabStop="False" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" IsTabStop="False" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="22" Height="22" Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Fill="Transparent" Stroke="White" StrokeThickness="3">
+                                                    <Ellipse.Effect><DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.45"/></Ellipse.Effect>
+                                                </Ellipse>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="GridViewColumnHeader">
             <Setter Property="Foreground" Value="{DynamicResource Dim}"/>
             <Setter Property="FontSize" Value="12"/>

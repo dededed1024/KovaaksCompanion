@@ -275,7 +275,8 @@ public partial class StatsView
     {
         var cur = _host.Ui.ProfileAccent;
         var custom = cur.Length > 0 && !ProfileColors.Contains(cur, StringComparer.OrdinalIgnoreCase);
-        var (h0, s0, v0) = custom && ProfileAccent is SolidColorBrush cb ? Theme.ToHsv(cb.Color) : (0.0, 0.0, 1.0);
+        var picked = cur.Length > 0 && ProfileAccent is SolidColorBrush;
+        var (h0, s0, v0) = picked ? Theme.ToHsv(((SolidColorBrush)ProfileAccent).Color) : (0.0, 0.0, 1.0);
         var rainbow = new ColorWheel { Width = 16, Height = 16, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var ring = new Ellipse { Width = 22, Height = 22, Stroke = custom ? FgB : Brushes.Transparent, StrokeThickness = 2 };
         var dot = new Grid { Width = 28, Height = 28, Background = Brushes.Transparent, Cursor = Cursors.Hand };
@@ -284,16 +285,24 @@ public partial class StatsView
         dot.MouseEnter += (_, _) => { if (!custom) ring.Stroke = SolidFixed("#66FFFFFF"); };
         dot.MouseLeave += (_, _) => { if (!custom) ring.Stroke = Brushes.Transparent; };
 
-        var wheel = new ColorWheel { Width = 140, Height = 140, Pick = (h0, s0), Brightness = v0, Active = custom };
-        var slider = new Slider { Minimum = 20, Maximum = 100, Value = v0 * 100, Height = 30, Width = 140, Margin = new Thickness(0, 10, 0, 0) };
+        var wheel = new ColorWheel { Width = 140, Height = 140, Pick = (h0, s0), Brightness = v0, Active = picked };
+        var slider = new Slider { Style = (Style)FindResource("ColorSlider"), Minimum = 20, Maximum = 100, Value = v0 * 100, Width = 140, Margin = new Thickness(0, 12, 0, 0) };
+        void Track() => slider.Background = ColorWheel.BrightnessTrack(wheel.Pick.Hue, wheel.Pick.Saturation, 0.2, 1);
+        Track();
+        var refillQueued = false;
         void Apply(bool final)
         {
             var (h, sat) = wheel.Pick;
             wheel.Brightness = slider.Value / 100;
+            Track();
             var c = Theme.FromHsv(h, sat, slider.Value / 100);
             _host.Ui.ProfileAccent = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
             ApplyProfileAccent();
-            if (final) { _host.SaveUi(); FillProfile(); }
+            if (final) { _host.SaveUi(); FillProfile(); return; }
+            // The right side (charts, ink) follows the drag too; refills are coalesced so a fast drag does not queue one per mouse move.
+            if (refillQueued) return;
+            refillQueued = true;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => { refillQueued = false; FillProfile(); });
         }
         wheel.Picking += () => Apply(false);
         wheel.Picked += () => Apply(true);
@@ -302,7 +311,12 @@ public partial class StatsView
         var pop = new System.Windows.Controls.Primitives.Popup
         {
             PlacementTarget = dot, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true,
-            Child = new Border { Background = (Brush)FindResource("Surface"), BorderBrush = SolidFixed("#1FFFFFFF"), BorderThickness = new Thickness(1), Padding = new Thickness(12), Margin = new Thickness(0, 6, 0, 8), Child = new StackPanel { Children = { wheel, slider } } },
+            Child = new Border
+            {
+                Background = (Brush)FindResource("Surface"), BorderBrush = (Brush)FindResource("Edge"), BorderThickness = new Thickness(1), CornerRadius = (CornerRadius)FindResource("RadiusL"),
+                Padding = new Thickness(16), Margin = new Thickness(24, 6, 24, 36), Child = new StackPanel { Children = { wheel, slider } },
+                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 40, ShadowDepth = 0, Opacity = 0.5, Color = Colors.Black },
+            },
         };
         // Rebuilding the tools swaps the dot (and its ring) for the final color once the popup is closed.
         pop.Closed += (_, _) => BuildProfileTools();
