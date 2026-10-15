@@ -119,7 +119,7 @@ public sealed class RadarChart : FrameworkElement
             if (bx + bw > w - 2) bx = pts[_hover].X - 12 - bw;
             bx = Math.Max(2, bx);
             var by = Math.Clamp(pts[_hover].Y - bh / 2, 2, Math.Max(2, h - bh - 2));
-            dc.DrawRoundedRectangle(Argb(0xF0, 0x22, 0x22, 0x26), new Pen(Argb(0x33, 255, 255, 255), 1), new Rect(bx, by, bw, bh), 8, 8);
+            dc.DrawRoundedRectangle((Brush)FindResource("Surface"), new Pen((Brush)FindResource("Edge"), 1), new Rect(bx, by, bw, bh), 8, 8);
             dc.DrawText(t1, new Point(bx + 8, by + 6));
             dc.DrawText(t2, new Point(bx + 8, by + 6 + t1.Height));
         }
