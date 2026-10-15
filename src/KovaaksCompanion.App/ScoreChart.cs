@@ -10,6 +10,9 @@ public enum ChartKind { Line, Bars }
 /// <summary>A horizontal reference line (e.g. a tier threshold) drawn across the chart.</summary>
 public sealed record ChartBand(double Value, string Label, Brush Brush);
 
+/// <summary>One more figure per run drawn over the score line, each on its own scale. <see cref="Values"/> lines up with the chart's points; NaN where a run has no value.</summary>
+public sealed record ChartLine(string Name, Brush Brush, string Format, IReadOnlyList<double> Values);
+
 /// <summary>Value per run in time order: line (or bars) with points evenly spaced by index, not by date, nice y ticks, optional moving average / PB markers, tier bands and a hover tooltip.</summary>
 public sealed class ScoreChart : FrameworkElement
 {
@@ -41,9 +44,6 @@ public sealed class ScoreChart : FrameworkElement
     /// <summary>Line mode: only a window of the runs is shown. It starts on the recent trend; <see cref="SetView"/> moves and resizes it.</summary>
     public bool Zoomable { get; set; }
 
-    /// <summary>Last N runs to show: the recent runs inside the current tier and the one below it, at most <see cref="AutoMax"/>. All runs when there are no more than that.</summary>
-    int AutoWindow()
-    {
     /// <summary>Fewest runs the window can be narrowed to.</summary>
     public const int MinWindow = ZoomMin;
 
@@ -58,6 +58,9 @@ public sealed class ScoreChart : FrameworkElement
     /// <summary>True when the window can be moved at all.</summary>
     public bool CanZoom => Zoomable && _kind == ChartKind.Line && _all.Count > ZoomMin;
 
+    /// <summary>Last N runs to show: the recent runs inside the current tier and the one below it, at most <see cref="AutoMax"/>. All runs when there are no more than that.</summary>
+    int AutoWindow()
+    {
         var p = _all;
         var n = p.Count;
         if (n <= AutoMax) return n;
@@ -75,7 +78,7 @@ public sealed class ScoreChart : FrameworkElement
         if (!CanZoom) { _points = _all; _off = 0; _len = n; return; }
         if (!_manual) { _len = AutoWindow(); _off = n - _len; }
         _len = Math.Clamp(_len, Math.Min(ZoomMin, n), n);
-        _off = n - _len;
+        _off = Math.Clamp(_off, 0, n - _len);
         _points = _len == n ? _all : _all.Skip(_off).Take(_len).ToList();
     }
 
@@ -84,24 +87,21 @@ public sealed class ScoreChart : FrameworkElement
     {
         if (!CanZoom) return;
         _manual = true;
-        _len = next;
+        _off = off; _len = len;
         ApplyWindow();
         _hover = -1;
         InvalidateVisual();
+        ViewChanged?.Invoke();
     }
 
     /// <summary>Back to the automatic window.</summary>
     public void ResetView()
-        ViewChanged?.Invoke();
     {
         if (!CanZoom) return;
         _manual = false;
         ApplyWindow();
         _hover = -1;
         InvalidateVisual();
-    }
-
-    double _miniTextCap = 200, _miniStackAbove = double.PositiveInfinity;
         ViewChanged?.Invoke();
     }
 
@@ -149,10 +149,16 @@ public sealed class ScoreChart : FrameworkElement
     {
         _lines = lines; _shown = shown;
         InvalidateVisual();
+    }
+
+    double _miniTextCap = 200, _miniStackAbove = double.PositiveInfinity;
     /// <summary>Card mode: the watermark is sized from at most this card height.</summary>
     public double MiniTextCap { get => _miniTextCap; set { if (Math.Abs(_miniTextCap - value) < 0.01) return; _miniTextCap = value; InvalidateVisual(); } }
     /// <summary>Card mode: above this card height the watermark repeats upward to fill the card.</summary>
     public double MiniStackAbove { get => _miniStackAbove; set { if (_miniStackAbove.Equals(value)) return; _miniStackAbove = value; InvalidateVisual(); } }
+    bool _darkMark;
+    /// <summary>Card mode: the watermark is drawn in a darkened tier color, for a card on a light background where the tier color alone disappears.</summary>
+    public bool DarkMark { get => _darkMark; set { if (_darkMark == value) return; _darkMark = value; InvalidateVisual(); } }
     bool _marquee;
     /// <summary>Card mode: the watermark always repeats and drifts downward in a loop. Turn off for a static image.</summary>
     public bool Marquee
@@ -212,9 +218,6 @@ public sealed class ScoreChart : FrameworkElement
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
         TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
         _mark.Transform = _markShift;
-    bool _darkMark;
-    /// <summary>Card mode: the watermark is drawn in a darkened tier color, for a card on a light background where the tier color alone disappears.</summary>
-    public bool DarkMark { get => _darkMark; set { if (_darkMark == value) return; _darkMark = value; InvalidateVisual(); } }
         _markClip.Children.Add(_mark);
         Loaded += (_, _) => InvalidateVisual();
         Unloaded += (_, _) => StopDrift();
@@ -416,9 +419,11 @@ public sealed class ScoreChart : FrameworkElement
         if (dMin >= 0) ticks = ticks.Where(t => t >= -1e-9).ToList();
         if (ticks.Count < 2) ticks = [lo, hi];
         lo = ticks[0]; hi = ticks[^1];
-        var labelW = ticks.Max(t => Text(t.ToString(_format, CultureInfo.InvariantCulture), 11, Brushes.White).Width);
+        var labelW = ScoreOn ? ticks.Max(t => Text(t.ToString(_format, CultureInfo.InvariantCulture), 11, Brushes.White).Width) : 0;
         var left = labelW + 10;
-        return (left, Math.Max(1, w - left - Right), Math.Max(1, h - Top - Bottom), lo, hi, ticks, bands);
+        _axes = ComputeAxes();
+        var axesW = _axes.Sum(a => a.ColW + AxisGap);
+        return (left, Math.Max(1, w - left - Right - axesW), Math.Max(1, h - Top - Bottom), lo, hi, ticks, ScoreOn ? bands : new List<ChartBand>());
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -455,12 +460,35 @@ public sealed class ScoreChart : FrameworkElement
         // Grid and y labels.
         var dashed = new Pen(sepBrush, 1) { DashStyle = new DashStyle([2, 3], 0) };
         var solid = new Pen(sepBrush, 1);
-        foreach (var t in ticks)
+        var plotRight = left + pw;
+        var scoreOn = ScoreOn;
+        if (scoreOn)
+            foreach (var t in ticks)
+            {
+                var y = Math.Round(Y(t)) + 0.5;
+                dc.DrawLine(Math.Abs(t - lo) < 1e-9 ? solid : dashed, new Point(left, y), new Point(plotRight, y));
+                var ft = Text(t.ToString(_format, CultureInfo.InvariantCulture), 11, dim);
+                dc.DrawText(ft, new Point(left - 8 - ft.Width, y - ft.Height / 2));
+            }
+        else
+            foreach (var f in new[] { 0.0, 0.25, 0.5, 0.75, 1.0 })
+            {
+                var y = Math.Round(Top + (1 - f) * ph) + 0.5;
+                dc.DrawLine(f == 0 ? solid : dashed, new Point(left, y), new Point(plotRight, y));
+            }
+
+        // One label column per extra line, in its colour, right of the plot.
+        var ax = plotRight + 8;
+        foreach (var a in _axes)
         {
-            var y = Math.Round(Y(t)) + 0.5;
-            dc.DrawLine(Math.Abs(t - lo) < 1e-9 ? solid : dashed, new Point(left, y), new Point(w - Right, y));
-            var ft = Text(t.ToString(_format, CultureInfo.InvariantCulture), 11, dim);
-            dc.DrawText(ft, new Point(left - 8 - ft.Width, y - ft.Height / 2));
+            foreach (var f in new[] { 0.0, 0.5, 1.0 })
+            {
+                var ft = Text((a.Lo + (a.Hi - a.Lo) * f).ToString(a.Line.Format, CultureInfo.InvariantCulture), AxisLabelSize, a.Line.Brush);
+                var y = Top + (1 - f) * ph;
+                var ty = f >= 1 ? y + 1 : f <= 0 ? y - ft.Height - 1 : y - ft.Height / 2;
+                dc.DrawText(ft, new Point(ax, ty));
+            }
+            ax += a.ColW + AxisGap;
         }
 
         // X labels (line only: bars are one per day, labelled the same way).
@@ -476,7 +504,7 @@ public sealed class ScoreChart : FrameworkElement
             var txt = Label(_points[i].When);
             if (txt == prevText) continue;
             var ft = Text(txt, 11, dim);
-            var x = Math.Clamp(X(i) - ft.Width / 2, left, Math.Max(left, w - Right - ft.Width));
+            var x = Math.Clamp(X(i) - ft.Width / 2, left, Math.Max(left, plotRight - ft.Width));
             if (x < prevEnd + 8) continue;
             dc.DrawText(ft, new Point(x, h - Bottom + 6));
             prevText = txt; prevEnd = x + ft.Width;
@@ -498,7 +526,7 @@ public sealed class ScoreChart : FrameworkElement
                 dc.DrawRoundedRectangle(fill, null, new Rect(X(i) - bw / 2, y, bw, baseY - y), rad, rad);
             }
         }
-        else if (n > 1)
+        else if (n > 1 && scoreOn)
         {
             var pts = _points.Select((p, i) => new Point(X(i), Y(p.Value))).ToList();
             var line = ChartPaths.Monotone(pts);
@@ -509,7 +537,7 @@ public sealed class ScoreChart : FrameworkElement
             dc.DrawGeometry(grad, null, area);
 
             // Bands sit under the line.
-            DrawBands(dc, bands, left, w, Y);
+            DrawBands(dc, bands, left, plotRight + Right, Y);
 
             var strokeBrush = new LinearGradientBrush(Color.FromArgb(0x8C, ac.R, ac.G, ac.B), ac, 0);
             strokeBrush.Freeze();
@@ -533,15 +561,64 @@ public sealed class ScoreChart : FrameworkElement
                 }
             }
         }
-        if (_kind == ChartKind.Bars || n == 1) DrawBands(dc, bands, left, w, Y);
+        if (_kind == ChartKind.Bars || n == 1) DrawBands(dc, bands, left, plotRight + Right, Y);
 
-        if (_kind == ChartKind.Line)
+        foreach (var a in _axes) DrawLine(dc, a, left, pw, ph, n);
+
+        if (_kind == ChartKind.Line && scoreOn)
         {
             var lp = new Point(X(n - 1), Y(_points[^1].Value));
             dc.DrawEllipse(accent, new Pen(bg, 2), lp, 4, 4);
         }
 
-        if (_hover >= 0 && _hover < n) DrawHover(dc, w, h, X(_hover), Y(_points[_hover].Value), accent, fg, left);
+        if (_hover >= 0 && _hover < n)
+        {
+            var extra = new List<(Brush Brush, string Text)>();
+            foreach (var a in _axes)
+            {
+                var v = a.Line.Values[_off + _hover];
+                if (double.IsNaN(v)) continue;
+                extra.Add((a.Line.Brush, a.Line.Name + "  " + v.ToString(a.Line.Format, CultureInfo.InvariantCulture)));
+                dc.DrawEllipse(a.Line.Brush, new Pen(bg, 1), new Point(X(_hover), LineY(a, v, ph)), 3.5, 3.5);
+            }
+            DrawHover(dc, w, h, X(_hover), scoreOn ? Y(_points[_hover].Value) : Top + ph / 2, accent, fg, left, extra, scoreOn);
+        }
+    }
+
+    /// <summary>Y of a value on its own line's scale.</summary>
+    static double LineY(Axis a, double v, double ph)
+    {
+        var frac = a.Hi - a.Lo < 1e-12 ? 0.5 : (v - a.Lo) / (a.Hi - a.Lo);
+        return Top + ph * (1 - frac);
+    }
+
+    void DrawLine(DrawingContext dc, Axis a, double left, double pw, double ph, int n)
+    {
+        var line = a.Line;
+        double X(int i) => n == 1 ? left + pw / 2 : left + i / (double)(n - 1) * pw;
+        var pen = new Pen(line.Brush, 1.6) { LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        var run = new List<Point>();
+        void Flush()
+        {
+            if (run.Count == 1) dc.DrawEllipse(line.Brush, null, run[0], 2, 2);
+            else if (run.Count > 1) dc.DrawGeometry(null, pen, ChartPaths.Monotone(run));
+            run.Clear();
+        }
+        // A run without a value leaves a gap; the estimate across it is a dashed line from the last known value to the next.
+        var guess = new Pen(line.Brush, 1.4) { DashStyle = new DashStyle([3, 3], 0), StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        Point? lastKnown = null;
+        var gap = false;
+        for (var i = 0; i < n; i++)
+        {
+            var v = line.Values[_off + i];
+            if (double.IsNaN(v)) { Flush(); gap = true; continue; }
+            var pt = new Point(X(i), LineY(a, v, ph));
+            if (gap && lastKnown is { } from) dc.DrawLine(guess, from, pt);
+            gap = false;
+            lastKnown = pt;
+            run.Add(pt);
+        }
+        Flush();
     }
 
     void DrawBands(DrawingContext dc, List<ChartBand> bands, double left, double w, Func<double, double> Y)
@@ -563,31 +640,37 @@ public sealed class ScoreChart : FrameworkElement
         }
     }
 
-    void DrawHover(DrawingContext dc, double w, double h, double x, double y, Brush accent, Brush fg, double left)
+    void DrawHover(DrawingContext dc, double w, double h, double x, double y, Brush accent, Brush fg, double left, IReadOnlyList<(Brush Brush, string Text)> extra, bool scoreOn)
     {
         var p = _points[_hover];
         if (_kind == ChartKind.Line)
         {
             dc.DrawLine(new Pen(WithAlpha(fg, 0.25), 1), new Point(x, Top), new Point(x, h - Bottom));
-            dc.DrawEllipse(accent, new Pen(Brushes.White, 1.5), new Point(x, y), 5, 5);
+            if (scoreOn) dc.DrawEllipse(accent, new Pen(Brushes.White, 1.5), new Point(x, y), 5, 5);
         }
         else dc.DrawLine(new Pen(WithAlpha(fg, 0.25), 1), new Point(x, Top), new Point(x, h - Bottom));
 
         var date = _kind == ChartKind.Line ? ClockFormat.DateClock(p.When) : p.When.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var t1 = Text(date, 10, Res("Dim"));
-        var t2 = Text(p.Value.ToString(_format, CultureInfo.InvariantCulture), 13, fg, true);
-        double bw = Math.Max(t1.Width, t2.Width) + 16, bh = t1.Height + t2.Height + 12;
+        var t2 = Text(scoreOn ? p.Value.ToString(_format, CultureInfo.InvariantCulture) : "", 13, fg, true);
+        var rows = extra.Select(e => Text(e.Text, 11, Res("Fg"))).ToList();
+        var rowH = rows.Count == 0 ? 0 : rows[0].Height;
+        double bw = Math.Max(Math.Max(t1.Width, t2.Width), rows.Count == 0 ? 0 : rows.Max(r => r.Width + 14)) + 16, bh = t1.Height + t2.Height + 12 + rows.Count * rowH + (rows.Count > 0 ? 4 : 0);
         var bx = x + 12;
         if (bx + bw > w - 2) bx = x - 12 - bw;
         bx = Math.Max(2, bx);
         var by = Math.Clamp(y - bh / 2, 2, Math.Max(2, h - bh - 2));
-        var fill = new SolidColorBrush(Color.FromArgb(0xF0, 0x22, 0x22, 0x26));
-        fill.Freeze();
-        var stroke = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
-        stroke.Freeze();
+        Brush fill = Res("Surface"), stroke = Res("Edge");
         dc.DrawRoundedRectangle(fill, new Pen(stroke, 1), new Rect(bx, by, bw, bh), 8, 8);
         dc.DrawText(t1, new Point(bx + 8, by + 6));
         dc.DrawText(t2, new Point(bx + 8, by + 6 + t1.Height));
+        var ry = by + 10 + t1.Height + t2.Height;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            dc.DrawEllipse(extra[i].Brush, null, new Point(bx + 12, ry + rowH / 2), 3.5, 3.5);
+            dc.DrawText(rows[i], new Point(bx + 20, ry));
+            ry += rowH;
+        }
     }
 
     /// <summary>Raised with the point index when the user clicks the chart.</summary>

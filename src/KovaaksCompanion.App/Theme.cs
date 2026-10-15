@@ -65,7 +65,7 @@ public static class Theme
     {
         ["Bg"] = "#1C1C1E", ["Panel"] = "#0FFFFFFF", ["Card"] = "#14FFFFFF", ["Hover"] = "#1FFFFFFF", ["Selected"] = "#29FFFFFF",
         ["Separator"] = "#4D545458", ["Fg"] = "#FFFFFF", ["Dim"] = "#A1A1A8",
-        ["Green"] = "#30D158", ["Orange"] = "#FF9F0A", ["Red"] = "#FF453A", ["Purple"] = "#BF5AF2", ["Teal"] = "#64D2FF", ["Yellow"] = "#FFD60A",
+        ["Green"] = "#30D158", ["Orange"] = "#FF9F0A", ["Red"] = "#FF453A", ["Purple"] = "#BF5AF2", ["Teal"] = "#64D2FF", ["Yellow"] = "#FFD60A", ["Pink"] = "#FF6482", ["Mint"] = "#66D4CF",
         ["Surface"] = "#F2232326", ["Raised"] = "#2C2C2E", ["Edge"] = "#1FFFFFFF", ["EdgeFaint"] = "#14FFFFFF", ["Scrim"] = "#99000000",
         ["Tint"] = "#0DFFFFFF", ["Wash"] = "#14FFFFFF", ["WashPress"] = "#24FFFFFF", ["Highlight"] = "#1AFFFFFF",
         ["Thumb"] = "#66FFFFFF", ["ThumbHot"] = "#99FFFFFF", ["BgFadeColor"] = "#E61C1C1E", ["BgClearColor"] = "#001C1C1E",
@@ -75,7 +75,7 @@ public static class Theme
     {
         ["Bg"] = "#F2F2F7", ["Panel"] = "#0A000000", ["Card"] = "#12000000", ["Hover"] = "#14000000", ["Selected"] = "#1F000000",
         ["Separator"] = "#4D3C3C43", ["Fg"] = "#1C1C1E", ["Dim"] = "#6C6C70",
-        ["Green"] = "#248A3D", ["Orange"] = "#C46A00", ["Red"] = "#D70015", ["Purple"] = "#8944AB", ["Teal"] = "#0E8FA8", ["Yellow"] = "#A67C00",
+        ["Green"] = "#248A3D", ["Orange"] = "#C46A00", ["Red"] = "#D70015", ["Purple"] = "#8944AB", ["Teal"] = "#0E8FA8", ["Yellow"] = "#A67C00", ["Pink"] = "#C93F5E", ["Mint"] = "#1F8A85",
         ["Surface"] = "#F2FFFFFF", ["Raised"] = "#FFFFFF", ["Edge"] = "#1F000000", ["EdgeFaint"] = "#14000000", ["Scrim"] = "#66000000",
         ["Tint"] = "#0A000000", ["Wash"] = "#0F000000", ["WashPress"] = "#1A000000", ["Highlight"] = "#14000000",
         ["Thumb"] = "#55000000", ["ThumbHot"] = "#88000000", ["BgFadeColor"] = "#E6F2F2F7", ["BgClearColor"] = "#00F2F2F7",
