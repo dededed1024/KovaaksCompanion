@@ -339,7 +339,7 @@ public partial class StatsView
         var total = c.Counts.Sum();
         var r = Math.Clamp(c.P.OverallTier, 0, c.Names.Count);
         var blocks = new TierBlocksChart { Margin = new Thickness(16, 4, 16, 12) };
-        blocks.SizeChanged += (_, ev) => { var h = Math.Clamp(ev.NewSize.Width * 0.3, 220, 400); if (double.IsNaN(blocks.Height) || Math.Abs(blocks.Height - h) > 1) blocks.Height = h; };
+        blocks.SizeChanged += (_, ev) => { var h = Math.Clamp(ev.NewSize.Width * 0.44, 300, 560); if (double.IsNaN(blocks.Height) || Math.Abs(blocks.Height - h) > 1) blocks.Height = h; };
         blocks.Set(c.Blocks, c.Names, c.Brushes);
         return TitledCard("Scenarios by rank", r == 0 ? L.F("{0} of {1} ranked", total - c.Counts[0], total) : L.F("{0} of {1} at {2}+", c.Counts.Skip(r).Sum(), total, c.Names[r - 1]), blocks);
     }
