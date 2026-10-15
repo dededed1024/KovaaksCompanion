@@ -11,7 +11,7 @@ namespace KovaaksCompanion.App;
 /// <summary>Server data: the player's server bests (fetched once, cached) and cloud score history. Playlist progress is calculated locally from the bundled thresholds.</summary>
 public partial class StatsView
 {
-    const int MaxParallel = 4;
+    const int MaxParallel = 2;
 
     readonly CancellationTokenSource _cts = new();
     StatsStore? _store;
@@ -198,6 +198,7 @@ public partial class StatsView
                     _everFetched.Add(n);
                     changed |= RememberCloud(n, store.WithCached(n, l));
                 }
+                catch (System.Net.Http.HttpRequestException e) when (e.StatusCode == System.Net.HttpStatusCode.TooManyRequests) { } // still limited after the retries: not an app bug, try again later
                 catch (Exception e) when (!ct.IsCancellationRequested) { KovaaksCompanion.Core.Diagnostics.ErrorReporter.Report("scores load", e); } // offline or rate limited: keep what is cached
                 finally { gate.Release(); progress?.Report(++finished); }
             }));

@@ -107,6 +107,55 @@ public sealed class KovaaksApi(HttpClient? http = null)
 {
     readonly HttpClient _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
+    const int MaxRetries = 3;
+    static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(20);
+
+    /// <summary>Least time between the starts of two requests.</summary>
+    static readonly TimeSpan MinGap = TimeSpan.FromMilliseconds(150);
+
+    readonly SemaphoreSlim _turn = new(1, 1);
+    DateTime _nextStart;
+    DateTime _pausedUntil;
+
+    /// <summary>Waits for this request's turn: requests start at least <see cref="MinGap"/> apart and none starts while a 429 pause lasts.</summary>
+    async Task WaitTurnAsync(CancellationToken ct)
+    {
+        await _turn.WaitAsync(ct);
+        try
+        {
+            var start = DateTime.UtcNow;
+            if (_nextStart > start) start = _nextStart;
+            if (_pausedUntil > start) start = _pausedUntil;
+            var delay = start - DateTime.UtcNow;
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
+            _nextStart = start + MinGap;
+        }
+        finally { _turn.Release(); }
+    }
+
+    /// <summary>
+    /// GET as text, one request at a time in line (see <see cref="WaitTurnAsync"/>). On 429 (too many requests) all requests pause as long as the server asks
+    /// (or 2, 4, 8 s, plus a little jitter), then this one is tried again, up to <see cref="MaxRetries"/> times.
+    /// </summary>
+    async Task<string> GetAsync(string url, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            await WaitTurnAsync(ct);
+            using var res = await _http.GetAsync(url, ct);
+            if (res.StatusCode != System.Net.HttpStatusCode.TooManyRequests)
+            {
+                res.EnsureSuccessStatusCode();
+                return await res.Content.ReadAsStringAsync(ct);
+            }
+            var wait = res.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(2 << attempt);
+            if (wait > MaxWait) wait = MaxWait;
+            wait += TimeSpan.FromMilliseconds(Random.Shared.Next(0, 500));
+            lock (_turn) { var until = DateTime.UtcNow + wait; if (until > _pausedUntil) _pausedUntil = until; }
+            if (attempt >= MaxRetries) res.EnsureSuccessStatusCode();
+        }
+    }
+
     /// <summary>
     /// The player's webapp username, read from their own leaderboard entry: the benchmark progress of <paramref name="steamId"/> names a scenario's leaderboard and the
     /// player's rank in it, and that entry carries the username. Tries the given benchmarks (most likely played first) until one works; null when none does.
@@ -117,7 +166,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
         {
             try
             {
-                using var progress = JsonDocument.Parse(await _http.GetStringAsync(
+                using var progress = JsonDocument.Parse(await GetAsync(
                     $"https://kovaaks.com/webapp-backend/benchmarks/player-progress-rank-benchmark?benchmarkId={id}&steamId={Uri.EscapeDataString(steamId)}&page=0&max=100", ct));
                 if (!progress.RootElement.TryGetProperty("categories", out var cats) || cats.ValueKind != JsonValueKind.Object) continue;
                 var tried = 0;
@@ -127,7 +176,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
                     // TryGetInt32 throws on a JSON null (unranked scenario), so check the kind first.
                     if (!v.TryGetProperty("leaderboard_id", out var lb) || lb.ValueKind != JsonValueKind.Number || !lb.TryGetInt32(out var lbId) || lbId <= 0 ||
                         !v.TryGetProperty("leaderboard_rank", out var rk) || rk.ValueKind != JsonValueKind.Number || !rk.TryGetInt32(out var rank) || rank <= 0) continue;
-                    using var board = JsonDocument.Parse(await _http.GetStringAsync(
+                    using var board = JsonDocument.Parse(await GetAsync(
                         $"https://kovaaks.com/webapp-backend/leaderboard/scores/global?leaderboardId={lbId}&page={rank - 1}&max=1", ct));
                     if (board.RootElement.ValueKind == JsonValueKind.Object && board.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
                         foreach (var e in data.EnumerateArray())
@@ -147,7 +196,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
         var res = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         for (var page = 0; page < 20; page++)
         {
-            var json = await _http.GetStringAsync(
+            var json = await GetAsync(
                 $"https://kovaaks.com/webapp-backend/user/scenario/total-play?username={Uri.EscapeDataString(username)}&page={page}&max=100", ct);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array || data.GetArrayLength() == 0) break;
@@ -163,7 +212,7 @@ public sealed class KovaaksApi(HttpClient? http = null)
 
     /// <summary>Last ~10 server-side runs of a scenario for the user, oldest first.</summary>
     public async Task<List<CloudScore>> GetLastScoresAsync(string username, string scenario, CancellationToken ct = default) =>
-        CloudScores.ParseLastScores(await _http.GetStringAsync(
+        CloudScores.ParseLastScores(await GetAsync(
             $"https://kovaaks.com/webapp-backend/user/scenario/last-scores/by-name?username={Uri.EscapeDataString(username)}&scenarioName={Uri.EscapeDataString(scenario)}", ct));
 
     /// <summary>The higher of the local and cloud scores; a zero cloud score counts as none.</summary>
