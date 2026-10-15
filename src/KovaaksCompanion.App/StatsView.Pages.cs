@@ -170,7 +170,7 @@ public partial class StatsView
             finally { t.SetCaptureButtonsVisible(true); }
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = _host.Settings.EnsureCapturesFolder();
+            var dir = _host.Settings.EnsureScreenshotsFolder();
             var name = string.Concat((subName == null ? Heading.Text : $"{Heading.Text}_{subName}").Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim();
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));

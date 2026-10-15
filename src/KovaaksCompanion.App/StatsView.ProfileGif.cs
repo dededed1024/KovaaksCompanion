@@ -18,7 +18,7 @@ public partial class StatsView
         _gifBusy = true;
         const int frames = 234, delayCs = 3; // ~33 fps x 7 s, the length of one drift loop
         var charts = _profileCharts.ToList();
-        var file = Path.Combine(_host.Settings.CapturesFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.gif");
+        var file = Path.Combine(_host.Settings.ScreenshotsFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.gif");
         var effect = ProfileCard.Effect;
         var xform = ProfileCard.RenderTransform;
         var ok = false;
@@ -53,7 +53,7 @@ public partial class StatsView
             }
 
             var samples = Enumerable.Range(0, 16).Select(i => Grab(i / 16.0)).ToArray();
-            _host.Settings.EnsureCapturesFolder();
+            _host.Settings.EnsureScreenshotsFolder();
             await using var fs = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
             var enc = await Task.Run(() => new GifFrameEncoder(fs, cw, ch, delayCs, (bg.R, bg.G, bg.B), samples));
             Task? pending = null;

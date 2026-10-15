@@ -835,7 +835,7 @@ public partial class StatsView
     static string DayLabel(DateTime day) =>
         day == DateTime.Today ? L.T("Today") : day == DateTime.Today.AddDays(-1) ? L.T("Yesterday") : day.ToString("ddd, MMM d", L.Culture);
 
-    /// <summary>Renders the whole session (every run, not just the visible ones) to the clipboard and a png in the captures folder.</summary>
+    /// <summary>Renders the whole session (every run, not just the visible ones) to the clipboard and a png in the screenshots folder.</summary>
     void CopySessionImage(FrameworkElement source, PlaySession s, IReadOnlySet<RunRecord> pbs)
     {
         try
@@ -852,7 +852,7 @@ public partial class StatsView
             rtb.Render(holder);
             rtb.Freeze();
             Clipboard.SetImage(rtb);
-            var dir = _host.Settings.EnsureCapturesFolder();
+            var dir = _host.Settings.EnsureScreenshotsFolder();
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
             using var fs = File.Create(System.IO.Path.Combine(dir, $"session_{s.Number}_{DateTime.Now:yyyyMMdd_HHmmss}.png"));

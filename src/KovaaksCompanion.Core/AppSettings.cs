@@ -98,17 +98,17 @@ public sealed record AppSettings
     public Benchmarks.StatsStore OpenStore() => SharedStore.Value;
     /// <summary>The replays: their data in the archive folder, their videos in <see cref="ReplaysFolder"/>. It holds nothing but the folders (the database handle is shared), so a new one per call is cheap and follows a changed <see cref="ReplaysFolder"/>.</summary>
     public Replays.ReplayArchive OpenReplays() => new(ArchiveFolder, ReplaysFolder);
+    public Trajectory.SpeedCache OpenSpeedCache() => SharedSpeedCache.Value;
     static readonly Lazy<Perf.SeriesCache> SharedSeriesCache = new(() => new(Path.Combine(DefaultDataFolder, "cache", "series" + CacheFile.Extension)));
     public Perf.SeriesCache OpenSeriesCache() => SharedSeriesCache.Value;
-    public Trajectory.SpeedCache OpenSpeedCache() => SharedSpeedCache.Value;
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
     /// <summary>Diagnostic log; lives in the data root next to the replays.</summary>
     [JsonIgnore] public string LogFile => Path.Combine(DataRoot, "logs", "app.log");
-    [JsonIgnore] public string CapturesFolder => Path.Combine(DataRoot, "captures");
-    /// <summary><see cref="CapturesFolder"/>, created (with a UAC grant when the location needs one).</summary>
-    public string EnsureCapturesFolder()
+    [JsonIgnore] public string ScreenshotsFolder => Path.Combine(DataRoot, "screenshots");
+    /// <summary><see cref="ScreenshotsFolder"/>, created (with a UAC grant when the location needs one).</summary>
+    public string EnsureScreenshotsFolder()
     {
-        var dir = CapturesFolder;
+        var dir = ScreenshotsFolder;
         AccessGuard.Run(dir, true, () => Directory.CreateDirectory(dir));
         return dir;
     }
@@ -145,7 +145,9 @@ public sealed record AppSettings
                     Directory.Move(dir, to);
                 }
             }
-            foreach (var name in new[] { "serverbest.dat", "serverbest" + CacheFile.Extension, "totals" + CacheFile.Extension, "sync" + CacheFile.Extension }) // server bests moved into the archive database; these were only a refetchable cache
+            if (Path.Combine(DataRoot, "captures") is var oldShots && Directory.Exists(oldShots) && !Directory.Exists(ScreenshotsFolder)) // the screenshots folder was called captures
+                Directory.Move(oldShots, ScreenshotsFolder);
+            foreach (var name in new[] { "serverbest.dat", "serverbest" + CacheFile.Extension, "totals" + CacheFile.Extension, "scan" + CacheFile.Extension, "sync" + CacheFile.Extension }) // server bests moved into the archive database; these were only a refetchable cache
                 if (Path.Combine(CacheFolder, name) is var stale && File.Exists(stale)) File.Delete(stale);
             foreach (var dir in new[] { Path.Combine(CacheFolder, "sessions"), Path.Combine(DefaultDataFolder, "history", "sessions"), oldDirs[0], oldDirs[1] })
                 if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);

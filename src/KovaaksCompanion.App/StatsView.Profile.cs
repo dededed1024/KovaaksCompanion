@@ -241,12 +241,12 @@ public partial class StatsView
                 shot.Freeze();
                 Clipboard.SetImage(shot);
                 // Encoding and writing the PNG happen off the UI thread.
-                var file = Path.Combine(_host.Settings.CapturesFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                var file = Path.Combine(_host.Settings.ScreenshotsFolder, $"profile_{DateTime.Now:yyyyMMdd_HHmmss}.png");
                 _ = Task.Run(() =>
                 {
                     try
                     {
-                        _host.Settings.EnsureCapturesFolder();
+                        _host.Settings.EnsureScreenshotsFolder();
                         var enc = new PngBitmapEncoder();
                         enc.Frames.Add(BitmapFrame.Create(shot));
                         using var fs = File.Create(file);
