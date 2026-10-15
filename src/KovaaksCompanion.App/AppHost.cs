@@ -556,9 +556,8 @@ public sealed class AppHost : IDisposable
             L.Set(s.Language);
             Theme.SetCustom(s.CustomHue, s.CustomSaturation, s.CustomBrightness);
             Theme.Apply(s.Theme);
-            // A new language needs every text rebuilt, and Black has no Mica backdrop (set when the window opens): those open a new window. Other theme changes redraw in place.
-            var newWindow = s.Language != old.Language || s.Theme == "Black" || old.Theme == "Black";
-            _app.Dispatcher.BeginInvoke(newWindow ? RebuildMain : () => _main?.RefreshTheme());
+            // A new language needs every text rebuilt: it opens a new window. Theme changes (Black included) redraw in place.
+            _app.Dispatcher.BeginInvoke(s.Language != old.Language ? RebuildMain : () => _main?.RefreshTheme());
         }
         else
         {

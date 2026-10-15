@@ -30,6 +30,14 @@ public static class Theme
         return Color.FromRgb((byte)Math.Round((r + m) * 255), (byte)Math.Round((g + m) * 255), (byte)Math.Round((b + m) * 255));
     }
 
+    internal static (double H, double S, double V) ToHsv(Color c)
+    {
+        double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+        var max = Math.Max(r, Math.Max(g, b)); var d = max - Math.Min(r, Math.Min(g, b));
+        var h = d == 0 ? 0 : max == r ? 60 * ((g - b) / d % 6) : max == g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+        return (h < 0 ? h + 360 : h, max == 0 ? 0 : d / max, max);
+    }
+
     /// <summary>Accent hex of every colored theme; the profile palette starts with these.</summary>
     public static readonly string[] ColoredAccents = [.. Colored.Select(c => c.Accent)];
 
@@ -72,7 +80,10 @@ public static class Theme
     }
 
     /// <summary>The colored themes in palette order, then black, dark gray and white at the far end.</summary>
-    public static readonly string[] Names = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light", "Custom"];
+    public static readonly string[] Names = [.. Presets, "Custom"];
+
+    /// <summary>The themes with a chip of their own; Custom is the wheel.</summary>
+    public static readonly string[] Presets = [.. Colored.Select(c => c.Name), "Black", "Dark", "Light"];
 
     static readonly Dictionary<string, string> Dark = new()
     {

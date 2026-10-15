@@ -56,7 +56,7 @@ public partial class MainWindow : Window
     /// </summary>
     public void RefreshTheme()
     {
-        Backdrop.SetDark(this);
+        Backdrop.Refresh(this);
         var index = Root.Children.IndexOf(_replay);
         _stats.Detach(); _replay.Detach();
         Pages.Children.Remove(_stats);

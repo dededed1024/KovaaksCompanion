@@ -87,7 +87,7 @@ public partial class SettingsView : UserControl
         foreach (RadioButton r in ScaleBar.Children) r.IsChecked = (string)r.Tag == scale;
         ThemeBar.Children.Clear();
         var theme = Theme.Normalize(s.Theme);
-        foreach (var name in Theme.Names.Where(n => n != "Custom")) // the wheel is the custom theme
+        foreach (var name in Theme.Presets)
         {
             var on = name == theme;
             var (bg, accent) = Theme.Swatch(name);
@@ -101,10 +101,12 @@ public partial class SettingsView : UserControl
             chip.MouseLeftButtonUp += (_, _) => { if (!on) SaveAppearance(name); };
             ThemeBar.Children.Add(chip);
         }
-        Wheel.Pick = (s.CustomHue, s.CustomSaturation);
+        // A preset shows its own background on the wheel and the slider, so touching them continues from what is on screen; the saved Custom pick is kept until then.
+        var (hue, sat, val) = theme == "Custom" ? (s.CustomHue, s.CustomSaturation, s.CustomBrightness) : Theme.ToHsv(Theme.Swatch(theme).Bg);
+        Wheel.Pick = (hue, sat);
         Wheel.Active = theme == "Custom";
-        BrightnessSlider.Value = s.CustomBrightness * 100;
-        Wheel.Brightness = s.CustomBrightness;
+        BrightnessSlider.Value = Math.Clamp(val, 0.1, 0.95) * 100;
+        Wheel.Brightness = val;
         GrainSlider.Value = s.Grain;
     }
 
@@ -169,12 +171,14 @@ public partial class SettingsView : UserControl
     {
         var cur = _host.Settings;
         string Tag(Panel bar, string fallback) => bar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? fallback;
+        var custom = (theme ?? cur.Theme) == "Custom"; // the wheel and slider hold the Custom pick only then
         var next = cur with
         {
             Language = Tag(LanguageBar, cur.Language),
             Theme = theme ?? cur.Theme,
             UiScale = int.TryParse(Tag(ScaleBar, ""), out var sc) ? sc : cur.UiScale,
-            CustomHue = Wheel.Pick.Hue, CustomSaturation = Wheel.Pick.Saturation, CustomBrightness = Math.Round(BrightnessSlider.Value) / 100,
+            CustomHue = custom ? Wheel.Pick.Hue : cur.CustomHue, CustomSaturation = custom ? Wheel.Pick.Saturation : cur.CustomSaturation,
+            CustomBrightness = custom ? Math.Round(BrightnessSlider.Value) / 100 : cur.CustomBrightness,
             Grain = (int)Math.Round(GrainSlider.Value),
         };
         if (next == cur) return;
