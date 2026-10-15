@@ -99,6 +99,8 @@ public sealed record AppSettings
     public Benchmarks.StatsStore OpenStore() => SharedStore.Value;
     /// <summary>The replays: their data in the archive folder, their videos in <see cref="ReplaysFolder"/>. It holds nothing but the folders (the database handle is shared), so a new one per call is cheap and follows a changed <see cref="ReplaysFolder"/>.</summary>
     public Replays.ReplayArchive OpenReplays() => new(ArchiveFolder, ReplaysFolder);
+    static readonly Lazy<Perf.SeriesCache> SharedSeriesCache = new(() => new(Path.Combine(DefaultDataFolder, "cache", "series" + CacheFile.Extension)));
+    public Perf.SeriesCache OpenSeriesCache() => SharedSeriesCache.Value;
     public Trajectory.SpeedCache OpenSpeedCache() => SharedSpeedCache.Value;
     [JsonIgnore] public string BufferFolder => Path.Combine(DataRoot, "buffer");
     /// <summary>Diagnostic log; lives in the data root next to the replays.</summary>
