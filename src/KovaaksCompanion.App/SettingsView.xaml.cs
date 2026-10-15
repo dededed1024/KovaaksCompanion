@@ -271,6 +271,8 @@ public partial class SettingsView : UserControl
         public WebcamCut Cut = new();
         public double Aspect;
         public bool Probing;
+        /// <summary>Faint outline of the whole picture behind the box, so the cut-away part stays visible.</summary>
+        public readonly Border Ghost = new() { IsHitTestVisible = false, Opacity = 0.18, CornerRadius = new CornerRadius(3) };
         public required Border Marker;
         public required TextBlock Number;
         public required Border[] Grips;
@@ -281,7 +283,8 @@ public partial class SettingsView : UserControl
     Border? _bar;
     List<WebcamDevice> _devices = [];
     static readonly string[] CamColors = ["AccentFill", "Green", "Orange"];
-    const double BarW = 56, BarH = 28;
+    const double BarNumW = 24, BarW = 56 + BarNumW, BarH = 28;
+    TextBlock? _barNumber;
 
 
     WebcamSlots CamSlots(WebcamSlots cur)
@@ -302,6 +305,8 @@ public partial class SettingsView : UserControl
             return b;
         }
         var row = new StackPanel { Orientation = Orientation.Horizontal };
+        _barNumber = new TextBlock { Width = BarNumW, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold, FontSize = 12, Foreground = (Brush)FindResource("Fg") };
+        row.Children.Add(_barNumber);
         row.Children.Add(Tool("\uE7AD", "Rotate", "Fg", (_, _) =>
         {
             if (_selected is not { } c) return;
@@ -310,7 +315,7 @@ public partial class SettingsView : UserControl
         row.Children.Add(Tool("\uE74D", "Remove", "Red", (_, _) =>
         {
             if (_selected is not { } c) return;
-            _cards.Remove(c); CamCanvas.Children.Remove(c.Marker); _selected = null; UpdateCamUi(); Save();
+            _cards.Remove(c); CamCanvas.Children.Remove(c.Marker); CamCanvas.Children.Remove(c.Ghost); _selected = null; UpdateCamUi(); Save();
         }));
         _bar = new Border { Child = row, Background = (Brush)FindResource("Surface"), CornerRadius = new CornerRadius(5), Visibility = Visibility.Collapsed };
         _bar.MouseLeftButtonDown += (_, e) => e.Handled = true;
@@ -353,6 +358,8 @@ public partial class SettingsView : UserControl
         };
         marker.ToolTip = card.Device?.ToString();
         _cards.Add(card);
+        CamCanvas.ClipToBounds = true;
+        CamCanvas.Children.Add(card.Ghost);
         CamCanvas.Children.Add(marker);
         if (select) _selected = card;
 
@@ -527,7 +534,15 @@ public partial class SettingsView : UserControl
             foreach (var g in c.Grips) g.Visibility = c == _selected ? Visibility.Visible : Visibility.Collapsed;
             c.Number.Text = (i + 1).ToString();
             c.Number.RenderTransformOrigin = new Point(0.5, 0.5);
-            c.Number.RenderTransform = new RotateTransform(c.Rotation);
+            // the number sits at the center of the whole picture, so a cut moves it out of the middle of the box (it shows over the faint cut-away part)
+            var k = c.Rotation / 90;
+            double sl = CutOf(c.Cut, (4 - k) % 4), st = CutOf(c.Cut, (5 - k) % 4), sr = CutOf(c.Cut, (6 - k) % 4), sb = CutOf(c.Cut, (7 - k) % 4);
+            double dx = w / (1 - sl - sr) * (sr - sl) / 2, dy = h / (1 - st - sb) * (sb - st) / 2;
+            c.Number.RenderTransform = new TransformGroup { Children = { new RotateTransform(c.Rotation), new TranslateTransform(dx, dy) } };
+            c.Ghost.Visibility = c.Cut.IsNone ? Visibility.Collapsed : Visibility.Visible;
+            c.Ghost.Background = c.Marker.Background;
+            c.Ghost.Width = w / (1 - sl - sr); c.Ghost.Height = h / (1 - st - sb);
+            Canvas.SetLeft(c.Ghost, l - sl * c.Ghost.Width); Canvas.SetTop(c.Ghost, t - st * c.Ghost.Height);
             Canvas.SetLeft(c.Marker, l); Canvas.SetTop(c.Marker, t);
         }
         var bar = Bar();
@@ -535,6 +550,7 @@ public partial class SettingsView : UserControl
         {
             var (l, t, w, h) = CamBox(s);
             bar.Visibility = Visibility.Visible;
+            _barNumber!.Text = (_cards.IndexOf(s) + 1).ToString();
             Canvas.SetLeft(bar, Math.Clamp(l + w - BarW, 0, CamW - BarW));
             Canvas.SetTop(bar, t >= BarH + 2 ? t - BarH - 2 : Math.Min(t + h + 2, CamH - BarH));
         }
