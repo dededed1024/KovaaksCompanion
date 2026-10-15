@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace KovaaksCompanion.App;
@@ -45,13 +46,12 @@ public static class ChartSeriesInfo
 public sealed class RunChart : FrameworkElement
 {
     static Typeface Face => new((FontFamily)Application.Current.FindResource("UiFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-    static readonly Pen PlayheadPen = MakePlayheadPen();
-    static Pen MakePlayheadPen()
-    {
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x1D, 0x3A, 0xB8)), 2);
-        pen.Freeze();
-        return pen;
-    }
+    static readonly SolidColorBrush PlayheadBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x1D, 0x3A, 0xB8)));
+    static readonly Brush PlayheadGlow = Frozen(new SolidColorBrush(Color.FromArgb(0x33, 0x1D, 0x3A, 0xB8)));
+    static readonly Pen PlayheadPen = Frozen(new Pen(PlayheadBrush, 2));
+    static readonly Pen PlayheadHotPen = Frozen(new Pen(PlayheadBrush, 3));
+    static readonly Pen GripPen = Frozen(new Pen(Brushes.White, 1.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+    static T Frozen<T>(T f) where T : Freezable { f.Freeze(); return f; }
     IReadOnlyList<ChartPoint> _points = [];
     IReadOnlyList<double> _kills = [];
     readonly HashSet<ChartSeries> _visible = [];
@@ -90,6 +90,23 @@ public sealed class RunChart : FrameworkElement
         _playhead = videoSec;
         InvalidateVisual();
     }
+
+    const double GrabRadius = 8;
+    bool _hot;
+
+    /// <summary>Playhead is hot while the pointer is near it or it is being dragged.</summary>
+    void UpdateHot(MouseEventArgs e)
+    {
+        bool hot = _duration > 0 && (IsMouseCaptured || Math.Abs(e.GetPosition(this).X - Math.Clamp(_playhead / _duration, 0, 1) * ActualWidth) <= GrabRadius);
+        Cursor = hot ? Cursors.SizeWE : Cursors.Hand;
+        if (hot == _hot) return;
+        _hot = hot;
+        InvalidateVisual();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); UpdateHot(e); }
+    protected override void OnMouseLeave(MouseEventArgs e) { base.OnMouseLeave(e); if (IsMouseCaptured || !_hot) return; _hot = false; InvalidateVisual(); }
+    protected override void OnLostMouseCapture(MouseEventArgs e) { base.OnLostMouseCapture(e); if (!IsMouseOver && _hot) { _hot = false; InvalidateVisual(); } }
 
     /// <summary>Running totals at a video time, read off the same monotone curve the chart draws, or null before the first point.</summary>
     public ChartPoint? At(double videoSec)
@@ -170,7 +187,16 @@ public sealed class RunChart : FrameworkElement
                 new Pen(ChartSeriesInfo.Brush(s), s == ChartSeries.Accuracy ? 2 : 1.5) { LineJoin = PenLineJoin.Round }, s == shown[0] ? Y(0) : null);
 
         var x = X(_playhead);
-        dc.DrawLine(PlayheadPen, new Point(x, 0), new Point(x, h));
+        if (_hot)
+        {
+            dc.DrawRectangle(PlayheadGlow, null, new Rect(x - 5, 0, 10, h));
+            dc.DrawLine(PlayheadHotPen, new Point(x, 0), new Point(x, h));
+            dc.DrawRoundedRectangle(PlayheadBrush, null, new Rect(x - 4, 0, 8, 14), 4, 4);
+            for (var gy = 4; gy <= 9; gy += 5)
+                dc.DrawLine(GripPen, new Point(x - 1.5, gy), new Point(x + 1.5, gy));
+        }
+        else
+            dc.DrawLine(PlayheadPen, new Point(x, 0), new Point(x, h));
         if (At(_playhead) is { } cur)
             foreach (var s in shown.OrderByDescending(s => s))
                 if (!double.IsNaN(cur[s]))
